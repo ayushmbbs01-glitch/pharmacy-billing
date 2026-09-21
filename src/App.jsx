@@ -778,6 +778,49 @@ function PharmacyApp() {
   const [page, setPage] = useState('dashboard')
   const [store, setStore] = useState(null)
   const [storeLoading, setStoreLoading] = useState(true)
+  
+    useEffect(() => {
+    async function loadStore() {
+      setStoreLoading(true)
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+
+      if (!user) {
+        setStoreLoading(false)
+        return
+      }
+
+      const { data, error } = await supabase
+        .from('store_memberships')
+        .select(`
+          store_id,
+          role,
+          stores (
+            id,
+            name,
+            address,
+            phone,
+            email,
+            gstin,
+            drug_license_number
+          )
+        `)
+        .eq('user_id', user.id)
+        .eq('is_active', true)
+        .limit(1)
+        .maybeSingle()
+
+      if (!error && data?.stores) {
+        setStore(data.stores)
+      }
+
+      setStoreLoading(false)
+    }
+
+    loadStore()
+  }, [])
 
   const currentPage =
     navigation.find((item) => item.id === page) || navigation[0]
