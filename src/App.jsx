@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { supabase } from './lib/supabase'
 
 const navigation = [
   { id: 'dashboard', label: 'Dashboard', icon: '⌂' },
@@ -773,7 +774,7 @@ function Settings() {
   )
 }
 
-function App() {
+function PharmacyApp() {
   const [page, setPage] = useState('dashboard')
 
   const currentPage =
@@ -887,6 +888,231 @@ function App() {
       </main>
     </div>
   )
+}
+
+function LoginScreen({ onLogin }) {
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  async function handleLogin(event) {
+    event.preventDefault()
+    setError('')
+    setLoading(true)
+
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    })
+
+    if (error) {
+      setError(error.message)
+    } else {
+      onLogin()
+    }
+
+    setLoading(false)
+  }
+
+  return (
+    <div
+      style={{
+        minHeight: '100vh',
+        display: 'grid',
+        placeItems: 'center',
+        background: '#f5f7fb',
+        padding: '20px',
+      }}
+    >
+      <div
+        style={{
+          width: '100%',
+          maxWidth: '390px',
+          background: '#ffffff',
+          border: '1px solid #e7ecf2',
+          borderRadius: '14px',
+          padding: '32px',
+          boxShadow: '0 12px 40px rgba(16, 32, 51, 0.08)',
+        }}
+      >
+        <div style={{ textAlign: 'center', marginBottom: '28px' }}>
+          <div
+            style={{
+              width: '48px',
+              height: '48px',
+              margin: '0 auto 14px',
+              display: 'grid',
+              placeItems: 'center',
+              borderRadius: '13px',
+              background: '#087ff5',
+              color: '#ffffff',
+              fontSize: '24px',
+              fontWeight: 800,
+            }}
+          >
+            +
+          </div>
+
+          <h1
+            style={{
+              margin: 0,
+              color: '#172b4d',
+              fontSize: '24px',
+            }}
+          >
+            PharmacyPro
+          </h1>
+
+          <p
+            style={{
+              margin: '7px 0 0',
+              color: '#7b8a9d',
+              fontSize: '12px',
+            }}
+          >
+            Pharmacy management system
+          </p>
+        </div>
+
+        <form onSubmit={handleLogin}>
+          <label
+            style={{
+              display: 'block',
+              marginBottom: '7px',
+              color: '#53677e',
+              fontSize: '11px',
+              fontWeight: 600,
+            }}
+          >
+            Email address
+          </label>
+
+          <input
+            type="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            placeholder="Enter your email"
+            required
+            style={{
+              width: '100%',
+              height: '42px',
+              padding: '0 12px',
+              marginBottom: '16px',
+              border: '1px solid #dfe6ee',
+              borderRadius: '7px',
+              fontSize: '12px',
+            }}
+          />
+
+          <label
+            style={{
+              display: 'block',
+              marginBottom: '7px',
+              color: '#53677e',
+              fontSize: '11px',
+              fontWeight: 600,
+            }}
+          >
+            Password
+          </label>
+
+          <input
+            type="password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            placeholder="Enter your password"
+            required
+            style={{
+              width: '100%',
+              height: '42px',
+              padding: '0 12px',
+              marginBottom: '18px',
+              border: '1px solid #dfe6ee',
+              borderRadius: '7px',
+              fontSize: '12px',
+            }}
+          />
+
+          {error && (
+            <div
+              style={{
+                marginBottom: '15px',
+                padding: '10px',
+                borderRadius: '7px',
+                background: '#fff0ee',
+                color: '#c0392b',
+                fontSize: '11px',
+              }}
+            >
+              {error}
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={loading}
+            style={{
+              width: '100%',
+              height: '42px',
+              border: 0,
+              borderRadius: '7px',
+              background: '#087ff5',
+              color: '#ffffff',
+              fontSize: '12px',
+              fontWeight: 700,
+              opacity: loading ? 0.7 : 1,
+            }}
+          >
+            {loading ? 'Signing in...' : 'Sign in'}
+          </button>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+function App() {
+  const [session, setSession] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session)
+      setLoading(false)
+    })
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, newSession) => {
+      setSession(newSession)
+    })
+
+    return () => subscription.unsubscribe()
+  }, [])
+
+  if (loading) {
+    return (
+      <div
+        style={{
+          minHeight: '100vh',
+          display: 'grid',
+          placeItems: 'center',
+          background: '#f5f7fb',
+          color: '#687a90',
+          fontSize: '13px',
+        }}
+      >
+        Loading...
+      </div>
+    )
+  }
+
+  if (!session) {
+    return <LoginScreen onLogin={() => {}} />
+  }
+
+  return <PharmacyApp />
 }
 
 export default App
