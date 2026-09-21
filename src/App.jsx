@@ -432,6 +432,177 @@ function Sales() {
 }
 
 function Inventory() {
+  const [products, setProducts] = useState([])
+  const [search, setSearch] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  async function loadProducts() {
+    setLoading(true)
+    setError('')
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+
+    if (!user) {
+      setError('You are not signed in.')
+      setLoading(false)
+      return
+    }
+
+    const { data: membership, error: membershipError } =
+      await supabase
+        .from('store_memberships')
+        .select('store_id')
+        .eq('user_id', user.id)
+        .eq('is_active', true)
+        .limit(1)
+        .maybeSingle()
+
+    if (membershipError) {
+      setError(membershipError.message)
+      setLoading(false)
+      return
+    }
+
+    if (!membership?.store_id) {
+      setError('No active pharmacy store is connected to this account.')
+      setLoading(false)
+      return
+    }
+
+    const { data, error: productsError } = await supabase
+      .from('store_products')
+      .select(`
+        id,
+        product_id,
+        default_selling_price,
+        default_discount_percent,
+        minimum_stock,
+        reorder_level,
+        products (
+          id,
+          product_name,
+          generic_display_name,
+          manufacturer,
+          dosage_form,
+          strength_display,
+          pack_quantity,
+          pack_unit,
+          gst_rate,
+          product_categories (
+            name
+          ),
+          compositions (
+            name,
+            dosage_form,
+            composition_ingredients (
+              ingredient_name,
+              strength_value,
+              strength_unit
+            )
+          )
+        )
+      `)
+      .eq('store_id', membership.store_id)
+      .eq('is_active', true)
+      .order('created_at', { ascending: false })
+
+    if (productsError) {
+      setError(productsError.message)
+      setLoading(false)
+      return
+    }
+
+    setProducts(data || [])
+    setLoading(false)
+  }
+
+  useEffect(() => {
+    loadProducts()
+  }, [])
+
+  const filteredProducts = products.filter((item) => {
+    const product = item.products
+
+    if (!product) return false
+
+    const searchText = search.toLowerCase().trim()
+
+    if (!searchText) return true
+
+    const productName = product.product_name || ''
+    const genericName = product.generic_display_name || ''
+    const manufacturer = product.manufacturer || ''
+    const strength = product.strength_display || ''
+    const dosageForm = product.dosage_form || ''
+    const category =
+      product.product_categories?.name || ''
+    const composition =
+      product.compositions?.name || ''
+
+    return [
+      productName,
+      genericName,
+      manufacturer,
+      strength,
+      dosageForm,
+      category,
+      composition,
+    ]
+      .join(' ')
+      .toLowerCase()
+      .includes(searchText)
+  })
+
+  function getComposition(product) {
+    if (!product?.compositions) {
+      return product?.generic_display_name || '—'
+    }
+
+    const ingredients =
+      product.compositions.composition_ingredients || []
+
+    if (ingredients.length === 0) {
+      return product.compositions.name || '—'
+    }
+
+    return ingredients
+      .map((ingredient) => {
+        const strength =
+          ingredient.strength_value != null
+            ? `${ingredient.strength_value} ${ingredient.strength_unit || ''}`.trim()
+            : ''
+
+        return strength
+          ? `${ingredient.ingredient_name} ${strength}`
+          : ingredient.ingredient_name
+      })
+      .join(' + ')
+  }
+
+  if (loading) {
+    return (
+      <>
+        <PageHeader
+          title="Inventory"
+          description="Manage products, batches, expiry and physical stock."
+        />
+
+        <section className="panel">
+          <div className="empty-state">
+            <div className="empty-icon">▤</div>
+            <h3>Loading inventory...</h3>
+            <p>
+              PharmDesk is loading the products for this pharmacy.
+            </p>
+          </div>
+        </section>
+      </>
+    )
+  }
+
   return (
     <>
       <PageHeader
@@ -456,62 +627,131 @@ function Inventory() {
 
             <input
               type="text"
-              placeholder="Search by product, brand or composition..."
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search by product, brand, manufacturer or composition..."
             />
           </div>
 
-          <button className="filter-button">Filters</button>
+          <button className="filter-button">
+            Filters
+          </button>
         </div>
 
-        <div className="table-wrapper">
-          <table>
-            <thead>
-              <tr>
-                <th>Product</th>
-                <th>Composition</th>
-                <th>Batch</th>
-                <th>Expiry</th>
-                <th>Stock</th>
-                <th>MRP</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
+        {error && (
+          <div
+            style={{
+              margin: '16px 0',
+              padding: '12px 14px',
+              borderRadius: '8px',
+              background: '#fff0ee',
+              color: '#c0392b',
+              fontSize: '12px',
+            }}
+          >
+            {error}
+          </div>
+        )}
 
-            <tbody>
-              {products.map((product) => (
-                <tr key={product.batch}>
-                  <td>
-                    <strong>{product.name}</strong>
-                  </td>
+        {!error && filteredProducts.length === 0 && (
+          <div className="empty-state">
+            <div className="empty-icon">▤</div>
 
-                  <td>{product.composition}</td>
-                  <td>{product.batch}</td>
-                  <td>{product.expiry}</td>
+            <h3>
+              {search
+                ? 'No products found'
+                : 'No products added yet'}
+            </h3>
 
-                  <td>
-                    <span
-                      className={
-                        product.stock === 0
-                          ? 'stock-danger'
-                          : product.stock < 10
-                            ? 'stock-warning'
-                            : 'stock-good'
-                      }
-                    >
-                      {product.stock}
-                    </span>
-                  </td>
+            <p>
+              {search
+                ? 'Try another product name, manufacturer or composition.'
+                : 'Add your first product to start building the pharmacy inventory.'}
+            </p>
+          </div>
+        )}
 
-                  <td>{product.mrp}</td>
-
-                  <td>
-                    <button className="more-button">•••</button>
-                  </td>
+        {!error && filteredProducts.length > 0 && (
+          <div className="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>Product</th>
+                  <th>Composition</th>
+                  <th>Manufacturer</th>
+                  <th>Pack</th>
+                  <th>Category</th>
+                  <th>Price</th>
+                  <th>Discount</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+
+              <tbody>
+                {filteredProducts.map((item) => {
+                  const product = item.products
+
+                  return (
+                    <tr key={item.id}>
+                      <td>
+                        <strong>
+                          {product.product_name}
+                        </strong>
+
+                        {product.strength_display && (
+                          <small
+                            style={{
+                              display: 'block',
+                              marginTop: '3px',
+                              color: '#7b8a9d',
+                            }}
+                          >
+                            {product.strength_display}
+                            {product.dosage_form
+                              ? ` • ${product.dosage_form}`
+                              : ''}
+                          </small>
+                        )}
+                      </td>
+
+                      <td>{getComposition(product)}</td>
+
+                      <td>
+                        {product.manufacturer || '—'}
+                      </td>
+
+                      <td>
+                        {product.pack_quantity
+                          ? `${product.pack_quantity} ${product.pack_unit || ''}`
+                          : '—'}
+                      </td>
+
+                      <td>
+                        {product.product_categories?.name ||
+                          '—'}
+                      </td>
+
+                      <td>
+                        {item.default_selling_price != null
+                          ? `₹${Number(
+                              item.default_selling_price,
+                            ).toFixed(2)}`
+                          : '—'}
+                      </td>
+
+                      <td>
+                        {item.default_discount_percent != null
+                          ? `${Number(
+                              item.default_discount_percent,
+                            )}%`
+                          : '0%'}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
     </>
   )
