@@ -167,12 +167,12 @@ function PageHeader({ title, description, action, onAction }) {
   )
 }
 
-function Dashboard({ setPage }) {
+function Dashboard({ setPage, storeName }) {
   return (
     <>
       <PageHeader
-        title="Good evening, User"
-        description="Here's what's happening at your pharmacy today."
+        title="Good evening"
+        description={`Here's what's happening at ${storeName} today.`}
       />
 
       <div className="stat-grid">
@@ -221,6 +221,7 @@ function Dashboard({ setPage }) {
         <section className="panel recent-sales">
           <div className="panel-header">
             <h2>Recent Sales</h2>
+
             <button
               className="text-button"
               onClick={() => setPage('sales')}
@@ -255,7 +256,9 @@ function Dashboard({ setPage }) {
                     <td>{sale.items}</td>
                     <td>{sale.total}</td>
                     <td>
-                      <span className="payment-badge">{sale.payment}</span>
+                      <span className="payment-badge">
+                        {sale.payment}
+                      </span>
                     </td>
                   </tr>
                 ))}
@@ -274,10 +277,12 @@ function Dashboard({ setPage }) {
             onClick={() => setPage('sales')}
           >
             <span className="quick-icon blue">▣</span>
+
             <span>
               <strong>New Sale</strong>
               <small>Create a billing invoice</small>
             </span>
+
             <b>›</b>
           </button>
 
@@ -286,10 +291,12 @@ function Dashboard({ setPage }) {
             onClick={() => setPage('purchases')}
           >
             <span className="quick-icon purple">🛒</span>
+
             <span>
               <strong>New Purchase</strong>
               <small>Record supplier invoice</small>
             </span>
+
             <b>›</b>
           </button>
 
@@ -298,10 +305,12 @@ function Dashboard({ setPage }) {
             onClick={() => setPage('inventory')}
           >
             <span className="quick-icon green">＋</span>
+
             <span>
               <strong>Add Product</strong>
               <small>Add a new medicine</small>
             </span>
+
             <b>›</b>
           </button>
 
@@ -310,10 +319,12 @@ function Dashboard({ setPage }) {
             onClick={() => setPage('customers')}
           >
             <span className="quick-icon orange">♙</span>
+
             <span>
               <strong>Add Customer</strong>
               <small>Create customer profile</small>
             </span>
+
             <b>›</b>
           </button>
         </section>
@@ -321,6 +332,7 @@ function Dashboard({ setPage }) {
         <section className="panel alerts-panel">
           <div className="panel-header">
             <h2>Alerts</h2>
+
             <button
               className="text-button"
               onClick={() => setPage('alerts')}
@@ -368,6 +380,7 @@ function Sales() {
         <section className="panel sales-products">
           <div className="search-box">
             <span>⌕</span>
+
             <input
               type="text"
               placeholder="Search product by name, brand or composition..."
@@ -376,7 +389,9 @@ function Sales() {
 
           <div className="empty-state">
             <div className="empty-icon">▣</div>
+
             <h3>Start a new sale</h3>
+
             <p>
               Search for a medicine, OTC product, cosmetic or medical
               device to add it to the bill.
@@ -438,6 +453,7 @@ function Inventory() {
         <div className="search-row">
           <div className="search-box">
             <span>⌕</span>
+
             <input
               type="text"
               placeholder="Search by product, brand or composition..."
@@ -467,9 +483,11 @@ function Inventory() {
                   <td>
                     <strong>{product.name}</strong>
                   </td>
+
                   <td>{product.composition}</td>
                   <td>{product.batch}</td>
                   <td>{product.expiry}</td>
+
                   <td>
                     <span
                       className={
@@ -483,7 +501,9 @@ function Inventory() {
                       {product.stock}
                     </span>
                   </td>
+
                   <td>{product.mrp}</td>
+
                   <td>
                     <button className="more-button">•••</button>
                   </td>
@@ -529,7 +549,9 @@ function Purchases() {
 
           <div className="empty-state compact">
             <div className="empty-icon">🛒</div>
+
             <h3>Add products to purchase</h3>
+
             <p>
               Products, batches, purchase rates, MRP, schemes and
               quantities will appear here.
@@ -588,6 +610,7 @@ function Customers() {
         <div className="search-row">
           <div className="search-box">
             <span>⌕</span>
+
             <input
               type="text"
               placeholder="Search customer by name or phone..."
@@ -652,20 +675,47 @@ function Reports() {
       />
 
       <div className="report-filter">
-        <button className="active">01 Sep 2026 → 19 Sep 2026</button>
+        <button className="active">
+          01 Sep 2026 → 19 Sep 2026
+        </button>
+
         <button>Apply</button>
       </div>
 
       <div className="stat-grid report-stats">
-        <StatCard icon="₹" title="Total Sales" value="₹2,48,320" tone="green" />
-        <StatCard icon="₹" title="Total Purchases" value="₹1,82,450" tone="purple" />
-        <StatCard icon="₹" title="Gross Profit" value="₹65,870" tone="blue" />
-        <StatCard icon="▣" title="Bill Count" value="482" tone="orange" />
+        <StatCard
+          icon="₹"
+          title="Total Sales"
+          value="₹2,48,320"
+          tone="green"
+        />
+
+        <StatCard
+          icon="₹"
+          title="Total Purchases"
+          value="₹1,82,450"
+          tone="purple"
+        />
+
+        <StatCard
+          icon="₹"
+          title="Gross Profit"
+          value="₹65,870"
+          tone="blue"
+        />
+
+        <StatCard
+          icon="▣"
+          title="Bill Count"
+          value="482"
+          tone="orange"
+        />
       </div>
 
       <section className="panel report-chart">
         <div className="panel-header">
           <h2>Sales Trend</h2>
+
           <select>
             <option>Daily</option>
             <option>Weekly</option>
@@ -710,7 +760,7 @@ function Alerts() {
   )
 }
 
-function Settings() {
+function Settings({ store, user, role }) {
   return (
     <>
       <PageHeader
@@ -731,19 +781,47 @@ function Settings() {
         <div className="form-grid">
           <label>
             Store Name
-            <input type="text" value="Main Store" readOnly />
+            <input
+              type="text"
+              value={store?.name || ''}
+              readOnly
+            />
           </label>
 
           <label>
             Phone
-            <input type="text" value="+91 98765 43210" readOnly />
+            <input
+              type="text"
+              value={store?.phone || ''}
+              placeholder="Not configured"
+              readOnly
+            />
           </label>
 
           <label className="full">
             Address
             <input
               type="text"
-              value="123 MG Road, Mumbai, Maharashtra"
+              value={store?.address || ''}
+              placeholder="Not configured"
+              readOnly
+            />
+          </label>
+
+          <label>
+            Your account
+            <input
+              type="text"
+              value={user?.email || ''}
+              readOnly
+            />
+          </label>
+
+          <label>
+            Your role
+            <input
+              type="text"
+              value={role || ''}
               readOnly
             />
           </label>
@@ -768,7 +846,9 @@ function Settings() {
           </label>
         </div>
 
-        <button className="primary-button">Save Changes</button>
+        <button className="primary-button">
+          Save Changes
+        </button>
       </section>
     </>
   )
@@ -777,20 +857,27 @@ function Settings() {
 function PharmacyApp() {
   const [page, setPage] = useState('dashboard')
   const [store, setStore] = useState(null)
+  const [role, setRole] = useState(null)
+  const [user, setUser] = useState(null)
   const [storeLoading, setStoreLoading] = useState(true)
-  
-    useEffect(() => {
+  const [storeError, setStoreError] = useState('')
+
+  useEffect(() => {
     async function loadStore() {
       setStoreLoading(true)
+      setStoreError('')
 
       const {
-        data: { user },
+        data: { user: currentUser },
       } = await supabase.auth.getUser()
 
-      if (!user) {
+      if (!currentUser) {
+        setStoreError('Your session could not be found.')
         setStoreLoading(false)
         return
       }
+
+      setUser(currentUser)
 
       const { data, error } = await supabase
         .from('store_memberships')
@@ -807,20 +894,124 @@ function PharmacyApp() {
             drug_license_number
           )
         `)
-        .eq('user_id', user.id)
+        .eq('user_id', currentUser.id)
         .eq('is_active', true)
         .limit(1)
         .maybeSingle()
 
-      if (!error && data?.stores) {
-        setStore(data.stores)
+      if (error) {
+        setStoreError(error.message)
+        setStoreLoading(false)
+        return
       }
 
+      if (!data?.stores) {
+        setStoreError(
+          'This account is not connected to an active pharmacy store.'
+        )
+        setStoreLoading(false)
+        return
+      }
+
+      setStore(data.stores)
+      setRole(data.role)
       setStoreLoading(false)
     }
 
     loadStore()
   }, [])
+
+  async function handleSignOut() {
+    await supabase.auth.signOut()
+  }
+
+  if (storeLoading) {
+    return (
+      <div
+        style={{
+          minHeight: '100vh',
+          display: 'grid',
+          placeItems: 'center',
+          background: '#f5f7fb',
+          color: '#687a90',
+          fontSize: '13px',
+        }}
+      >
+        Loading PharmDesk...
+      </div>
+    )
+  }
+
+  if (storeError || !store) {
+    return (
+      <div
+        style={{
+          minHeight: '100vh',
+          display: 'grid',
+          placeItems: 'center',
+          background: '#f5f7fb',
+          padding: '20px',
+        }}
+      >
+        <div
+          style={{
+            width: '100%',
+            maxWidth: '430px',
+            background: '#ffffff',
+            border: '1px solid #e7ecf2',
+            borderRadius: '14px',
+            padding: '32px',
+            textAlign: 'center',
+            boxShadow: '0 12px 40px rgba(16, 32, 51, 0.08)',
+          }}
+        >
+          <div
+            style={{
+              width: '48px',
+              height: '48px',
+              margin: '0 auto 16px',
+              display: 'grid',
+              placeItems: 'center',
+              borderRadius: '13px',
+              background: '#087ff5',
+              color: '#ffffff',
+              fontSize: '24px',
+              fontWeight: 800,
+            }}
+          >
+            +
+          </div>
+
+          <h2
+            style={{
+              margin: '0 0 10px',
+              color: '#172b4d',
+            }}
+          >
+            PharmDesk
+          </h2>
+
+          <p
+            style={{
+              margin: '0 0 20px',
+              color: '#687a90',
+              fontSize: '13px',
+              lineHeight: 1.6,
+            }}
+          >
+            {storeError || 'No pharmacy store is connected to this account.'}
+          </p>
+
+          <button
+            className="primary-button"
+            onClick={handleSignOut}
+          >
+            Sign out
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   const currentPage =
     navigation.find((item) => item.id === page) || navigation[0]
@@ -846,10 +1037,21 @@ function PharmacyApp() {
         return <Alerts />
 
       case 'settings':
-        return <Settings />
+        return (
+          <Settings
+            store={store}
+            user={user}
+            role={role}
+          />
+        )
 
       default:
-        return <Dashboard setPage={setPage} />
+        return (
+          <Dashboard
+            setPage={setPage}
+            storeName={store.name}
+          />
+        )
     }
   }
 
@@ -860,8 +1062,8 @@ function PharmacyApp() {
           <div className="brand-mark">✚</div>
 
           <div>
-            <strong>PharmacyPro</strong>
-            <span>Main Store</span>
+            <strong>PharmDesk</strong>
+            <span>{store.name}</span>
           </div>
         </div>
 
@@ -884,6 +1086,7 @@ function PharmacyApp() {
 
         <div className="connection-status">
           <span className="status-dot" />
+
           <div>
             <strong>Cloud Connected</strong>
             <small>All systems operational</small>
@@ -895,15 +1098,17 @@ function PharmacyApp() {
         <header className="topbar">
           <div className="mobile-brand">
             <div className="brand-mark">✚</div>
-            <strong>{store?.name || 'PharmDesk'}</strong>
+            <strong>PharmDesk</strong>
           </div>
 
           <div className="global-search">
             <span>⌕</span>
+
             <input
               type="text"
               placeholder="Search products, customers, invoices..."
             />
+
             <kbd>⌘ K</kbd>
           </div>
 
@@ -911,21 +1116,37 @@ function PharmacyApp() {
             <button className="icon-button">♧</button>
 
             <div className="user-menu">
-              <div className="avatar">U</div>
-
-              <div>
-                <strong>User</strong>
-                <small>Administrator</small>
+              <div className="avatar">
+                {(user?.email || 'U').charAt(0).toUpperCase()}
               </div>
 
-              <span>⌄</span>
+              <div>
+                <strong>
+                  {user?.email || 'User'}
+                </strong>
+
+                <small>
+                  {role || 'User'}
+                </small>
+              </div>
+
+              <button
+                type="button"
+                className="icon-button"
+                onClick={handleSignOut}
+                title="Sign out"
+              >
+                ↪
+              </button>
             </div>
           </div>
         </header>
 
         <div className="content">
           <div className="breadcrumb">
-            PharmacyPro <span>/</span> {currentPage.label}
+            {store.name}
+            <span>/</span>
+            {currentPage.label}
           </div>
 
           {renderPage()}
@@ -935,7 +1156,7 @@ function PharmacyApp() {
   )
 }
 
-function LoginScreen({ onLogin }) {
+function LoginScreen() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -943,6 +1164,7 @@ function LoginScreen({ onLogin }) {
 
   async function handleLogin(event) {
     event.preventDefault()
+
     setError('')
     setLoading(true)
 
@@ -953,8 +1175,6 @@ function LoginScreen({ onLogin }) {
 
     if (error) {
       setError(error.message)
-    } else {
-      onLogin()
     }
 
     setLoading(false)
@@ -981,7 +1201,12 @@ function LoginScreen({ onLogin }) {
           boxShadow: '0 12px 40px rgba(16, 32, 51, 0.08)',
         }}
       >
-        <div style={{ textAlign: 'center', marginBottom: '28px' }}>
+        <div
+          style={{
+            textAlign: 'center',
+            marginBottom: '28px',
+          }}
+        >
           <div
             style={{
               width: '48px',
@@ -1006,7 +1231,7 @@ function LoginScreen({ onLogin }) {
               fontSize: '24px',
             }}
           >
-            PharmacyPro
+            PharmDesk
           </h1>
 
           <p
@@ -1129,9 +1354,11 @@ function App() {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, newSession) => {
-      setSession(newSession)
-    })
+    } = supabase.auth.onAuthStateChange(
+      (_event, newSession) => {
+        setSession(newSession)
+      },
+    )
 
     return () => subscription.unsubscribe()
   }, [])
@@ -1148,13 +1375,13 @@ function App() {
           fontSize: '13px',
         }}
       >
-        Loading...
+        Loading PharmDesk...
       </div>
     )
   }
 
   if (!session) {
-    return <LoginScreen onLogin={() => {}} />
+    return <LoginScreen />
   }
 
   return <PharmacyApp />
