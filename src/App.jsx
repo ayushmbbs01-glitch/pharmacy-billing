@@ -895,7 +895,7 @@ function PharmacyApp() {
         <header className="topbar">
           <div className="mobile-brand">
             <div className="brand-mark">✚</div>
-            <strong>PharmacyPro</strong>
+            <strong>{store?.name || 'PharmDesk'}</strong>
           </div>
 
           <div className="global-search">
