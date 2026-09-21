@@ -776,6 +776,8 @@ function Settings() {
 
 function PharmacyApp() {
   const [page, setPage] = useState('dashboard')
+  const [store, setStore] = useState(null)
+  const [storeLoading, setStoreLoading] = useState(true)
 
   const currentPage =
     navigation.find((item) => item.id === page) || navigation[0]
