@@ -2,20 +2,59 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { supabase } from './lib/supabase'
 
 /* =========================================================
+   HELPERS
+========================================================= */
+
+function formatCurrency(value) {
+  return `₹${Number(value || 0).toLocaleString('en-IN', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`
+}
+
+function initials(value) {
+  if (!value) return 'P'
+
+  return value
+    .split(/[\s@._-]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join('')
+    .toUpperCase()
+}
+
+/* =========================================================
    SHARED UI
 ========================================================= */
 
-function PageHeader({ title, description, action, onAction }) {
+function PageHeader({
+  title,
+  description,
+  action,
+  onAction,
+}) {
   return (
     <div className="page-header">
-      <div>
-        <div className="breadcrumb">PharmDesk</div>
+      <div className="page-header-copy">
+        <div className="breadcrumb">
+          PharmDesk
+          <span>/</span>
+          {title}
+        </div>
+
         <h1>{title}</h1>
-        <p>{description}</p>
+
+        {description && (
+          <p>{description}</p>
+        )}
       </div>
 
       {action && (
-        <button className="primary-button" onClick={onAction}>
+        <button
+          className="primary-button"
+          onClick={onAction}
+        >
           + {action}
         </button>
       )}
@@ -23,57 +62,129 @@ function PageHeader({ title, description, action, onAction }) {
   )
 }
 
-function StatCard({ label, value, detail, icon }) {
+function StatCard({
+  label,
+  value,
+  detail,
+  icon,
+  tone = 'blue',
+}) {
   return (
-    <div className="stat-card">
-      <div className="stat-icon">{icon}</div>
-      <div>
+    <div className={`stat-card stat-${tone}`}>
+      <div className="stat-card-top">
+        <div className="stat-icon">
+          {icon}
+        </div>
+
         <span>{label}</span>
-        <strong>{value}</strong>
-        {detail && <small>{detail}</small>}
       </div>
+
+      <strong className="stat-value">
+        {value}
+      </strong>
+
+      {detail && (
+        <small className="stat-detail">
+          {detail}
+        </small>
+      )}
     </div>
   )
 }
 
-function Modal({ title, children, onClose, wide = false }) {
+function Modal({
+  title,
+  children,
+  onClose,
+  wide = false,
+}) {
   return (
-    <div className="modal-backdrop">
-      <div className={`modal ${wide ? 'modal-wide' : ''}`}>
+    <div
+      className="modal-backdrop"
+      onMouseDown={(event) => {
+        if (
+          event.target === event.currentTarget
+        ) {
+          onClose()
+        }
+      }}
+    >
+      <div
+        className={`modal ${
+          wide ? 'modal-wide' : ''
+        }`}
+      >
         <div className="modal-header">
           <div>
             <h2>{title}</h2>
           </div>
 
-          <button className="icon-button" onClick={onClose}>
+          <button
+            className="icon-button"
+            onClick={onClose}
+            aria-label="Close"
+          >
             ×
           </button>
         </div>
 
-        <div className="modal-body">{children}</div>
+        <div className="modal-body">
+          {children}
+        </div>
       </div>
     </div>
   )
 }
 
-function Field({ label, children, required = false }) {
+function Field({
+  label,
+  children,
+  required = false,
+}) {
   return (
     <label className="field">
       <span>
         {label}
-        {required && <b> *</b>}
+        {required && (
+          <b className="required-mark">
+            {' '}*
+          </b>
+        )}
       </span>
+
       {children}
     </label>
   )
 }
 
-function EmptyState({ title, description }) {
+function EmptyState({
+  title,
+  description,
+}) {
   return (
     <div className="empty-state">
-      <div className="empty-icon">▤</div>
+      <div className="empty-icon">
+        ▤
+      </div>
+
       <h3>{title}</h3>
-      <p>{description}</p>
+
+      {description && (
+        <p>{description}</p>
+      )}
+    </div>
+  )
+}
+
+function Message({
+  type = 'success',
+  children,
+}) {
+  if (!children) return null
+
+  return (
+    <div className={`${type}-message`}>
+      {children}
     </div>
   )
 }
@@ -82,7 +193,10 @@ function EmptyState({ title, description }) {
    DASHBOARD
 ========================================================= */
 
-function Dashboard({ store }) {
+function Dashboard({
+  store,
+  onNavigate,
+}) {
   const [stats, setStats] = useState({
     sales: 0,
     purchases: 0,
@@ -90,27 +204,43 @@ function Dashboard({ store }) {
     lowStock: 0,
   })
 
-  const [loading, setLoading] = useState(true)
+  const [recentSales, setRecentSales] =
+    useState([])
+
+  const [loading, setLoading] =
+    useState(true)
 
   useEffect(() => {
-    async function load() {
+    async function loadDashboard() {
       if (!store?.id) return
 
-      const today = new Date().toISOString().slice(0, 10)
+      setLoading(true)
+
+      const today =
+        new Date()
+          .toISOString()
+          .slice(0, 10)
 
       const [
         salesResult,
         purchasesResult,
         productsResult,
-        lowStockResult,
+        batchesResult,
+        recentResult,
       ] = await Promise.all([
         supabase
           .from('sales')
           .select('grand_total')
           .eq('store_id', store.id)
           .eq('status', 'completed')
-          .gte('bill_datetime', `${today}T00:00:00`)
-          .lt('bill_datetime', `${today}T23:59:59.999`),
+          .gte(
+            'bill_datetime',
+            `${today}T00:00:00`,
+          )
+          .lt(
+            'bill_datetime',
+            `${today}T23:59:59.999`,
+          ),
 
         supabase
           .from('purchase_invoices')
@@ -120,51 +250,97 @@ function Dashboard({ store }) {
 
         supabase
           .from('store_products')
-          .select('id', { count: 'exact', head: true })
+          .select('id', {
+            count: 'exact',
+            head: true,
+          })
           .eq('store_id', store.id)
           .eq('is_active', true),
 
         supabase
           .from('batches')
-          .select('current_stock_units')
+          .select(
+            'product_id,current_stock_units',
+          )
           .eq('store_id', store.id)
           .eq('is_active', true),
+
+        supabase
+          .from('sales')
+          .select(
+            `
+              id,
+              invoice_number,
+              grand_total,
+              bill_datetime,
+              customer_id,
+              customers (
+                name
+              )
+            `,
+          )
+          .eq('store_id', store.id)
+          .eq('status', 'completed')
+          .order('bill_datetime', {
+            ascending: false,
+          })
+          .limit(5),
       ])
 
       const sales =
         (salesResult.data || []).reduce(
-          (sum, row) => sum + Number(row.grand_total || 0),
+          (sum, row) =>
+            sum +
+            Number(
+              row.grand_total || 0,
+            ),
           0,
         )
 
       const purchases =
         (purchasesResult.data || []).reduce(
-          (sum, row) => sum + Number(row.total_amount || 0),
+          (sum, row) =>
+            sum +
+            Number(
+              row.total_amount || 0,
+            ),
           0,
         )
 
-      const lowStock = (lowStockResult.data || []).filter(
-        (batch) => Number(batch.current_stock_units || 0) <= 0,
-      ).length
+      const lowStock =
+        (batchesResult.data || []).filter(
+          (batch) =>
+            Number(
+              batch.current_stock_units || 0,
+            ) <= 0,
+        ).length
 
       setStats({
         sales,
         purchases,
-        products: productsResult.count || 0,
+        products:
+          productsResult.count || 0,
         lowStock,
       })
+
+      setRecentSales(
+        recentResult.data || [],
+      )
 
       setLoading(false)
     }
 
-    load()
+    loadDashboard()
   }, [store?.id])
 
   return (
     <>
       <PageHeader
         title="Dashboard"
-        description={`Overview of ${store?.name || 'your pharmacy'}`}
+        description={`Overview of ${
+          store?.name ||
+          'your pharmacy'
+        }`}
       />
 
       <div className="stats-grid">
@@ -173,12 +349,13 @@ function Dashboard({ store }) {
           value={
             loading
               ? '…'
-              : `₹${stats.sales.toLocaleString('en-IN', {
-                  maximumFractionDigits: 2,
-                })}`
+              : formatCurrency(
+                  stats.sales,
+                )
           }
-          detail="Completed bills"
+          detail="Completed bills today"
           icon="₹"
+          tone="blue"
         />
 
         <StatCard
@@ -186,81 +363,231 @@ function Dashboard({ store }) {
           value={
             loading
               ? '…'
-              : `₹${stats.purchases.toLocaleString('en-IN', {
-                  maximumFractionDigits: 2,
-                })}`
+              : formatCurrency(
+                  stats.purchases,
+                )
           }
-          detail="Purchase invoices"
+          detail="Supplier invoices today"
           icon="↓"
+          tone="green"
         />
 
         <StatCard
           label="Active Products"
-          value={loading ? '…' : stats.products}
-          detail="Products in store"
+          value={
+            loading
+              ? '…'
+              : stats.products
+          }
+          detail="Products in this store"
           icon="▤"
+          tone="purple"
         />
 
         <StatCard
           label="Stock Alerts"
-          value={loading ? '…' : stats.lowStock}
+          value={
+            loading
+              ? '…'
+              : stats.lowStock
+          }
           detail="Currently out of stock"
           icon="!"
+          tone="orange"
         />
       </div>
 
-      <div className="dashboard-grid">
-        <section className="panel">
+      <div className="dashboard-main-grid">
+        <section className="panel recent-sales-panel">
+          <div className="panel-header">
+            <div>
+              <h2>Recent sales</h2>
+              <p>
+                Latest completed pharmacy bills
+              </p>
+            </div>
+
+            <button
+              className="text-button"
+              onClick={() =>
+                onNavigate('Sales')
+              }
+            >
+              View sales →
+            </button>
+          </div>
+
+          {recentSales.length === 0 ? (
+            <EmptyState
+              title="No sales yet"
+              description="Completed bills will appear here."
+            />
+          ) : (
+            <div className="recent-sales-list">
+              {recentSales.map(
+                (sale) => (
+                  <div
+                    className="recent-sale"
+                    key={sale.id}
+                  >
+                    <div className="recent-sale-icon">
+                      ₹
+                    </div>
+
+                    <div className="recent-sale-main">
+                      <strong>
+                        {sale.invoice_number ||
+                          'Sale'}
+                      </strong>
+
+                      <span>
+                        {sale.customers
+                          ?.name ||
+                          'Walk-in customer'}
+                      </span>
+                    </div>
+
+                    <div className="recent-sale-right">
+                      <strong>
+                        {formatCurrency(
+                          sale.grand_total,
+                        )}
+                      </strong>
+
+                      <span>
+                        {new Date(
+                          sale.bill_datetime,
+                        ).toLocaleTimeString(
+                          'en-IN',
+                          {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          },
+                        )}
+                      </span>
+                    </div>
+                  </div>
+                ),
+              )}
+            </div>
+          )}
+        </section>
+
+        <section className="panel quick-actions-panel">
           <div className="panel-header">
             <div>
               <h2>Quick actions</h2>
-              <p>Common pharmacy operations</p>
+              <p>
+                Common pharmacy operations
+              </p>
             </div>
           </div>
 
           <div className="quick-actions">
-            <div>
-              <strong>New Sale</strong>
-              <span>Create a customer bill</span>
-            </div>
+            <button
+              className="quick-action"
+              onClick={() =>
+                onNavigate('Sales')
+              }
+            >
+              <span className="quick-action-icon blue">
+                ₹
+              </span>
 
-            <div>
-              <strong>New Purchase</strong>
-              <span>Receive supplier stock</span>
-            </div>
+              <span>
+                <strong>New Sale</strong>
+                <small>
+                  Create a customer bill
+                </small>
+              </span>
 
-            <div>
-              <strong>Inventory</strong>
-              <span>Check stock and batches</span>
-            </div>
+              <b>→</b>
+            </button>
 
-            <div>
-              <strong>Reports</strong>
-              <span>Review pharmacy activity</span>
-            </div>
-          </div>
-        </section>
+            <button
+              className="quick-action"
+              onClick={() =>
+                onNavigate('Purchases')
+              }
+            >
+              <span className="quick-action-icon green">
+                ↓
+              </span>
 
-        <section className="panel">
-          <div className="panel-header">
-            <div>
-              <h2>PharmDesk</h2>
-              <p>Connected to your pharmacy database</p>
-            </div>
-          </div>
+              <span>
+                <strong>New Purchase</strong>
+                <small>
+                  Receive supplier stock
+                </small>
+              </span>
 
-          <div className="system-status">
-            <span className="status-dot" />
-            <div>
-              <strong>System connected</strong>
-              <p>
-                Your pharmacy data is being stored securely in
-                Supabase.
-              </p>
-            </div>
+              <b>→</b>
+            </button>
+
+            <button
+              className="quick-action"
+              onClick={() =>
+                onNavigate('Inventory')
+              }
+            >
+              <span className="quick-action-icon purple">
+                ▤
+              </span>
+
+              <span>
+                <strong>Inventory</strong>
+                <small>
+                  Check stock and batches
+                </small>
+              </span>
+
+              <b>→</b>
+            </button>
+
+            <button
+              className="quick-action"
+              onClick={() =>
+                onNavigate('Reports')
+              }
+            >
+              <span className="quick-action-icon orange">
+                ▥
+              </span>
+
+              <span>
+                <strong>Reports</strong>
+                <small>
+                  Review pharmacy activity
+                </small>
+              </span>
+
+              <b>→</b>
+            </button>
           </div>
         </section>
       </div>
+
+      <section className="panel system-panel">
+        <div className="system-status">
+          <span className="status-dot" />
+
+          <div>
+            <strong>
+              PharmDesk is connected
+            </strong>
+
+            <p>
+              Your pharmacy data is being
+              stored securely in the connected
+              cloud database.
+            </p>
+          </div>
+
+          <span className="connected-badge">
+            Cloud Connected
+          </span>
+        </div>
+      </section>
     </>
   )
 }
@@ -269,19 +596,41 @@ function Dashboard({ store }) {
    SALES
 ========================================================= */
 
-function Sales({ store, user }) {
-  const [products, setProducts] = useState([])
-  const [customers, setCustomers] = useState([])
-  const [search, setSearch] = useState('')
-  const [cart, setCart] = useState([])
-  const [customerId, setCustomerId] = useState('')
-  const [billDiscount, setBillDiscount] = useState(0)
-  const [paymentRows, setPaymentRows] = useState([
-    { payment_method: 'cash', amount: '' },
-  ])
-  const [loading, setLoading] = useState(false)
-  const [message, setMessage] = useState('')
-  const [error, setError] = useState('')
+function Sales({ store }) {
+  const [products, setProducts] =
+    useState([])
+
+  const [customers, setCustomers] =
+    useState([])
+
+  const [search, setSearch] =
+    useState('')
+
+  const [cart, setCart] =
+    useState([])
+
+  const [customerId, setCustomerId] =
+    useState('')
+
+  const [billDiscount, setBillDiscount] =
+    useState(0)
+
+  const [paymentRows, setPaymentRows] =
+    useState([
+      {
+        payment_method: 'cash',
+        amount: '',
+      },
+    ])
+
+  const [loading, setLoading] =
+    useState(false)
+
+  const [message, setMessage] =
+    useState('')
+
+  const [error, setError] =
+    useState('')
 
   useEffect(() => {
     loadProducts()
@@ -310,7 +659,9 @@ function Sales({ store, user }) {
       `)
       .eq('store_id', store.id)
       .eq('is_active', true)
-      .order('created_at', { ascending: false })
+      .order('created_at', {
+        ascending: false,
+      })
 
     setProducts(data || [])
   }
@@ -320,7 +671,9 @@ function Sales({ store, user }) {
 
     const { data } = await supabase
       .from('customers')
-      .select('id,name,phone,customer_type')
+      .select(
+        'id,name,phone,customer_type',
+      )
       .eq('store_id', store.id)
       .eq('is_active', true)
       .order('name')
@@ -333,22 +686,26 @@ function Sales({ store, user }) {
 
     const product = item.products
 
-    const { data: batches, error: batchError } =
-      await supabase
-        .from('batches')
-        .select(`
-          id,
-          batch_number,
-          expiry_date,
-          units_per_pack,
-          mrp_per_pack,
-          current_stock_units
-        `)
-        .eq('store_id', store.id)
-        .eq('product_id', item.product_id)
-        .eq('is_active', true)
-        .gt('current_stock_units', 0)
-        .order('expiry_date', { ascending: true })
+    const {
+      data: batches,
+      error: batchError,
+    } = await supabase
+      .from('batches')
+      .select(`
+        id,
+        batch_number,
+        expiry_date,
+        units_per_pack,
+        mrp_per_pack,
+        current_stock_units
+      `)
+      .eq('store_id', store.id)
+      .eq('product_id', item.product_id)
+      .eq('is_active', true)
+      .gt('current_stock_units', 0)
+      .order('expiry_date', {
+        ascending: true,
+      })
 
     if (batchError) {
       setError(batchError.message)
@@ -356,178 +713,306 @@ function Sales({ store, user }) {
     }
 
     if (!batches?.length) {
-      setError(`${product.product_name} has no available stock.`)
+      setError(
+        `${product.product_name} has no available stock.`,
+      )
       return
     }
 
     const batch = batches[0]
 
     const existing = cart.find(
-      (row) => row.product_id === item.product_id,
+      (row) =>
+        row.product_id ===
+        item.product_id,
     )
 
     if (existing) {
-      setCart(
-        cart.map((row) =>
-          row.product_id === item.product_id
-            ? {
-                ...row,
-                quantity_entered:
-                  Number(row.quantity_entered) + 1,
-                quantity_units:
-                  (Number(row.quantity_entered) + 1) *
-                  Number(row.units_per_pack),
-              }
-            : row,
+      updateCartItem(
+        cart.findIndex(
+          (row) =>
+            row.product_id ===
+            item.product_id,
         ),
+        {
+          quantity_entered:
+            Number(
+              existing.quantity_entered,
+            ) + 1,
+        },
       )
+
       return
     }
 
     setCart([
       ...cart,
       {
-        product_id: item.product_id,
+        product_id:
+          item.product_id,
         batch_id: batch.id,
-        product_name: product.product_name,
+        product_name:
+          product.product_name,
         generic_display_name:
-          product.generic_display_name || '',
-        manufacturer: product.manufacturer || '',
-        strength_display: product.strength_display || '',
-        dosage_form: product.dosage_form || '',
+          product.generic_display_name ||
+          '',
+        manufacturer:
+          product.manufacturer || '',
+        strength_display:
+          product.strength_display || '',
+        dosage_form:
+          product.dosage_form || '',
         unit_type: 'pack',
         quantity_entered: 1,
-        quantity_units: Number(batch.units_per_pack || 1),
-        units_per_pack: Number(batch.units_per_pack || 1),
-        mrp_per_pack: Number(batch.mrp_per_pack || 0),
+        quantity_units:
+          Number(
+            batch.units_per_pack || 1,
+          ),
+        units_per_pack:
+          Number(
+            batch.units_per_pack || 1,
+          ),
+        mrp_per_pack:
+          Number(
+            batch.mrp_per_pack || 0,
+          ),
         selling_price_per_pack:
-          Number(item.default_selling_price ?? batch.mrp_per_pack ?? 0),
+          Number(
+            item.default_selling_price ??
+              batch.mrp_per_pack ??
+              0,
+          ),
         default_discount_percent:
-          Number(item.default_discount_percent || 0),
+          Number(
+            item.default_discount_percent ||
+              0,
+          ),
         discount_percent:
-          Number(item.default_discount_percent || 0),
-        gst_rate: Number(product.gst_rate || 0),
-        expiry_date: batch.expiry_date,
-        batch_number: batch.batch_number,
+          Number(
+            item.default_discount_percent ||
+              0,
+          ),
+        gst_rate:
+          Number(
+            product.gst_rate || 0,
+          ),
+        expiry_date:
+          batch.expiry_date,
+        batch_number:
+          batch.batch_number,
       },
     ])
+
+    setSearch('')
   }
 
-  function updateCartItem(index, changes) {
+  function updateCartItem(
+    index,
+    changes,
+  ) {
     setCart((current) =>
-      current.map((item, itemIndex) => {
-        if (itemIndex !== index) return item
+      current.map(
+        (item, itemIndex) => {
+          if (
+            itemIndex !== index
+          ) {
+            return item
+          }
 
-        const next = { ...item, ...changes }
+          const next = {
+            ...item,
+            ...changes,
+          }
 
-        if (next.unit_type === 'pack') {
-          next.quantity_units =
-            Number(next.quantity_entered || 0) *
-            Number(next.units_per_pack || 1)
-        } else {
-          next.quantity_units =
-            Number(next.quantity_entered || 0)
-        }
+          if (
+            next.unit_type ===
+            'pack'
+          ) {
+            next.quantity_units =
+              Number(
+                next.quantity_entered ||
+                  0,
+              ) *
+              Number(
+                next.units_per_pack ||
+                  1,
+              )
+          } else {
+            next.quantity_units =
+              Number(
+                next.quantity_entered ||
+                  0,
+              )
+          }
 
-        return next
-      }),
+          return next
+        },
+      ),
     )
   }
 
   function removeCartItem(index) {
     setCart((current) =>
-      current.filter((_, itemIndex) => itemIndex !== index),
+      current.filter(
+        (_, itemIndex) =>
+          itemIndex !== index,
+      ),
     )
   }
 
-  const filteredProducts = products.filter((item) => {
-    const p = item.products
-    const q = search.toLowerCase().trim()
+  const filteredProducts =
+    products.filter((item) => {
+      const p = item.products
+      const q =
+        search
+          .toLowerCase()
+          .trim()
 
-    if (!q) return false
+      if (!q) return false
 
-    return [
-      p?.product_name,
-      p?.generic_display_name,
-      p?.manufacturer,
-      p?.strength_display,
-      p?.dosage_form,
-    ]
-      .filter(Boolean)
-      .join(' ')
-      .toLowerCase()
-      .includes(q)
-  })
+      return [
+        p?.product_name,
+        p?.generic_display_name,
+        p?.manufacturer,
+        p?.strength_display,
+        p?.dosage_form,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+        .includes(q)
+    })
 
   const totals = useMemo(() => {
     let subtotal = 0
-    let discount = 0
-    let taxable = 0
+    let itemDiscount = 0
     let gst = 0
 
     cart.forEach((item) => {
-      const gross =
-        Number(item.quantity_entered || 0) *
-        Number(item.selling_price_per_pack || 0)
+      const packPrice =
+        Number(
+          item.selling_price_per_pack ||
+            0,
+        )
 
-      const itemDiscount =
+      const quantity =
+        Number(
+          item.quantity_entered || 0,
+        )
+
+      const gross =
+        item.unit_type === 'pack'
+          ? quantity * packPrice
+          : quantity *
+            (packPrice /
+              Math.max(
+                Number(
+                  item.units_per_pack ||
+                    1,
+                ),
+                1,
+              ))
+
+      const discountAmount =
         gross *
-        Number(item.discount_percent || 0) /
+        Number(
+          item.discount_percent || 0,
+        ) /
         100
 
-      const afterDiscount = gross - itemDiscount
+      const afterDiscount =
+        gross - discountAmount
 
-      const rate = Number(item.gst_rate || 0)
+      const rate =
+        Number(
+          item.gst_rate || 0,
+        )
 
-      const taxableAmount =
+      const taxable =
         rate > 0
-          ? afterDiscount / (1 + rate / 100)
+          ? afterDiscount /
+            (1 + rate / 100)
           : afterDiscount
 
-      const gstAmount = afterDiscount - taxableAmount
+      const gstAmount =
+        afterDiscount - taxable
 
       subtotal += gross
-      discount += itemDiscount
-      taxable += taxableAmount
+      itemDiscount +=
+        discountAmount
       gst += gstAmount
     })
 
-    const total =
-      subtotal -
-      discount -
-      Number(billDiscount || 0)
+    const billDiscountAmount =
+      Math.max(
+        0,
+        Number(
+          billDiscount || 0,
+        ),
+      )
 
-    const paid = paymentRows.reduce(
-      (sum, row) => sum + Number(row.amount || 0),
+    const total = Math.max(
       0,
+      subtotal -
+        itemDiscount -
+        billDiscountAmount,
     )
+
+    const paid =
+      paymentRows.reduce(
+        (sum, row) =>
+          sum +
+          Number(
+            row.amount || 0,
+          ),
+        0,
+      )
 
     return {
       subtotal,
-      discount,
-      taxable,
+      itemDiscount,
       gst,
-      total: Math.max(0, total),
+      billDiscount:
+        billDiscountAmount,
+      total,
       paid,
-      due: Math.max(0, total - paid),
+      due: Math.max(
+        0,
+        total - paid,
+      ),
     }
-  }, [cart, billDiscount, paymentRows])
+  }, [
+    cart,
+    billDiscount,
+    paymentRows,
+  ])
 
   async function completeSale() {
     setError('')
     setMessage('')
 
     if (!cart.length) {
-      setError('Add at least one product to the bill.')
+      setError(
+        'Add at least one product to the bill.',
+      )
       return
     }
 
-    const payments = paymentRows
-      .filter((row) => Number(row.amount || 0) > 0)
-      .map((row) => ({
-        payment_method: row.payment_method,
-        amount: Number(row.amount),
-      }))
+    const payments =
+      paymentRows
+        .filter(
+          (row) =>
+            Number(
+              row.amount || 0,
+            ) > 0,
+        )
+        .map((row) => ({
+          payment_method:
+            row.payment_method,
+          amount: Number(
+            row.amount,
+          ),
+        }))
 
     if (
       totals.due > 0 &&
@@ -540,63 +1025,101 @@ function Sales({ store, user }) {
     }
 
     if (
-      totals.paid > totals.total
+      totals.paid >
+      totals.total
     ) {
-      setError('Payment exceeds the bill total.')
+      setError(
+        'Payment exceeds the bill total.',
+      )
       return
     }
 
     setLoading(true)
 
-    const { data, error: saleError } =
-      await supabase.rpc(
-        'pharmdesk_complete_sale',
-        {
-          p_store_id: store.id,
-          p_customer_id:
-            customerId || null,
-          p_bill_datetime:
-            new Date().toISOString(),
-          p_bill_discount_amount:
-            Number(billDiscount || 0),
-          p_notes: null,
-          p_items: cart.map((item) => ({
-            product_id: item.product_id,
-            batch_id: item.batch_id,
-            unit_type: item.unit_type,
+    const {
+      data,
+      error: saleError,
+    } = await supabase.rpc(
+      'pharmdesk_complete_sale',
+      {
+        p_store_id: store.id,
+        p_customer_id:
+          customerId || null,
+        p_bill_datetime:
+          new Date().toISOString(),
+        p_bill_discount_amount:
+          Number(
+            billDiscount || 0,
+          ),
+        p_notes: null,
+        p_items: cart.map(
+          (item) => ({
+            product_id:
+              item.product_id,
+            batch_id:
+              item.batch_id,
+            unit_type:
+              item.unit_type,
             quantity_entered:
-              Number(item.quantity_entered),
+              Number(
+                item.quantity_entered,
+              ),
             units_per_pack:
-              Number(item.units_per_pack),
+              Number(
+                item.units_per_pack,
+              ),
             mrp_per_pack:
-              Number(item.mrp_per_pack),
+              Number(
+                item.mrp_per_pack,
+              ),
             selling_price_per_pack:
-              Number(item.selling_price_per_pack),
+              Number(
+                item.selling_price_per_pack,
+              ),
             default_discount_percent:
-              Number(item.default_discount_percent),
+              Number(
+                item.default_discount_percent,
+              ),
             discount_percent:
-              Number(item.discount_percent),
+              Number(
+                item.discount_percent,
+              ),
             gst_rate:
-              Number(item.gst_rate),
-          })),
-          p_payments: payments,
-        },
-      )
+              Number(
+                item.gst_rate,
+              ),
+          }),
+        ),
+        p_payments: payments,
+      },
+    )
 
     setLoading(false)
 
     if (saleError) {
-      setError(saleError.message)
+      setError(
+        saleError.message,
+      )
       return
     }
 
-    setMessage(`Sale completed successfully.`)
+    setMessage(
+      data?.invoice_number
+        ? `Sale completed: ${data.invoice_number}`
+        : 'Sale completed successfully.',
+    )
+
     setCart([])
     setCustomerId('')
     setBillDiscount(0)
+
     setPaymentRows([
-      { payment_method: 'cash', amount: '' },
+      {
+        payment_method: 'cash',
+        amount: '',
+      },
     ])
+
     setSearch('')
   }
 
@@ -610,12 +1133,19 @@ function Sales({ store, user }) {
     ])
   }
 
-  function updatePayment(index, changes) {
+  function updatePayment(
+    index,
+    changes,
+  ) {
     setPaymentRows((current) =>
-      current.map((row, rowIndex) =>
-        rowIndex === index
-          ? { ...row, ...changes }
-          : row,
+      current.map(
+        (row, rowIndex) =>
+          rowIndex === index
+            ? {
+                ...row,
+                ...changes,
+              }
+            : row,
       ),
     )
   }
@@ -627,24 +1157,23 @@ function Sales({ store, user }) {
         description="Create pharmacy bills and record payments."
       />
 
-      {message && (
-        <div className="success-message">
-          {message}
-        </div>
-      )}
+      <Message type="success">
+        {message}
+      </Message>
 
-      {error && (
-        <div className="error-message">
-          {error}
-        </div>
-      )}
+      <Message type="error">
+        {error}
+      </Message>
 
       <div className="billing-layout">
         <section className="panel billing-main">
           <div className="panel-header">
             <div>
               <h2>New Sale</h2>
-              <p>Search and add products to the bill.</p>
+              <p>
+                Search by brand, composition,
+                manufacturer or strength.
+              </p>
             </div>
           </div>
 
@@ -654,7 +1183,9 @@ function Sales({ store, user }) {
             <input
               value={search}
               onChange={(event) =>
-                setSearch(event.target.value)
+                setSearch(
+                  event.target.value,
+                )
               }
               placeholder="Search brand, composition or manufacturer..."
             />
@@ -662,39 +1193,53 @@ function Sales({ store, user }) {
 
           {search && (
             <div className="search-results">
-              {filteredProducts.length === 0 ? (
+              {filteredProducts.length ===
+              0 ? (
                 <div className="search-empty">
-                  No matching products found.
+                  No matching products
+                  found.
                 </div>
               ) : (
-                filteredProducts.slice(0, 8).map((item) => {
-                  const p = item.products
+                filteredProducts
+                  .slice(0, 8)
+                  .map((item) => {
+                    const p =
+                      item.products
 
-                  return (
-                    <button
-                      className="search-result"
-                      key={item.id}
-                      onClick={() => addProduct(item)}
-                    >
-                      <div>
-                        <strong>{p.product_name}</strong>
-                        <span>
-                          {p.generic_display_name || ''}
-                          {p.strength_display
-                            ? ` • ${p.strength_display}`
-                            : ''}
-                        </span>
-                      </div>
+                    return (
+                      <button
+                        className="search-result"
+                        key={item.id}
+                        onClick={() =>
+                          addProduct(
+                            item,
+                          )
+                        }
+                      >
+                        <div>
+                          <strong>
+                            {
+                              p.product_name
+                            }
+                          </strong>
 
-                      <b>
-                        ₹
-                        {Number(
-                          item.default_selling_price || 0,
-                        ).toFixed(2)}
-                      </b>
-                    </button>
-                  )
-                })
+                          <span>
+                            {p.generic_display_name ||
+                              ''}
+                            {p.strength_display
+                              ? ` • ${p.strength_display}`
+                              : ''}
+                          </span>
+                        </div>
+
+                        <b>
+                          {formatCurrency(
+                            item.default_selling_price,
+                          )}
+                        </b>
+                      </button>
+                    )
+                  })
               )}
             </div>
           )}
@@ -715,100 +1260,163 @@ function Sales({ store, user }) {
                 description="Search for a product above to begin."
               />
             ) : (
-              cart.map((item, index) => {
-                const gross =
-                  Number(item.quantity_entered || 0) *
-                  Number(item.selling_price_per_pack || 0)
+              cart.map(
+                (item, index) => {
+                  const packPrice =
+                    Number(
+                      item.selling_price_per_pack ||
+                        0,
+                    )
 
-                const discount =
-                  gross *
-                  Number(item.discount_percent || 0) /
-                  100
+                  const quantity =
+                    Number(
+                      item.quantity_entered ||
+                        0,
+                    )
 
-                return (
-                  <div
-                    className="cart-row"
-                    key={`${item.product_id}-${index}`}
-                  >
-                    <div>
+                  const gross =
+                    item.unit_type ===
+                    'pack'
+                      ? quantity *
+                        packPrice
+                      : quantity *
+                        (packPrice /
+                          Math.max(
+                            Number(
+                              item.units_per_pack ||
+                                1,
+                            ),
+                            1,
+                          ))
+
+                  const discount =
+                    gross *
+                    Number(
+                      item.discount_percent ||
+                        0,
+                    ) /
+                    100
+
+                  return (
+                    <div
+                      className="cart-row"
+                      key={`${item.product_id}-${index}`}
+                    >
+                      <div className="cart-product">
+                        <strong>
+                          {
+                            item.product_name
+                          }
+                        </strong>
+
+                        <small>
+                          {
+                            item.batch_number
+                          }
+
+                          {item.expiry_date
+                            ? ` • Exp ${item.expiry_date}`
+                            : ''}
+                        </small>
+                      </div>
+
+                      <select
+                        value={
+                          item.unit_type
+                        }
+                        onChange={(
+                          event,
+                        ) =>
+                          updateCartItem(
+                            index,
+                            {
+                              unit_type:
+                                event
+                                  .target
+                                  .value,
+                            },
+                          )
+                        }
+                      >
+                        <option value="pack">
+                          Pack
+                        </option>
+
+                        <option value="unit">
+                          Tablet / Unit
+                        </option>
+                      </select>
+
+                      <input
+                        className="small-input"
+                        type="number"
+                        min="1"
+                        value={
+                          item.quantity_entered
+                        }
+                        onChange={(
+                          event,
+                        ) =>
+                          updateCartItem(
+                            index,
+                            {
+                              quantity_entered:
+                                Number(
+                                  event
+                                    .target
+                                    .value,
+                                ),
+                            },
+                          )
+                        }
+                      />
+
+                      <input
+                        className="small-input"
+                        type="number"
+                        min="0"
+                        max="100"
+                        value={
+                          item.discount_percent
+                        }
+                        onChange={(
+                          event,
+                        ) =>
+                          updateCartItem(
+                            index,
+                            {
+                              discount_percent:
+                                Number(
+                                  event
+                                    .target
+                                    .value,
+                                ),
+                            },
+                          )
+                        }
+                      />
+
                       <strong>
-                        {item.product_name}
+                        {formatCurrency(
+                          gross -
+                            discount,
+                        )}
                       </strong>
 
-                      <small>
-                        {item.batch_number}
-                        {item.expiry_date
-                          ? ` • Exp ${item.expiry_date}`
-                          : ''}
-                      </small>
+                      <button
+                        className="delete-button"
+                        onClick={() =>
+                          removeCartItem(
+                            index,
+                          )
+                        }
+                      >
+                        ×
+                      </button>
                     </div>
-
-                    <select
-                      value={item.unit_type}
-                      onChange={(event) =>
-                        updateCartItem(index, {
-                          unit_type:
-                            event.target.value,
-                        })
-                      }
-                    >
-                      <option value="pack">
-                        Pack
-                      </option>
-                      <option value="unit">
-                        Tablet/Unit
-                      </option>
-                    </select>
-
-                    <input
-                      className="small-input"
-                      type="number"
-                      min="1"
-                      value={item.quantity_entered}
-                      onChange={(event) =>
-                        updateCartItem(index, {
-                          quantity_entered:
-                            Number(
-                              event.target.value,
-                            ),
-                        })
-                      }
-                    />
-
-                    <input
-                      className="small-input"
-                      type="number"
-                      min="0"
-                      max="100"
-                      value={item.discount_percent}
-                      onChange={(event) =>
-                        updateCartItem(index, {
-                          discount_percent:
-                            Number(
-                              event.target.value,
-                            ),
-                        })
-                      }
-                    />
-
-                    <strong>
-                      ₹
-                      {(
-                        gross - discount
-                      ).toFixed(2)}
-                    </strong>
-
-                    <button
-                      className="delete-button"
-                      onClick={() =>
-                        removeCartItem(index)
-                      }
-                    >
-                      ×
-                    </button>
-                  </div>
-                )
-              })
+                  )
+                },
+              )
             )}
           </div>
         </section>
@@ -818,78 +1426,122 @@ function Sales({ store, user }) {
             <div className="panel-header">
               <div>
                 <h2>Customer</h2>
-                <p>Optional for walk-in sales.</p>
+                <p>
+                  Optional for walk-in
+                  sales.
+                </p>
               </div>
             </div>
 
             <select
               value={customerId}
               onChange={(event) =>
-                setCustomerId(event.target.value)
+                setCustomerId(
+                  event.target.value,
+                )
               }
             >
               <option value="">
-                Walk-in / Anonymous Customer
+                Walk-in / Anonymous
               </option>
 
-              {customers.map((customer) => (
-                <option
-                  key={customer.id}
-                  value={customer.id}
-                >
-                  {customer.name}
-                  {customer.phone
-                    ? ` • ${customer.phone}`
-                    : ''}
-                </option>
-              ))}
+              {customers.map(
+                (customer) => (
+                  <option
+                    key={customer.id}
+                    value={
+                      customer.id
+                    }
+                  >
+                    {customer.name}
+
+                    {customer.phone
+                      ? ` • ${customer.phone}`
+                      : ''}
+                  </option>
+                ),
+              )}
             </select>
           </section>
 
           <section className="panel">
             <div className="panel-header">
               <div>
-                <h2>Bill Summary</h2>
+                <h2>
+                  Bill Summary
+                </h2>
               </div>
             </div>
 
             <div className="summary-line">
-              <span>Subtotal</span>
-              <b>₹{totals.subtotal.toFixed(2)}</b>
-            </div>
+              <span>
+                Subtotal
+              </span>
 
-            <div className="summary-line">
-              <span>Item discount</span>
               <b>
-                − ₹{totals.discount.toFixed(2)}
+                {formatCurrency(
+                  totals.subtotal,
+                )}
               </b>
             </div>
 
             <div className="summary-line">
-              <span>Bill discount</span>
+              <span>
+                Item discount
+              </span>
+
+              <b>
+                −{' '}
+                {formatCurrency(
+                  totals.itemDiscount,
+                )}
+              </b>
+            </div>
+
+            <div className="summary-line">
+              <span>
+                Bill discount
+              </span>
 
               <input
                 className="summary-input"
                 type="number"
                 min="0"
-                value={billDiscount}
-                onChange={(event) =>
+                value={
+                  billDiscount
+                }
+                onChange={(
+                  event,
+                ) =>
                   setBillDiscount(
-                    Number(event.target.value),
+                    Number(
+                      event.target
+                        .value,
+                    ),
                   )
                 }
               />
             </div>
 
             <div className="summary-line">
-              <span>GST included</span>
-              <b>₹{totals.gst.toFixed(2)}</b>
+              <span>
+                GST included
+              </span>
+
+              <b>
+                {formatCurrency(
+                  totals.gst,
+                )}
+              </b>
             </div>
 
             <div className="grand-total">
               <span>Total</span>
+
               <strong>
-                ₹{totals.total.toFixed(2)}
+                {formatCurrency(
+                  totals.total,
+                )}
               </strong>
             </div>
           </section>
@@ -902,69 +1554,109 @@ function Sales({ store, user }) {
 
               <button
                 className="text-button"
-                onClick={addPaymentRow}
+                onClick={
+                  addPaymentRow
+                }
               >
                 + Split
               </button>
             </div>
 
-            {paymentRows.map((row, index) => (
-              <div
-                className="payment-row"
-                key={index}
-              >
-                <select
-                  value={row.payment_method}
-                  onChange={(event) =>
-                    updatePayment(index, {
-                      payment_method:
-                        event.target.value,
-                    })
-                  }
+            {paymentRows.map(
+              (row, index) => (
+                <div
+                  className="payment-row"
+                  key={index}
                 >
-                  <option value="cash">
-                    Cash
-                  </option>
-                  <option value="upi">
-                    UPI
-                  </option>
-                  <option value="card">
-                    Card
-                  </option>
-                  <option value="credit">
-                    Credit
-                  </option>
-                </select>
+                  <select
+                    value={
+                      row.payment_method
+                    }
+                    onChange={(
+                      event,
+                    ) =>
+                      updatePayment(
+                        index,
+                        {
+                          payment_method:
+                            event
+                              .target
+                              .value,
+                        },
+                      )
+                    }
+                  >
+                    <option value="cash">
+                      Cash
+                    </option>
 
-                <input
-                  type="number"
-                  min="0"
-                  value={row.amount}
-                  onChange={(event) =>
-                    updatePayment(index, {
-                      amount:
-                        event.target.value,
-                    })
-                  }
-                  placeholder="Amount"
-                />
-              </div>
-            ))}
+                    <option value="upi">
+                      UPI
+                    </option>
+
+                    <option value="card">
+                      Card
+                    </option>
+
+                    <option value="credit">
+                      Credit
+                    </option>
+                  </select>
+
+                  <input
+                    type="number"
+                    min="0"
+                    value={
+                      row.amount
+                    }
+                    onChange={(
+                      event,
+                    ) =>
+                      updatePayment(
+                        index,
+                        {
+                          amount:
+                            event
+                              .target
+                              .value,
+                        },
+                      )
+                    }
+                    placeholder="Amount"
+                  />
+                </div>
+              ),
+            )}
 
             <div className="summary-line">
               <span>Paid</span>
-              <b>₹{totals.paid.toFixed(2)}</b>
+
+              <b>
+                {formatCurrency(
+                  totals.paid,
+                )}
+              </b>
             </div>
 
             <div className="summary-line">
               <span>Due</span>
-              <b>₹{totals.due.toFixed(2)}</b>
+
+              <b>
+                {formatCurrency(
+                  totals.due,
+                )}
+              </b>
             </div>
 
             <button
               className="primary-button full-width"
-              disabled={loading || !cart.length}
-              onClick={completeSale}
+              disabled={
+                loading ||
+                !cart.length
+              }
+              onClick={
+                completeSale
+              }
             >
               {loading
                 ? 'Processing…'
@@ -982,29 +1674,58 @@ function Sales({ store, user }) {
 ========================================================= */
 
 function Purchases({ store }) {
-  const [suppliers, setSuppliers] = useState([])
-  const [products, setProducts] = useState([])
+  const [suppliers, setSuppliers] =
+    useState([])
 
-  const [supplierId, setSupplierId] = useState('')
-  const [invoiceNumber, setInvoiceNumber] = useState('')
+  const [products, setProducts] =
+    useState([])
+
+  const [supplierId, setSupplierId] =
+    useState('')
+
+  const [
+    invoiceNumber,
+    setInvoiceNumber,
+  ] = useState('')
+
   const [invoiceDate, setInvoiceDate] =
     useState(
-      new Date().toISOString().slice(0, 10),
+      new Date()
+        .toISOString()
+        .slice(0, 10),
     )
 
-  const [search, setSearch] = useState('')
-  const [items, setItems] = useState([])
+  const [search, setSearch] =
+    useState('')
 
-  const [discount, setDiscount] = useState(0)
-  const [cgst, setCgst] = useState(0)
-  const [sgst, setSgst] = useState(0)
-  const [igst, setIgst] = useState(0)
-  const [otherCharges, setOtherCharges] =
+  const [items, setItems] =
+    useState([])
+
+  const [discount, setDiscount] =
     useState(0)
 
-  const [loading, setLoading] = useState(false)
-  const [message, setMessage] = useState('')
-  const [error, setError] = useState('')
+  const [cgst, setCgst] =
+    useState(0)
+
+  const [sgst, setSgst] =
+    useState(0)
+
+  const [igst, setIgst] =
+    useState(0)
+
+  const [
+    otherCharges,
+    setOtherCharges,
+  ] = useState(0)
+
+  const [loading, setLoading] =
+    useState(false)
+
+  const [message, setMessage] =
+    useState('')
+
+  const [error, setError] =
+    useState('')
 
   useEffect(() => {
     loadSuppliers()
@@ -1014,14 +1735,23 @@ function Purchases({ store }) {
   async function loadSuppliers() {
     if (!store?.id) return
 
-    const { data } = await supabase
-      .from('suppliers')
-      .select(
-        'id,supplier_name,phone,gstin',
-      )
-      .eq('store_id', store.id)
-      .eq('is_active', true)
-      .order('supplier_name')
+    const { data } =
+      await supabase
+        .from('suppliers')
+        .select(
+          'id,supplier_name,phone,gstin',
+        )
+        .eq(
+          'store_id',
+          store.id,
+        )
+        .eq(
+          'is_active',
+          true,
+        )
+        .order(
+          'supplier_name',
+        )
 
     setSuppliers(data || [])
   }
@@ -1029,67 +1759,86 @@ function Purchases({ store }) {
   async function loadProducts() {
     if (!store?.id) return
 
-    const { data } = await supabase
-      .from('store_products')
-      .select(`
-        id,
-        product_id,
-        default_selling_price,
-        products (
+    const { data } =
+      await supabase
+        .from('store_products')
+        .select(`
           id,
-          product_name,
-          generic_display_name,
-          manufacturer,
-          strength_display,
-          gst_rate
+          product_id,
+          default_selling_price,
+          products (
+            id,
+            product_name,
+            generic_display_name,
+            manufacturer,
+            strength_display,
+            gst_rate
+          )
+        `)
+        .eq(
+          'store_id',
+          store.id,
         )
-      `)
-      .eq('store_id', store.id)
-      .eq('is_active', true)
-      .order('created_at', {
-        ascending: false,
-      })
+        .eq(
+          'is_active',
+          true,
+        )
+        .order(
+          'created_at',
+          {
+            ascending: false,
+          },
+        )
 
     setProducts(data || [])
   }
 
-  const searchResults = products.filter(
-    (item) => {
-      const p = item.products
-      const q = search
-        .toLowerCase()
-        .trim()
+  const searchResults =
+    products.filter(
+      (item) => {
+        const p =
+          item.products
 
-      if (!q) return false
+        const q =
+          search
+            .toLowerCase()
+            .trim()
 
-      return [
-        p?.product_name,
-        p?.generic_display_name,
-        p?.manufacturer,
-        p?.strength_display,
-      ]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase()
-        .includes(q)
-    },
-  )
+        if (!q) return false
+
+        return [
+          p?.product_name,
+          p?.generic_display_name,
+          p?.manufacturer,
+          p?.strength_display,
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase()
+          .includes(q)
+      },
+    )
 
   function addItem(item) {
-    const p = item.products
+    const p =
+      item.products
 
-    const exists = items.find(
-      (row) =>
-        row.product_id === item.product_id,
-    )
+    const exists =
+      items.find(
+        (row) =>
+          row.product_id ===
+          item.product_id,
+      )
 
     if (exists) return
 
     setItems([
       ...items,
       {
-        product_id: item.product_id,
-        product_name: p.product_name,
+        product_id:
+          item.product_id,
+        product_name:
+          p.product_name,
         paid_packs: 1,
         free_packs: 0,
         loose_units: 0,
@@ -1099,22 +1848,33 @@ function Purchases({ store }) {
         purchase_rate_per_pack: 0,
         mrp_per_pack:
           Number(
-            item.default_selling_price || 0,
+            item.default_selling_price ||
+              0,
           ),
         supplier_discount_percent: 0,
-        gst_rate: Number(p.gst_rate || 0),
+        gst_rate:
+          Number(
+            p.gst_rate || 0,
+          ),
       },
     ])
 
     setSearch('')
   }
 
-  function updateItem(index, changes) {
+  function updateItem(
+    index,
+    changes,
+  ) {
     setItems((current) =>
-      current.map((item, itemIndex) =>
-        itemIndex === index
-          ? { ...item, ...changes }
-          : item,
+      current.map(
+        (item, itemIndex) =>
+          itemIndex === index
+            ? {
+                ...item,
+                ...changes,
+              }
+            : item,
       ),
     )
   }
@@ -1128,15 +1888,19 @@ function Purchases({ store }) {
     )
   }
 
-  const subtotal = items.reduce(
-    (sum, item) =>
-      sum +
-      Number(item.paid_packs || 0) *
+  const subtotal =
+    items.reduce(
+      (sum, item) =>
+        sum +
         Number(
-          item.purchase_rate_per_pack || 0,
-        ),
-    0,
-  )
+          item.paid_packs || 0,
+        ) *
+          Number(
+            item.purchase_rate_per_pack ||
+              0,
+          ),
+      0,
+    )
 
   const total =
     subtotal -
@@ -1151,7 +1915,9 @@ function Purchases({ store }) {
     setMessage('')
 
     if (!supplierId) {
-      setError('Select a supplier.')
+      setError(
+        'Select a supplier.',
+      )
       return
     }
 
@@ -1185,9 +1951,15 @@ function Purchases({ store }) {
       }
 
       if (
-        Number(item.paid_packs || 0) +
-          Number(item.free_packs || 0) +
-          Number(item.loose_units || 0) <=
+        Number(
+          item.paid_packs || 0,
+        ) +
+          Number(
+            item.free_packs || 0,
+          ) +
+          Number(
+            item.loose_units || 0,
+          ) <=
         0
       ) {
         setError(
@@ -1199,29 +1971,46 @@ function Purchases({ store }) {
 
     setLoading(true)
 
-    const { error: purchaseError } =
-      await supabase.rpc(
-        'pharmdesk_complete_purchase',
-        {
-          p_store_id: store.id,
-          p_supplier_id: supplierId,
-          p_invoice_number:
-            invoiceNumber.trim(),
-          p_invoice_date: invoiceDate,
-          p_items: items.map((item) => ({
-            product_id: item.product_id,
-            batch_number: item.batch_number,
-            expiry_date: item.expiry_date,
+    const {
+      error: purchaseError,
+    } = await supabase.rpc(
+      'pharmdesk_complete_purchase',
+      {
+        p_store_id: store.id,
+        p_supplier_id:
+          supplierId,
+        p_invoice_number:
+          invoiceNumber.trim(),
+        p_invoice_date:
+          invoiceDate,
+        p_items: items.map(
+          (item) => ({
+            product_id:
+              item.product_id,
+            batch_number:
+              item.batch_number,
+            expiry_date:
+              item.expiry_date,
             units_per_pack:
               Number(
-                item.units_per_pack || 1,
+                item.units_per_pack ||
+                  1,
               ),
             paid_packs:
-              Number(item.paid_packs || 0),
+              Number(
+                item.paid_packs ||
+                  0,
+              ),
             free_packs:
-              Number(item.free_packs || 0),
+              Number(
+                item.free_packs ||
+                  0,
+              ),
             loose_units:
-              Number(item.loose_units || 0),
+              Number(
+                item.loose_units ||
+                  0,
+              ),
             purchase_rate_per_pack:
               Number(
                 item.purchase_rate_per_pack ||
@@ -1229,7 +2018,8 @@ function Purchases({ store }) {
               ),
             mrp_per_pack:
               Number(
-                item.mrp_per_pack || 0,
+                item.mrp_per_pack ||
+                  0,
               ),
             supplier_discount_percent:
               Number(
@@ -1237,26 +2027,36 @@ function Purchases({ store }) {
                   0,
               ),
             gst_rate:
-              Number(item.gst_rate || 0),
-          })),
-          p_discount_amount:
-            Number(discount || 0),
-          p_cgst_amount:
-            Number(cgst || 0),
-          p_sgst_amount:
-            Number(sgst || 0),
-          p_igst_amount:
-            Number(igst || 0),
-          p_other_charges:
-            Number(otherCharges || 0),
-          p_notes: null,
-        },
-      )
+              Number(
+                item.gst_rate ||
+                  0,
+              ),
+          }),
+        ),
+        p_discount_amount:
+          Number(
+            discount || 0,
+          ),
+        p_cgst_amount:
+          Number(cgst || 0),
+        p_sgst_amount:
+          Number(sgst || 0),
+        p_igst_amount:
+          Number(igst || 0),
+        p_other_charges:
+          Number(
+            otherCharges || 0,
+          ),
+        p_notes: null,
+      },
+    )
 
     setLoading(false)
 
     if (purchaseError) {
-      setError(purchaseError.message)
+      setError(
+        purchaseError.message,
+      )
       return
     }
 
@@ -1281,21 +2081,20 @@ function Purchases({ store }) {
         description="Receive supplier invoices and add stock."
       />
 
-      {message && (
-        <div className="success-message">
-          {message}
-        </div>
-      )}
+      <Message type="success">
+        {message}
+      </Message>
 
-      {error && (
-        <div className="error-message">
-          {error}
-        </div>
-      )}
+      <Message type="error">
+        {error}
+      </Message>
 
       <section className="panel">
         <div className="form-grid three">
-          <Field label="Supplier" required>
+          <Field
+            label="Supplier"
+            required
+          >
             <select
               value={supplierId}
               onChange={(event) =>
@@ -1308,14 +2107,22 @@ function Purchases({ store }) {
                 Select supplier
               </option>
 
-              {suppliers.map((supplier) => (
-                <option
-                  key={supplier.id}
-                  value={supplier.id}
-                >
-                  {supplier.supplier_name}
-                </option>
-              ))}
+              {suppliers.map(
+                (supplier) => (
+                  <option
+                    key={
+                      supplier.id
+                    }
+                    value={
+                      supplier.id
+                    }
+                  >
+                    {
+                      supplier.supplier_name
+                    }
+                  </option>
+                ),
+              )}
             </select>
           </Field>
 
@@ -1324,10 +2131,15 @@ function Purchases({ store }) {
             required
           >
             <input
-              value={invoiceNumber}
-              onChange={(event) =>
+              value={
+                invoiceNumber
+              }
+              onChange={(
+                event,
+              ) =>
                 setInvoiceNumber(
-                  event.target.value,
+                  event.target
+                    .value,
                 )
               }
               placeholder="e.g. INV-45821"
@@ -1340,10 +2152,15 @@ function Purchases({ store }) {
           >
             <input
               type="date"
-              value={invoiceDate}
-              onChange={(event) =>
+              value={
+                invoiceDate
+              }
+              onChange={(
+                event,
+              ) =>
                 setInvoiceDate(
-                  event.target.value,
+                  event.target
+                    .value,
                 )
               }
             />
@@ -1356,8 +2173,8 @@ function Purchases({ store }) {
           <div>
             <h2>Products</h2>
             <p>
-              Add every product appearing on the
-              supplier invoice.
+              Add products appearing on
+              the supplier invoice.
             </p>
           </div>
         </div>
@@ -1368,7 +2185,9 @@ function Purchases({ store }) {
           <input
             value={search}
             onChange={(event) =>
-              setSearch(event.target.value)
+              setSearch(
+                event.target.value,
+              )
             }
             placeholder="Search product or composition..."
           />
@@ -1388,14 +2207,20 @@ function Purchases({ store }) {
                 >
                   <div>
                     <strong>
-                      {item.products
-                        ?.product_name}
+                      {
+                        item
+                          .products
+                          ?.product_name
+                      }
                     </strong>
 
                     <span>
-                      {item.products
-                        ?.generic_display_name ||
-                        ''}
+                      {
+                        item
+                          .products
+                          ?.generic_display_name ||
+                        ''
+                      }
                     </span>
                   </div>
                 </button>
@@ -1410,162 +2235,234 @@ function Purchases({ store }) {
           />
         ) : (
           <div className="purchase-items">
-            {items.map((item, index) => (
-              <div
-                className="purchase-item"
-                key={`${item.product_id}-${index}`}
-              >
-                <div className="purchase-item-title">
-                  <strong>
-                    {item.product_name}
-                  </strong>
+            {items.map(
+              (item, index) => (
+                <div
+                  className="purchase-item"
+                  key={`${item.product_id}-${index}`}
+                >
+                  <div className="purchase-item-title">
+                    <strong>
+                      {
+                        item.product_name
+                      }
+                    </strong>
 
-                  <button
-                    className="delete-button"
-                    onClick={() =>
-                      removeItem(index)
-                    }
-                  >
-                    ×
-                  </button>
+                    <button
+                      className="delete-button"
+                      onClick={() =>
+                        removeItem(
+                          index,
+                        )
+                      }
+                    >
+                      ×
+                    </button>
+                  </div>
+
+                  <div className="form-grid four">
+                    <Field
+                      label="Batch number"
+                      required
+                    >
+                      <input
+                        value={
+                          item.batch_number
+                        }
+                        onChange={(
+                          event,
+                        ) =>
+                          updateItem(
+                            index,
+                            {
+                              batch_number:
+                                event
+                                  .target
+                                  .value,
+                            },
+                          )
+                        }
+                      />
+                    </Field>
+
+                    <Field
+                      label="Expiry"
+                      required
+                    >
+                      <input
+                        type="date"
+                        value={
+                          item.expiry_date
+                        }
+                        onChange={(
+                          event,
+                        ) =>
+                          updateItem(
+                            index,
+                            {
+                              expiry_date:
+                                event
+                                  .target
+                                  .value,
+                            },
+                          )
+                        }
+                      />
+                    </Field>
+
+                    <Field label="Units / pack">
+                      <input
+                        type="number"
+                        min="1"
+                        value={
+                          item.units_per_pack
+                        }
+                        onChange={(
+                          event,
+                        ) =>
+                          updateItem(
+                            index,
+                            {
+                              units_per_pack:
+                                Number(
+                                  event
+                                    .target
+                                    .value,
+                                ),
+                            },
+                          )
+                        }
+                      />
+                    </Field>
+
+                    <Field label="Paid packs">
+                      <input
+                        type="number"
+                        min="0"
+                        value={
+                          item.paid_packs
+                        }
+                        onChange={(
+                          event,
+                        ) =>
+                          updateItem(
+                            index,
+                            {
+                              paid_packs:
+                                Number(
+                                  event
+                                    .target
+                                    .value,
+                                ),
+                            },
+                          )
+                        }
+                      />
+                    </Field>
+
+                    <Field label="Free / scheme">
+                      <input
+                        type="number"
+                        min="0"
+                        value={
+                          item.free_packs
+                        }
+                        onChange={(
+                          event,
+                        ) =>
+                          updateItem(
+                            index,
+                            {
+                              free_packs:
+                                Number(
+                                  event
+                                    .target
+                                    .value,
+                                ),
+                            },
+                          )
+                        }
+                      />
+                    </Field>
+
+                    <Field label="Loose units">
+                      <input
+                        type="number"
+                        min="0"
+                        value={
+                          item.loose_units
+                        }
+                        onChange={(
+                          event,
+                        ) =>
+                          updateItem(
+                            index,
+                            {
+                              loose_units:
+                                Number(
+                                  event
+                                    .target
+                                    .value,
+                                ),
+                            },
+                          )
+                        }
+                      />
+                    </Field>
+
+                    <Field label="Purchase rate">
+                      <input
+                        type="number"
+                        min="0"
+                        value={
+                          item.purchase_rate_per_pack
+                        }
+                        onChange={(
+                          event,
+                        ) =>
+                          updateItem(
+                            index,
+                            {
+                              purchase_rate_per_pack:
+                                Number(
+                                  event
+                                    .target
+                                    .value,
+                                ),
+                            },
+                          )
+                        }
+                      />
+                    </Field>
+
+                    <Field label="MRP">
+                      <input
+                        type="number"
+                        min="0"
+                        value={
+                          item.mrp_per_pack
+                        }
+                        onChange={(
+                          event,
+                        ) =>
+                          updateItem(
+                            index,
+                            {
+                              mrp_per_pack:
+                                Number(
+                                  event
+                                    .target
+                                    .value,
+                                ),
+                            },
+                          )
+                        }
+                      />
+                    </Field>
+                  </div>
                 </div>
-
-                <div className="form-grid four">
-                  <Field
-                    label="Batch number"
-                    required
-                  >
-                    <input
-                      value={item.batch_number}
-                      onChange={(event) =>
-                        updateItem(index, {
-                          batch_number:
-                            event.target.value,
-                        })
-                      }
-                    />
-                  </Field>
-
-                  <Field
-                    label="Expiry"
-                    required
-                  >
-                    <input
-                      type="date"
-                      value={item.expiry_date}
-                      onChange={(event) =>
-                        updateItem(index, {
-                          expiry_date:
-                            event.target.value,
-                        })
-                      }
-                    />
-                  </Field>
-
-                  <Field label="Units / pack">
-                    <input
-                      type="number"
-                      min="1"
-                      value={
-                        item.units_per_pack
-                      }
-                      onChange={(event) =>
-                        updateItem(index, {
-                          units_per_pack:
-                            Number(
-                              event.target.value,
-                            ),
-                        })
-                      }
-                    />
-                  </Field>
-
-                  <Field label="Paid packs">
-                    <input
-                      type="number"
-                      min="0"
-                      value={item.paid_packs}
-                      onChange={(event) =>
-                        updateItem(index, {
-                          paid_packs:
-                            Number(
-                              event.target.value,
-                            ),
-                        })
-                      }
-                    />
-                  </Field>
-
-                  <Field label="Free / scheme">
-                    <input
-                      type="number"
-                      min="0"
-                      value={item.free_packs}
-                      onChange={(event) =>
-                        updateItem(index, {
-                          free_packs:
-                            Number(
-                              event.target.value,
-                            ),
-                        })
-                      }
-                    />
-                  </Field>
-
-                  <Field label="Loose units">
-                    <input
-                      type="number"
-                      min="0"
-                      value={item.loose_units}
-                      onChange={(event) =>
-                        updateItem(index, {
-                          loose_units:
-                            Number(
-                              event.target.value,
-                            ),
-                        })
-                      }
-                    />
-                  </Field>
-
-                  <Field label="Purchase rate">
-                    <input
-                      type="number"
-                      min="0"
-                      value={
-                        item.purchase_rate_per_pack
-                      }
-                      onChange={(event) =>
-                        updateItem(index, {
-                          purchase_rate_per_pack:
-                            Number(
-                              event.target.value,
-                            ),
-                        })
-                      }
-                    />
-                  </Field>
-
-                  <Field label="MRP">
-                    <input
-                      type="number"
-                      min="0"
-                      value={
-                        item.mrp_per_pack
-                      }
-                      onChange={(event) =>
-                        updateItem(index, {
-                          mrp_per_pack:
-                            Number(
-                              event.target.value,
-                            ),
-                        })
-                      }
-                    />
-                  </Field>
-                </div>
-              </div>
-            ))}
+              ),
+            )}
           </div>
         )}
       </section>
@@ -1582,10 +2479,17 @@ function Purchases({ store }) {
             <input
               type="number"
               min="0"
-              value={discount}
-              onChange={(event) =>
+              value={
+                discount
+              }
+              onChange={(
+                event,
+              ) =>
                 setDiscount(
-                  Number(event.target.value),
+                  Number(
+                    event.target
+                      .value,
+                  ),
                 )
               }
             />
@@ -1596,9 +2500,14 @@ function Purchases({ store }) {
               type="number"
               min="0"
               value={cgst}
-              onChange={(event) =>
+              onChange={(
+                event,
+              ) =>
                 setCgst(
-                  Number(event.target.value),
+                  Number(
+                    event.target
+                      .value,
+                  ),
                 )
               }
             />
@@ -1609,9 +2518,14 @@ function Purchases({ store }) {
               type="number"
               min="0"
               value={sgst}
-              onChange={(event) =>
+              onChange={(
+                event,
+              ) =>
                 setSgst(
-                  Number(event.target.value),
+                  Number(
+                    event.target
+                      .value,
+                  ),
                 )
               }
             />
@@ -1622,9 +2536,14 @@ function Purchases({ store }) {
               type="number"
               min="0"
               value={igst}
-              onChange={(event) =>
+              onChange={(
+                event,
+              ) =>
                 setIgst(
-                  Number(event.target.value),
+                  Number(
+                    event.target
+                      .value,
+                  ),
                 )
               }
             />
@@ -1634,10 +2553,17 @@ function Purchases({ store }) {
             <input
               type="number"
               min="0"
-              value={otherCharges}
-              onChange={(event) =>
+              value={
+                otherCharges
+              }
+              onChange={(
+                event,
+              ) =>
                 setOtherCharges(
-                  Number(event.target.value),
+                  Number(
+                    event.target
+                      .value,
+                  ),
                 )
               }
             />
@@ -1645,18 +2571,29 @@ function Purchases({ store }) {
         </div>
 
         <div className="purchase-total">
-          <span>Total purchase</span>
+          <span>
+            Total purchase
+          </span>
+
           <strong>
-            ₹{Math.max(0, total).toFixed(2)}
+            {formatCurrency(
+              Math.max(
+                0,
+                total,
+              ),
+            )}
           </strong>
         </div>
 
         <button
           className="primary-button"
           disabled={
-            loading || items.length === 0
+            loading ||
+            items.length === 0
           }
-          onClick={completePurchase}
+          onClick={
+            completePurchase
+          }
         >
           {loading
             ? 'Processing…'
@@ -1672,10 +2609,20 @@ function Purchases({ store }) {
 ========================================================= */
 
 function Inventory({ store }) {
-  const [products, setProducts] = useState([])
-  const [search, setSearch] = useState('')
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
+  const [products, setProducts] =
+    useState([])
+
+  const [search, setSearch] =
+    useState('')
+
+  const [activeTab, setActiveTab] =
+    useState('Products')
+
+  const [loading, setLoading] =
+    useState(true)
+
+  const [error, setError] =
+    useState('')
 
   async function loadProducts() {
     if (!store?.id) return
@@ -1683,7 +2630,10 @@ function Inventory({ store }) {
     setLoading(true)
     setError('')
 
-    const { data, error } = await supabase
+    const {
+      data,
+      error: productsError,
+    } = await supabase
       .from('store_products')
       .select(`
         id,
@@ -1715,14 +2665,25 @@ function Inventory({ store }) {
           )
         )
       `)
-      .eq('store_id', store.id)
-      .eq('is_active', true)
-      .order('created_at', {
-        ascending: false,
-      })
+      .eq(
+        'store_id',
+        store.id,
+      )
+      .eq(
+        'is_active',
+        true,
+      )
+      .order(
+        'created_at',
+        {
+          ascending: false,
+        },
+      )
 
-    if (error) {
-      setError(error.message)
+    if (productsError) {
+      setError(
+        productsError.message,
+      )
       setLoading(false)
       return
     }
@@ -1736,32 +2697,44 @@ function Inventory({ store }) {
   }, [store?.id])
 
   const filteredProducts =
-    products.filter((item) => {
-      const product = item.products
-      if (!product) return false
+    products.filter(
+      (item) => {
+        const product =
+          item.products
 
-      const q = search
-        .toLowerCase()
-        .trim()
+        if (!product) {
+          return false
+        }
 
-      if (!q) return true
+        const q =
+          search
+            .toLowerCase()
+            .trim()
 
-      return [
-        product.product_name,
-        product.generic_display_name,
-        product.manufacturer,
-        product.strength_display,
-        product.dosage_form,
-        product.product_categories?.name,
-        product.compositions?.name,
-      ]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase()
-        .includes(q)
-    })
+        if (!q) return true
 
-  function getComposition(product) {
+        return [
+          product.product_name,
+          product.generic_display_name,
+          product.manufacturer,
+          product.strength_display,
+          product.dosage_form,
+          product
+            .product_categories
+            ?.name,
+          product.compositions
+            ?.name,
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase()
+          .includes(q)
+      },
+    )
+
+  function getComposition(
+    product,
+  ) {
     if (!product?.compositions) {
       return (
         product?.generic_display_name ||
@@ -1771,21 +2744,24 @@ function Inventory({ store }) {
 
     const ingredients =
       product.compositions
-        .composition_ingredients || []
+        .composition_ingredients ||
+      []
 
     if (!ingredients.length) {
       return (
-        product.compositions.name ||
-        '—'
+        product.compositions
+          .name || '—'
       )
     }
 
     return ingredients
       .map((ingredient) => {
         const strength =
-          ingredient.strength_value != null
+          ingredient.strength_value !=
+          null
             ? `${ingredient.strength_value} ${
-                ingredient.strength_unit || ''
+                ingredient.strength_unit ||
+                ''
               }`.trim()
             : ''
 
@@ -1819,153 +2795,203 @@ function Inventory({ store }) {
       <PageHeader
         title="Inventory"
         description="Manage products, batches, expiry and physical stock."
+        action="Add Product"
+        onAction={() => {
+          setError(
+            'Product creation will be connected to the product master in the next backend step.',
+          )
+        }}
       />
 
+      <Message type="error">
+        {error}
+      </Message>
+
       <div className="section-tabs">
-        <button className="active">
-          Products
-        </button>
-        <button>Batches</button>
-        <button>Expiry</button>
-        <button>Low Stock</button>
-        <button>Dead Stock</button>
-        <button>
-          Stock Reconciliation
-        </button>
+        {[
+          'Products',
+          'Batches',
+          'Expiry',
+          'Low Stock',
+          'Dead Stock',
+          'Stock Reconciliation',
+        ].map((tab) => (
+          <button
+            key={tab}
+            className={
+              activeTab === tab
+                ? 'active'
+                : ''
+            }
+            onClick={() =>
+              setActiveTab(tab)
+            }
+          >
+            {tab}
+          </button>
+        ))}
       </div>
 
-      <section className="panel">
-        <div className="search-row">
-          <div className="search-box">
-            <span>⌕</span>
+      {activeTab === 'Products' ? (
+        <section className="panel">
+          <div className="search-row">
+            <div className="search-box">
+              <span>⌕</span>
 
-            <input
-              value={search}
-              onChange={(event) =>
-                setSearch(event.target.value)
-              }
-              placeholder="Search by product, brand, manufacturer or composition..."
-            />
-          </div>
-
-          <button className="filter-button">
-            Filters
-          </button>
-        </div>
-
-        {error && (
-          <div className="error-message">
-            {error}
-          </div>
-        )}
-
-        {!error &&
-          filteredProducts.length === 0 && (
-            <EmptyState
-              title={
-                search
-                  ? 'No products found'
-                  : 'No products added yet'
-              }
-              description={
-                search
-                  ? 'Try another product name, manufacturer or composition.'
-                  : 'Add your first product to start building the pharmacy inventory.'
-              }
-            />
-          )}
-
-        {!error &&
-          filteredProducts.length > 0 && (
-            <div className="table-wrapper">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Product</th>
-                    <th>Composition</th>
-                    <th>Manufacturer</th>
-                    <th>Pack</th>
-                    <th>Category</th>
-                    <th>Price</th>
-                    <th>Discount</th>
-                  </tr>
-                </thead>
-
-                <tbody>
-                  {filteredProducts.map(
-                    (item) => {
-                      const product =
-                        item.products
-
-                      return (
-                        <tr key={item.id}>
-                          <td>
-                            <strong>
-                              {
-                                product.product_name
-                              }
-                            </strong>
-
-                            <small>
-                              {
-                                product.strength_display
-                              }
-                              {product.dosage_form
-                                ? ` • ${product.dosage_form}`
-                                : ''}
-                            </small>
-                          </td>
-
-                          <td>
-                            {getComposition(
-                              product,
-                            )}
-                          </td>
-
-                          <td>
-                            {product.manufacturer ||
-                              '—'}
-                          </td>
-
-                          <td>
-                            {product.pack_quantity
-                              ? `${product.pack_quantity} ${
-                                  product.pack_unit ||
-                                  ''
-                                }`
-                              : '—'}
-                          </td>
-
-                          <td>
-                            {product
-                              .product_categories
-                              ?.name || '—'}
-                          </td>
-
-                          <td>
-                            ₹
-                            {Number(
-                              item.default_selling_price ||
-                                0,
-                            ).toFixed(2)}
-                          </td>
-
-                          <td>
-                            {Number(
-                              item.default_discount_percent ||
-                                0,
-                            )}
-                            %
-                          </td>
-                        </tr>
-                      )
-                    },
-                  )}
-                </tbody>
-              </table>
+              <input
+                value={search}
+                onChange={(
+                  event,
+                ) =>
+                  setSearch(
+                    event.target
+                      .value,
+                  )
+                }
+                placeholder="Search by product, brand, manufacturer or composition..."
+              />
             </div>
-          )}
-      </section>
+
+            <button className="filter-button">
+              Filters
+            </button>
+          </div>
+
+          {!error &&
+            filteredProducts.length ===
+              0 && (
+              <EmptyState
+                title={
+                  search
+                    ? 'No products found'
+                    : 'No products added yet'
+                }
+                description={
+                  search
+                    ? 'Try another product name, manufacturer or composition.'
+                    : 'Add your first product to start building the pharmacy inventory.'
+                }
+              />
+            )}
+
+          {!error &&
+            filteredProducts.length >
+              0 && (
+              <div className="table-wrapper">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>
+                        Product
+                      </th>
+                      <th>
+                        Composition
+                      </th>
+                      <th>
+                        Manufacturer
+                      </th>
+                      <th>
+                        Pack
+                      </th>
+                      <th>
+                        Category
+                      </th>
+                      <th>
+                        Price
+                      </th>
+                      <th>
+                        Discount
+                      </th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {filteredProducts.map(
+                      (item) => {
+                        const product =
+                          item.products
+
+                        return (
+                          <tr
+                            key={
+                              item.id
+                            }
+                          >
+                            <td>
+                              <strong>
+                                {
+                                  product.product_name
+                                }
+                              </strong>
+
+                              <small>
+                                {
+                                  product.strength_display
+                                }
+
+                                {product.dosage_form
+                                  ? ` • ${product.dosage_form}`
+                                  : ''}
+                              </small>
+                            </td>
+
+                            <td>
+                              {getComposition(
+                                product,
+                              )}
+                            </td>
+
+                            <td>
+                              {product.manufacturer ||
+                                '—'}
+                            </td>
+
+                            <td>
+                              {product.pack_quantity
+                                ? `${product.pack_quantity} ${
+                                    product.pack_unit ||
+                                    ''
+                                  }`
+                                : '—'}
+                            </td>
+
+                            <td>
+                              {product
+                                .product_categories
+                                ?.name ||
+                                '—'}
+                            </td>
+
+                            <td>
+                              {formatCurrency(
+                                item.default_selling_price,
+                              )}
+                            </td>
+
+                            <td>
+                              {Number(
+                                item.default_discount_percent ||
+                                  0,
+                              )}
+                              %
+                            </td>
+                          </tr>
+                        )
+                      },
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+        </section>
+      ) : (
+        <section className="panel">
+          <EmptyState
+            title={`${activeTab} module`}
+            description="The section is already part of the PharmDesk navigation. Its database-backed controls will be activated in the next integrated backend step."
+          />
+        </section>
+      )}
     </>
   )
 }
@@ -1975,30 +3001,53 @@ function Inventory({ store }) {
 ========================================================= */
 
 function Customers({ store }) {
-  const [customers, setCustomers] = useState([])
-  const [search, setSearch] = useState('')
+  const [customers, setCustomers] =
+    useState([])
+
+  const [search, setSearch] =
+    useState('')
+
   const [showForm, setShowForm] =
     useState(false)
 
-  const [name, setName] = useState('')
-  const [phone, setPhone] = useState('')
-  const [address, setAddress] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
+  const [name, setName] =
+    useState('')
+
+  const [phone, setPhone] =
+    useState('')
+
+  const [address, setAddress] =
+    useState('')
+
+  const [loading, setLoading] =
+    useState(false)
+
+  const [error, setError] =
+    useState('')
 
   async function loadCustomers() {
     if (!store?.id) return
 
-    const { data } = await supabase
-      .from('customers')
-      .select(
-        'id,name,phone,address,customer_type,created_at',
-      )
-      .eq('store_id', store.id)
-      .eq('is_active', true)
-      .order('created_at', {
-        ascending: false,
-      })
+    const { data } =
+      await supabase
+        .from('customers')
+        .select(
+          'id,name,phone,address,customer_type,created_at',
+        )
+        .eq(
+          'store_id',
+          store.id,
+        )
+        .eq(
+          'is_active',
+          true,
+        )
+        .order(
+          'created_at',
+          {
+            ascending: false,
+          },
+        )
 
     setCustomers(data || [])
   }
@@ -2011,31 +3060,42 @@ function Customers({ store }) {
     setError('')
 
     if (!name.trim()) {
-      setError('Customer name is required.')
+      setError(
+        'Customer name is required.',
+      )
       return
     }
 
     if (!phone.trim()) {
-      setError('Phone number is required for a named customer.')
+      setError(
+        'Phone number is required for a named customer.',
+      )
       return
     }
 
     setLoading(true)
 
-    const { error } = await supabase
+    const {
+      error: customerError,
+    } = await supabase
       .from('customers')
       .insert({
         store_id: store.id,
-        customer_type: 'named',
+        customer_type:
+          'named',
         name: name.trim(),
         phone: phone.trim(),
-        address: address.trim() || null,
+        address:
+          address.trim() ||
+          null,
       })
 
     setLoading(false)
 
-    if (error) {
-      setError(error.message)
+    if (customerError) {
+      setError(
+        customerError.message,
+      )
       return
     }
 
@@ -2047,20 +3107,23 @@ function Customers({ store }) {
     loadCustomers()
   }
 
-  const filtered = customers.filter(
-    (customer) =>
-      [
-        customer.name,
-        customer.phone,
-        customer.address,
-      ]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase()
-        .includes(
-          search.toLowerCase().trim(),
-        ),
-  )
+  const filtered =
+    customers.filter(
+      (customer) =>
+        [
+          customer.name,
+          customer.phone,
+          customer.address,
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase()
+          .includes(
+            search
+              .toLowerCase()
+              .trim(),
+          ),
+    )
 
   return (
     <>
@@ -2081,18 +3144,22 @@ function Customers({ store }) {
             setShowForm(false)
           }
         >
-          {error && (
-            <div className="error-message">
-              {error}
-            </div>
-          )}
+          <Message type="error">
+            {error}
+          </Message>
 
           <div className="form-grid">
-            <Field label="Customer name" required>
+            <Field
+              label="Customer name"
+              required
+            >
               <input
                 value={name}
                 onChange={(event) =>
-                  setName(event.target.value)
+                  setName(
+                    event.target
+                      .value,
+                  )
                 }
               />
             </Field>
@@ -2104,7 +3171,10 @@ function Customers({ store }) {
               <input
                 value={phone}
                 onChange={(event) =>
-                  setPhone(event.target.value)
+                  setPhone(
+                    event.target
+                      .value,
+                  )
                 }
                 inputMode="tel"
               />
@@ -2115,7 +3185,8 @@ function Customers({ store }) {
                 value={address}
                 onChange={(event) =>
                   setAddress(
-                    event.target.value,
+                    event.target
+                      .value,
                   )
                 }
               />
@@ -2125,7 +3196,9 @@ function Customers({ store }) {
           <button
             className="primary-button"
             disabled={loading}
-            onClick={createCustomer}
+            onClick={
+              createCustomer
+            }
           >
             {loading
               ? 'Saving…'
@@ -2137,16 +3210,20 @@ function Customers({ store }) {
       <section className="panel">
         <div className="search-box">
           <span>⌕</span>
+
           <input
             value={search}
             onChange={(event) =>
-              setSearch(event.target.value)
+              setSearch(
+                event.target.value,
+              )
             }
             placeholder="Search customers..."
           />
         </div>
 
-        {filtered.length === 0 ? (
+        {filtered.length ===
+        0 ? (
           <EmptyState
             title="No customers found"
             description="Named customers will appear here."
@@ -2166,10 +3243,16 @@ function Customers({ store }) {
               <tbody>
                 {filtered.map(
                   (customer) => (
-                    <tr key={customer.id}>
+                    <tr
+                      key={
+                        customer.id
+                      }
+                    >
                       <td>
                         <strong>
-                          {customer.name}
+                          {
+                            customer.name
+                          }
                         </strong>
                       </td>
 
@@ -2210,7 +3293,11 @@ function Reports({ store }) {
     useState(
       new Date(
         Date.now() -
-          6 * 24 * 60 * 60 * 1000,
+          6 *
+            24 *
+            60 *
+            60 *
+            1000,
       )
         .toISOString()
         .slice(0, 10),
@@ -2226,8 +3313,10 @@ function Reports({ store }) {
   const [salesTotal, setSalesTotal] =
     useState(0)
 
-  const [purchaseTotal, setPurchaseTotal] =
-    useState(0)
+  const [
+    purchaseTotal,
+    setPurchaseTotal,
+  ] = useState(0)
 
   const [salesCount, setSalesCount] =
     useState(0)
@@ -2246,45 +3335,87 @@ function Reports({ store }) {
     const end =
       `${toDate}T23:59:59.999`
 
-    const [salesResult, purchaseResult] =
-      await Promise.all([
-        supabase
-          .from('sales')
-          .select(
-            'grand_total',
-            { count: 'exact' },
-          )
-          .eq('store_id', store.id)
-          .eq('status', 'completed')
-          .gte('bill_datetime', start)
-          .lte('bill_datetime', end),
+    const [
+      salesResult,
+      purchaseResult,
+    ] = await Promise.all([
+      supabase
+        .from('sales')
+        .select(
+          'grand_total',
+          {
+            count: 'exact',
+          },
+        )
+        .eq(
+          'store_id',
+          store.id,
+        )
+        .eq(
+          'status',
+          'completed',
+        )
+        .gte(
+          'bill_datetime',
+          start,
+        )
+        .lte(
+          'bill_datetime',
+          end,
+        ),
 
-        supabase
-          .from('purchase_invoices')
-          .select('total_amount')
-          .eq('store_id', store.id)
-          .gte('invoice_date', fromDate)
-          .lte('invoice_date', toDate),
-      ])
+      supabase
+        .from(
+          'purchase_invoices',
+        )
+        .select(
+          'total_amount',
+        )
+        .eq(
+          'store_id',
+          store.id,
+        )
+        .gte(
+          'invoice_date',
+          fromDate,
+        )
+        .lte(
+          'invoice_date',
+          toDate,
+        ),
+    ])
 
     setSalesTotal(
-      (salesResult.data || []).reduce(
+      (
+        salesResult.data ||
+        []
+      ).reduce(
         (sum, row) =>
           sum +
-          Number(row.grand_total || 0),
+          Number(
+            row.grand_total ||
+              0,
+          ),
         0,
       ),
     )
 
     setSalesCount(
-      salesResult.count || 0,
+      salesResult.count ||
+        0,
     )
 
     setPurchaseTotal(
-      (purchaseResult.data || []).reduce(
+      (
+        purchaseResult.data ||
+        []
+      ).reduce(
         (sum, row) =>
           sum +
-          Number(row.total_amount || 0),
+          Number(
+            row.total_amount ||
+              0,
+          ),
         0,
       ),
     )
@@ -2309,9 +3440,12 @@ function Reports({ store }) {
             <input
               type="date"
               value={fromDate}
-              onChange={(event) =>
+              onChange={(
+                event,
+              ) =>
                 setFromDate(
-                  event.target.value,
+                  event.target
+                    .value,
                 )
               }
             />
@@ -2321,9 +3455,12 @@ function Reports({ store }) {
             <input
               type="date"
               value={toDate}
-              onChange={(event) =>
+              onChange={(
+                event,
+              ) =>
                 setToDate(
-                  event.target.value,
+                  event.target
+                    .value,
                 )
               }
             />
@@ -2332,7 +3469,9 @@ function Reports({ store }) {
           <div className="field-button">
             <button
               className="primary-button"
-              onClick={loadReports}
+              onClick={
+                loadReports
+              }
             >
               {loading
                 ? 'Loading…'
@@ -2345,86 +3484,103 @@ function Reports({ store }) {
       <div className="stats-grid">
         <StatCard
           label="Sales"
-          value={`₹${salesTotal.toLocaleString(
-            'en-IN',
-            {
-              maximumFractionDigits: 2,
-            },
-          )}`}
+          value={formatCurrency(
+            salesTotal,
+          )}
           detail={`${salesCount} completed bills`}
           icon="₹"
         />
 
         <StatCard
           label="Purchases"
-          value={`₹${purchaseTotal.toLocaleString(
-            'en-IN',
-            {
-              maximumFractionDigits: 2,
-            },
-          )}`}
+          value={formatCurrency(
+            purchaseTotal,
+          )}
           detail="Supplier invoices"
           icon="↓"
+          tone="green"
         />
 
         <StatCard
           label="Gross movement"
-          value={`₹${(
+          value={formatCurrency(
             salesTotal +
-            purchaseTotal
-          ).toLocaleString('en-IN', {
-            maximumFractionDigits: 2,
-          })}`}
+              purchaseTotal,
+          )}
           detail="Sales + purchases"
           icon="↕"
+          tone="purple"
         />
       </div>
 
       <section className="panel">
         <div className="panel-header">
           <div>
-            <h2>Report centre</h2>
+            <h2>
+              Report centre
+            </h2>
+
             <p>
-              Additional detailed reports will be
-              connected here as each reporting
-              module is activated.
+              Reporting modules can be
+              expanded without changing
+              the dashboard architecture.
             </p>
           </div>
         </div>
 
         <div className="report-list">
           <div>
-            <strong>Sales report</strong>
+            <strong>
+              Sales report
+            </strong>
+
             <span>
-              Bills, payments, discounts and GST.
+              Bills, payments,
+              discounts and GST.
             </span>
           </div>
 
           <div>
-            <strong>Purchase report</strong>
+            <strong>
+              Purchase report
+            </strong>
+
             <span>
-              Supplier invoices and purchase values.
+              Supplier invoices and
+              purchase values.
             </span>
           </div>
 
           <div>
-            <strong>Stock report</strong>
+            <strong>
+              Stock report
+            </strong>
+
             <span>
-              Current inventory and stock movements.
+              Current inventory and
+              stock movements.
             </span>
           </div>
 
           <div>
-            <strong>Credit report</strong>
+            <strong>
+              Credit report
+            </strong>
+
             <span>
-              Customer outstanding balances.
+              Customer outstanding
+              balances.
             </span>
           </div>
 
           <div>
-            <strong>Supplier dues</strong>
+            <strong>
+              Supplier dues
+            </strong>
+
             <span>
-              Outstanding supplier invoices and payments.
+              Outstanding supplier
+              invoices and payments.
             </span>
           </div>
         </div>
@@ -2438,23 +3594,37 @@ function Reports({ store }) {
 ========================================================= */
 
 function Alerts({ store }) {
-  const [alerts, setAlerts] = useState([])
+  const [alerts, setAlerts] =
+    useState([])
+
   const [loading, setLoading] =
     useState(true)
 
   async function loadAlerts() {
     if (!store?.id) return
 
-    const { data } = await supabase
-      .from('alerts')
-      .select(
-        'id,alert_type,title,message,severity,is_resolved,created_at',
-      )
-      .eq('store_id', store.id)
-      .eq('is_resolved', false)
-      .order('created_at', {
-        ascending: false,
-      })
+    setLoading(true)
+
+    const { data } =
+      await supabase
+        .from('alerts')
+        .select(
+          'id,alert_type,title,message,severity,is_resolved,created_at',
+        )
+        .eq(
+          'store_id',
+          store.id,
+        )
+        .eq(
+          'is_resolved',
+          false,
+        )
+        .order(
+          'created_at',
+          {
+            ascending: false,
+          },
+        )
 
     setAlerts(data || [])
     setLoading(false)
@@ -2477,35 +3647,48 @@ function Alerts({ store }) {
             title="Loading alerts..."
             description="Checking the pharmacy alerts."
           />
-        ) : alerts.length === 0 ? (
+        ) : alerts.length ===
+          0 ? (
           <EmptyState
             title="No active alerts"
             description="There are currently no unresolved pharmacy alerts."
           />
         ) : (
           <div className="alert-list">
-            {alerts.map((alert) => (
-              <div
-                className="alert-item"
-                key={alert.id}
-              >
-                <div className="alert-symbol">
-                  !
-                </div>
+            {alerts.map(
+              (alert) => (
+                <div
+                  className="alert-item"
+                  key={alert.id}
+                >
+                  <div className="alert-symbol">
+                    !
+                  </div>
 
-                <div>
-                  <strong>
-                    {alert.title ||
-                      alert.alert_type}
-                  </strong>
+                  <div className="alert-content">
+                    <strong>
+                      {alert.title ||
+                        alert.alert_type}
+                    </strong>
 
-                  <p>
-                    {alert.message ||
-                      'Review this alert.'}
-                  </p>
+                    <p>
+                      {alert.message ||
+                        'Review this alert.'}
+                    </p>
+                  </div>
+
+                  <span
+                    className={`alert-severity ${
+                      alert.severity ||
+                      'info'
+                    }`}
+                  >
+                    {alert.severity ||
+                      'info'}
+                  </span>
                 </div>
-              </div>
-            ))}
+              ),
+            )}
           </div>
         )}
       </section>
@@ -2517,7 +3700,11 @@ function Alerts({ store }) {
    SETTINGS
 ========================================================= */
 
-function Settings({ store, user, role }) {
+function Settings({
+  store,
+  user,
+  role,
+}) {
   return (
     <>
       <PageHeader
@@ -2528,7 +3715,10 @@ function Settings({ store, user, role }) {
       <section className="panel">
         <div className="panel-header">
           <div>
-            <h2>Pharmacy</h2>
+            <h2>
+              Pharmacy
+            </h2>
+
             <p>
               Current store information
             </p>
@@ -2539,35 +3729,53 @@ function Settings({ store, user, role }) {
           <div>
             <span>Store</span>
             <strong>
-              {store?.name || '—'}
+              {store?.name ||
+                '—'}
             </strong>
           </div>
 
           <div>
             <span>Phone</span>
             <strong>
-              {store?.phone || '—'}
+              {store?.phone ||
+                '—'}
             </strong>
           </div>
 
           <div>
             <span>Email</span>
             <strong>
-              {store?.email || '—'}
+              {store?.email ||
+                '—'}
             </strong>
           </div>
 
           <div>
             <span>GSTIN</span>
             <strong>
-              {store?.gstin || '—'}
+              {store?.gstin ||
+                '—'}
             </strong>
           </div>
 
           <div>
-            <span>Drug licence</span>
+            <span>
+              Drug licence
+            </span>
+
             <strong>
               {store?.drug_license_number ||
+                '—'}
+            </strong>
+          </div>
+
+          <div>
+            <span>
+              Address
+            </span>
+
+            <strong>
+              {store?.address ||
                 '—'}
             </strong>
           </div>
@@ -2577,22 +3785,28 @@ function Settings({ store, user, role }) {
       <section className="panel">
         <div className="panel-header">
           <div>
-            <h2>Current account</h2>
+            <h2>
+              Current account
+            </h2>
           </div>
         </div>
 
         <div className="settings-grid">
           <div>
             <span>Email</span>
+
             <strong>
-              {user?.email || '—'}
+              {user?.email ||
+                '—'}
             </strong>
           </div>
 
           <div>
             <span>Role</span>
+
             <strong>
-              {role || '—'}
+              {role ||
+                '—'}
             </strong>
           </div>
         </div>
@@ -2609,12 +3823,18 @@ function PharmacyApp({
   currentUser,
   onSignOut,
 }) {
-  const [store, setStore] = useState(null)
-  const [role, setRole] = useState(null)
+  const [store, setStore] =
+    useState(null)
+
+  const [role, setRole] =
+    useState(null)
+
   const [page, setPage] =
     useState('Dashboard')
+
   const [loading, setLoading] =
     useState(true)
+
   const [error, setError] =
     useState('')
 
@@ -2623,10 +3843,15 @@ function PharmacyApp({
   }, [currentUser?.id])
 
   async function loadStore() {
+    if (!currentUser?.id) return
+
     setLoading(true)
     setError('')
 
-    const { data, error } =
+    const {
+      data,
+      error: membershipError,
+    } =
       await supabase
         .from('store_memberships')
         .select(`
@@ -2642,13 +3867,21 @@ function PharmacyApp({
             drug_license_number
           )
         `)
-        .eq('user_id', currentUser.id)
-        .eq('is_active', true)
+        .eq(
+          'user_id',
+          currentUser.id,
+        )
+        .eq(
+          'is_active',
+          true,
+        )
         .limit(1)
         .maybeSingle()
 
-    if (error) {
-      setError(error.message)
+    if (membershipError) {
+      setError(
+        membershipError.message,
+      )
       setLoading(false)
       return
     }
@@ -2732,18 +3965,28 @@ function PharmacyApp({
     },
   ]
 
+  function navigate(nextPage) {
+    setPage(nextPage)
+    window.scrollTo({
+      top: 0,
+      behavior: 'smooth',
+    })
+  }
+
   function renderPage() {
     switch (page) {
       case 'Dashboard':
         return (
-          <Dashboard store={store} />
+          <Dashboard
+            store={store}
+            onNavigate={navigate}
+          />
         )
 
       case 'Sales':
         return (
           <Sales
             store={store}
-            user={currentUser}
           />
         )
 
@@ -2793,7 +4036,10 @@ function PharmacyApp({
 
       default:
         return (
-          <Dashboard store={store} />
+          <Dashboard
+            store={store}
+            onNavigate={navigate}
+          />
         )
     }
   }
@@ -2806,43 +4052,66 @@ function PharmacyApp({
             P
           </div>
 
-          <div>
-            <strong>PharmDesk</strong>
+          <div className="brand-copy">
+            <strong>
+              PharmDesk
+            </strong>
+
             <span>
-              {store?.name || ''}
+              {store?.name ||
+                ''}
             </span>
           </div>
         </div>
 
+        <div className="sidebar-connection">
+          <span className="status-dot" />
+          <span>
+            Cloud Connected
+          </span>
+        </div>
+
         <nav className="sidebar-nav">
-          {navigation.map((item) => (
-            <button
-              key={item.name}
-              className={
-                page === item.name
-                  ? 'nav-item active'
-                  : 'nav-item'
-              }
-              onClick={() =>
-                setPage(item.name)
-              }
-            >
-              <span>{item.icon}</span>
-              {item.name}
-            </button>
-          ))}
+          {navigation.map(
+            (item) => (
+              <button
+                key={item.name}
+                className={
+                  page ===
+                  item.name
+                    ? 'nav-item active'
+                    : 'nav-item'
+                }
+                onClick={() =>
+                  navigate(
+                    item.name,
+                  )
+                }
+              >
+                <span className="nav-icon">
+                  {item.icon}
+                </span>
+
+                <span>
+                  {item.name}
+                </span>
+              </button>
+            ),
+          )}
         </nav>
 
         <div className="sidebar-footer">
           <div className="user-mini">
             <div className="avatar">
-              {(currentUser?.email ||
-                'P')[0].toUpperCase()}
+              {initials(
+                currentUser?.email,
+              )}
             </div>
 
-            <div>
+            <div className="user-mini-copy">
               <strong>
-                {role || 'User'}
+                {role ||
+                  'User'}
               </strong>
 
               <span>
@@ -2863,26 +4132,60 @@ function PharmacyApp({
 
       <main className="main-content">
         <header className="topbar">
-          <div>
-            <span className="topbar-store">
+          <div className="topbar-left">
+            <div className="topbar-title">
+              {page}
+            </div>
+
+            <div className="topbar-store">
               {store?.name}
-            </span>
+            </div>
           </div>
 
           <div className="topbar-right">
-            <span className="connection-status">
-              <i />
-              Connected
-            </span>
+            <div className="global-search">
+              <span>⌕</span>
+
+              <input
+                placeholder="Search..."
+                onFocus={() =>
+                  navigate(
+                    'Inventory',
+                  )
+                }
+              />
+            </div>
 
             <button
               className="topbar-alert"
               onClick={() =>
-                setPage('Alerts')
+                navigate(
+                  'Alerts',
+                )
               }
+              aria-label="Alerts"
             >
               !
             </button>
+
+            <div className="topbar-user">
+              <div className="avatar small">
+                {initials(
+                  currentUser?.email,
+                )}
+              </div>
+
+              <div>
+                <strong>
+                  {role ||
+                    'User'}
+                </strong>
+
+                <span>
+                  {store?.name}
+                </span>
+              </div>
+            </div>
           </div>
         </header>
 
@@ -2901,10 +4204,13 @@ function PharmacyApp({
 function LoginScreen() {
   const [email, setEmail] =
     useState('')
+
   const [password, setPassword] =
     useState('')
+
   const [loading, setLoading] =
     useState(false)
+
   const [error, setError] =
     useState('')
 
@@ -2914,18 +4220,23 @@ function LoginScreen() {
     setLoading(true)
     setError('')
 
-    const { error } =
+    const {
+      error: signInError,
+    } =
       await supabase.auth.signInWithPassword(
         {
-          email: email.trim(),
+          email:
+            email.trim(),
           password,
         },
       )
 
     setLoading(false)
 
-    if (error) {
-      setError(error.message)
+    if (signInError) {
+      setError(
+        signInError.message,
+      )
     }
   }
 
@@ -2938,33 +4249,46 @@ function LoginScreen() {
           </div>
 
           <div>
-            <strong>PharmDesk</strong>
+            <strong>
+              PharmDesk
+            </strong>
+
             <span>
               Pharmacy Management
             </span>
           </div>
         </div>
 
-        <h1>Welcome back</h1>
+        <h1>
+          Welcome back
+        </h1>
 
         <p className="login-description">
-          Sign in to access your pharmacy.
+          Sign in to access your
+          pharmacy.
         </p>
 
-        {error && (
-          <div className="error-message">
-            {error}
-          </div>
-        )}
+        <Message type="error">
+          {error}
+        </Message>
 
-        <form onSubmit={signIn}>
-          <Field label="Email" required>
+        <form
+          className="login-form"
+          onSubmit={signIn}
+        >
+          <Field
+            label="Email"
+            required
+          >
             <input
               type="email"
               value={email}
-              onChange={(event) =>
+              onChange={(
+                event,
+              ) =>
                 setEmail(
-                  event.target.value,
+                  event.target
+                    .value,
                 )
               }
               autoComplete="email"
@@ -2972,13 +4296,19 @@ function LoginScreen() {
             />
           </Field>
 
-          <Field label="Password" required>
+          <Field
+            label="Password"
+            required
+          >
             <input
               type="password"
               value={password}
-              onChange={(event) =>
+              onChange={(
+                event,
+              ) =>
                 setPassword(
-                  event.target.value,
+                  event.target
+                    .value,
                 )
               }
               autoComplete="current-password"
@@ -2989,7 +4319,9 @@ function LoginScreen() {
           <button
             className="primary-button full-width"
             type="submit"
-            disabled={loading}
+            disabled={
+              loading
+            }
           >
             {loading
               ? 'Signing in…'
@@ -3008,6 +4340,7 @@ function LoginScreen() {
 function App() {
   const [session, setSession] =
     useState(null)
+
   const [loading, setLoading] =
     useState(true)
 
@@ -3016,24 +4349,39 @@ function App() {
 
     supabase.auth
       .getSession()
-      .then(({ data }) => {
-        if (mounted) {
-          setSession(data.session)
+      .then(
+        ({
+          data,
+        }) => {
+          if (!mounted) return
+
+          setSession(
+            data.session,
+          )
+
           setLoading(false)
-        }
-      })
+        },
+      )
 
     const {
       data: listener,
-    } = supabase.auth.onAuthStateChange(
-      (_event, nextSession) => {
-        setSession(nextSession)
-        setLoading(false)
-      },
-    )
+    } =
+      supabase.auth.onAuthStateChange(
+        (
+          _event,
+          nextSession,
+        ) => {
+          setSession(
+            nextSession,
+          )
+
+          setLoading(false)
+        },
+      )
 
     return () => {
       mounted = false
+
       listener.subscription.unsubscribe()
     }
   }, [])
@@ -3062,7 +4410,9 @@ function App() {
 
   return (
     <PharmacyApp
-      currentUser={session.user}
+      currentUser={
+        session.user
+      }
       onSignOut={signOut}
     />
   )
