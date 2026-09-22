@@ -1,1323 +1,210 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { supabase } from './lib/supabase'
 
-const money = (value) =>
-  `₹${Number(value || 0).toLocaleString('en-IN', {
+const NAV_ITEMS = [
+  { id: 'dashboard', label: 'Dashboard', icon: '⌂' },
+  { id: 'sales', label: 'Sales', icon: '▣' },
+  { id: 'purchases', label: 'Purchases', icon: '▤' },
+  { id: 'inventory', label: 'Inventory', icon: '▦' },
+  { id: 'customers', label: 'Customers', icon: '♙' },
+  { id: 'reports', label: 'Reports', icon: '◫' },
+  { id: 'alerts', label: 'Alerts', icon: '!' },
+  { id: 'settings', label: 'Settings', icon: '⚙' },
+]
+
+const INVENTORY_TABS = [
+  'Products',
+  'Batches',
+  'Expiry',
+  'Low Stock',
+  'Dead Stock',
+  'Stock Reconciliation',
+]
+
+const SALES_TABS = [
+  'New Sale',
+  'Draft Bills',
+  'Completed Bills',
+  'Returns',
+  'Customers',
+  'Credit',
+]
+
+const PURCHASE_TABS = [
+  'New Purchase',
+  'Supplier Invoices',
+  'Pending Payments',
+  'Purchase Orders',
+  'AI Recommendations',
+]
+
+function money(value) {
+  return `₹${Number(value || 0).toLocaleString('en-IN', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`
-
-const today = () => new Date().toISOString().slice(0, 10)
-
-function Button({ children, onClick, variant = 'primary', type = 'button', disabled = false }) {
-  return (
-    <button
-      type={type}
-      onClick={onClick}
-      disabled={disabled}
-      className={`btn btn-${variant}`}
-    >
-      {children}
-    </button>
-  )
 }
 
-function Modal({ title, children, onClose }) {
-  return (
-    <div className="modal-backdrop">
-      <div className="modal">
-        <div className="modal-header">
-          <h2>{title}</h2>
-          <button className="modal-close" onClick={onClose}>×</button>
-        </div>
-        <div className="modal-body">{children}</div>
-      </div>
-    </div>
-  )
+function dateText(value) {
+  if (!value) return '—'
+  return new Date(value).toLocaleDateString('en-IN')
 }
 
-function Field({ label, children }) {
-  return (
-    <label className="field">
-      <span>{label}</span>
-      {children}
-    </label>
-  )
-}
-
-function Empty({ title, text }) {
-  return (
-    <div className="empty-state">
-      <h3>{title}</h3>
-      <p>{text}</p>
-    </div>
-  )
-}
-
-function LoginScreen({ onLogin }) {
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
-
-  async function submit(e) {
-    e.preventDefault()
-    setLoading(true)
-    setError('')
-
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    })
-
-    if (error) setError(error.message)
-
-    setLoading(false)
-  }
-
-  return (
-    <div className="login-screen">
-      <div className="login-card">
-        <div className="login-logo">P</div>
-        <h1>PharmDesk</h1>
-        <p>Pharmacy billing & inventory management</p>
-
-        <form onSubmit={submit}>
-          <Field label="Email">
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="Enter your email"
-              required
-            />
-          </Field>
-
-          <Field label="Password">
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Enter your password"
-              required
-            />
-          </Field>
-
-          {error && <div className="error-message">{error}</div>}
-
-          <Button type="submit" disabled={loading}>
-            {loading ? 'Signing in...' : 'Sign in'}
-          </Button>
-        </form>
-      </div>
-    </div>
-  )
-}
-
-function Sidebar({ page, setPage, store }) {
-  const items = [
-    ['dashboard', 'Dashboard'],
-    ['sales', 'Sales'],
-    ['inventory', 'Inventory'],
-    ['purchases', 'Purchases'],
-    ['customers', 'Customers'],
-    ['suppliers', 'Suppliers'],
-    ['reports', 'Reports'],
-    ['alerts', 'Alerts'],
-    ['settings', 'Settings'],
-  ]
-
-  return (
-    <aside className="sidebar">
-      <div className="brand">
-        <div className="brand-mark">P</div>
-        <div>
-          <strong>PharmDesk</strong>
-          <small>{store?.name || 'Pharmacy'}</small>
-        </div>
-      </div>
-
-      <nav>
-        {items.map(([id, label]) => (
-          <button
-            key={id}
-            className={page === id ? 'nav-item active' : 'nav-item'}
-            onClick={() => setPage(id)}
-          >
-            {label}
-          </button>
-        ))}
-      </nav>
-
-      <div className="sidebar-footer">
-        <small>LABDHI PHARMA</small>
-      </div>
-    </aside>
-  )
-}
-
-function Topbar({ title, user, onLogout }) {
-  return (
-    <header className="topbar">
-      <div>
-        <h1>{title}</h1>
-      </div>
-
-      <div className="topbar-right">
-        <span className="user-name">
-          {user?.email || 'Administrator'}
-        </span>
-
-        <button className="logout-button" onClick={onLogout}>
-          Logout
-        </button>
-      </div>
-    </header>
-  )
-}
-
-function Dashboard({ storeId }) {
-  const [stats, setStats] = useState({
-    sales: 0,
-    purchases: 0,
-    products: 0,
-    lowStock: 0,
+function dateTimeText(value) {
+  if (!value) return '—'
+  return new Date(value).toLocaleString('en-IN', {
+    dateStyle: 'short',
+    timeStyle: 'short',
   })
-
-  useEffect(() => {
-    load()
-  }, [storeId])
-
-  async function load() {
-    const start = today()
-
-    const [
-      salesResult,
-      purchasesResult,
-      productsResult,
-      batchesResult,
-    ] = await Promise.all([
-      supabase
-        .from('sales')
-        .select('grand_total')
-        .eq('store_id', storeId)
-        .eq('status', 'completed')
-        .gte('bill_datetime', `${start}T00:00:00`),
-
-      supabase
-        .from('purchase_invoices')
-        .select('total_amount')
-        .eq('store_id', storeId)
-        .eq('invoice_date', start),
-
-      supabase
-        .from('store_products')
-        .select('id')
-        .eq('store_id', storeId)
-        .eq('is_active', true),
-
-      supabase
-        .from('batches')
-        .select('current_stock_units')
-        .eq('store_id', storeId)
-        .eq('is_active', true),
-    ])
-
-    const sales = (salesResult.data || []).reduce(
-      (sum, row) => sum + Number(row.grand_total || 0),
-      0,
-    )
-
-    const purchases = (purchasesResult.data || []).reduce(
-      (sum, row) => sum + Number(row.total_amount || 0),
-      0,
-    )
-
-    const lowStock = (batchesResult.data || []).filter(
-      (row) => Number(row.current_stock_units || 0) <= 10,
-    ).length
-
-    setStats({
-      sales,
-      purchases,
-      products: productsResult.data?.length || 0,
-      lowStock,
-    })
-  }
-
-  return (
-    <div className="page-content">
-      <div className="welcome">
-        <div>
-          <h2>Good morning</h2>
-          <p>Here is today's pharmacy overview.</p>
-        </div>
-      </div>
-
-      <div className="stats-grid">
-        <div className="stat-card">
-          <span>Today's Sales</span>
-          <strong>{money(stats.sales)}</strong>
-        </div>
-
-        <div className="stat-card">
-          <span>Today's Purchases</span>
-          <strong>{money(stats.purchases)}</strong>
-        </div>
-
-        <div className="stat-card">
-          <span>Active Products</span>
-          <strong>{stats.products}</strong>
-        </div>
-
-        <div className="stat-card">
-          <span>Low Stock</span>
-          <strong>{stats.lowStock}</strong>
-        </div>
-      </div>
-
-      <div className="dashboard-panel">
-        <h2>PharmDesk</h2>
-        <p>
-          Your pharmacy billing and inventory system is connected successfully.
-        </p>
-      </div>
-    </div>
-  )
 }
 
-function ProductModal({ storeId, onClose, onSaved }) {
-  const [form, setForm] = useState({
+function todayISO() {
+  return new Date().toISOString().slice(0, 10)
+}
+
+function emptySaleItem() {
+  return {
+    product_id: '',
+    batch_id: '',
     product_name: '',
-    generic_name: '',
-    strength: '',
-    dosage_form: '',
-    manufacturer: '',
-    category_id: '',
-    pack_size: '',
-    gst_rate: '',
-    default_discount_percent: '',
-  })
-
-  const [categories, setCategories] = useState([])
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
-
-  useEffect(() => {
-    loadCategories()
-  }, [])
-
-  async function loadCategories() {
-    const { data } = await supabase
-      .from('product_categories')
-      .select('*')
-      .order('name')
-
-    setCategories(data || [])
+    batch_number: '',
+    unit_type: 'pack',
+    quantity_entered: 1,
+    units_per_pack: 1,
+    mrp_per_pack: 0,
+    selling_price_per_pack: 0,
+    default_discount_percent: 0,
+    discount_percent: 0,
+    gst_rate: 0,
   }
-
-  function update(key, value) {
-    setForm((current) => ({
-      ...current,
-      [key]: value,
-    }))
-  }
-
-  async function save(e) {
-    e.preventDefault()
-    setSaving(true)
-    setError('')
-
-    const { data: product, error: productError } = await supabase
-      .from('products')
-      .insert({
-        product_name: form.product_name.trim(),
-        generic_name: form.generic_name.trim() || null,
-        strength: form.strength.trim() || null,
-        dosage_form: form.dosage_form.trim() || null,
-        manufacturer: form.manufacturer.trim() || null,
-        category_id: form.category_id || null,
-        pack_size: form.pack_size.trim() || null,
-        gst_rate: Number(form.gst_rate || 0),
-        default_discount_percent: Number(
-          form.default_discount_percent || 0,
-        ),
-      })
-      .select()
-      .single()
-
-    if (productError) {
-      setError(productError.message)
-      setSaving(false)
-      return
-    }
-
-    const { error: storeProductError } = await supabase
-      .from('store_products')
-      .insert({
-        store_id: storeId,
-        product_id: product.id,
-        is_active: true,
-      })
-
-    if (storeProductError) {
-      setError(storeProductError.message)
-      setSaving(false)
-      return
-    }
-
-    setSaving(false)
-    onSaved(product)
-  }
-
-  return (
-    <Modal title="Add New Product" onClose={onClose}>
-      <form onSubmit={save} className="form-grid">
-        <Field label="Product name">
-          <input
-            value={form.product_name}
-            onChange={(e) => update('product_name', e.target.value)}
-            required
-          />
-        </Field>
-
-        <Field label="Generic name">
-          <input
-            value={form.generic_name}
-            onChange={(e) => update('generic_name', e.target.value)}
-          />
-        </Field>
-
-        <Field label="Strength">
-          <input
-            value={form.strength}
-            onChange={(e) => update('strength', e.target.value)}
-          />
-        </Field>
-
-        <Field label="Dosage form">
-          <input
-            value={form.dosage_form}
-            onChange={(e) => update('dosage_form', e.target.value)}
-            placeholder="Tablet / Capsule / Syrup"
-          />
-        </Field>
-
-        <Field label="Manufacturer">
-          <input
-            value={form.manufacturer}
-            onChange={(e) => update('manufacturer', e.target.value)}
-          />
-        </Field>
-
-        <Field label="Category">
-          <select
-            value={form.category_id}
-            onChange={(e) => update('category_id', e.target.value)}
-          >
-            <option value="">Select category</option>
-            {categories.map((category) => (
-              <option key={category.id} value={category.id}>
-                {category.name || category.category_name}
-              </option>
-            ))}
-          </select>
-        </Field>
-
-        <Field label="Pack size">
-          <input
-            value={form.pack_size}
-            onChange={(e) => update('pack_size', e.target.value)}
-            placeholder="10 tablets"
-          />
-        </Field>
-
-        <Field label="GST %">
-          <input
-            type="number"
-            value={form.gst_rate}
-            onChange={(e) => update('gst_rate', e.target.value)}
-          />
-        </Field>
-
-        <Field label="Default discount %">
-          <input
-            type="number"
-            value={form.default_discount_percent}
-            onChange={(e) =>
-              update('default_discount_percent', e.target.value)
-            }
-          />
-        </Field>
-
-        {error && <div className="error-message">{error}</div>}
-
-        <div className="modal-actions">
-          <Button variant="secondary" onClick={onClose}>
-            Cancel
-          </Button>
-
-          <Button type="submit" disabled={saving}>
-            {saving ? 'Saving...' : 'Save Product'}
-          </Button>
-        </div>
-      </form>
-    </Modal>
-  )
 }
 
-function Inventory({ storeId }) {
-  const [tab, setTab] = useState('products')
-  const [products, setProducts] = useState([])
-  const [batches, setBatches] = useState([])
-  const [search, setSearch] = useState('')
-  const [showProductModal, setShowProductModal] = useState(false)
-  const [loading, setLoading] = useState(true)
-
-  async function load() {
-    setLoading(true)
-
-    const { data: storeProducts } = await supabase
-      .from('store_products')
-      .select(`
-        id,
-        product_id,
-        is_active,
-        products (
-          id,
-          product_name,
-          generic_name,
-          strength,
-          dosage_form,
-          manufacturer,
-          category_id,
-          pack_size,
-          gst_rate,
-          default_discount_percent
-        )
-      `)
-      .eq('store_id', storeId)
-      .eq('is_active', true)
-
-    const { data: batchData } = await supabase
-      .from('batches')
-      .select('*')
-      .eq('store_id', storeId)
-      .eq('is_active', true)
-      .order('expiry_date')
-
-    setProducts(storeProducts || [])
-    setBatches(batchData || [])
-    setLoading(false)
+function emptyPurchaseItem() {
+  return {
+    product_id: '',
+    product_name: '',
+    batch_number: '',
+    expiry_date: '',
+    units_per_pack: 1,
+    paid_packs: 0,
+    free_packs: 0,
+    loose_units: 0,
+    purchase_rate_per_pack: 0,
+    mrp_per_pack: 0,
+    supplier_discount_percent: 0,
+    gst_rate: 0,
   }
-
-  useEffect(() => {
-    load()
-  }, [storeId])
-
-  const filteredProducts = useMemo(() => {
-    const q = search.trim().toLowerCase()
-
-    if (!q) return products
-
-    return products.filter((row) => {
-      const product = row.products || {}
-
-      return [
-        product.product_name,
-        product.generic_name,
-        product.strength,
-        product.dosage_form,
-        product.manufacturer,
-        product.pack_size,
-      ]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase()
-        .includes(q)
-    })
-  }, [products, search])
-
-  return (
-    <div className="page-content">
-      <div className="page-heading">
-        <div>
-          <h2>Inventory</h2>
-          <p>Manage products, batches and stock.</p>
-        </div>
-
-        <Button onClick={() => setShowProductModal(true)}>
-          + Add Product
-        </Button>
-      </div>
-
-      <div className="tabs">
-        {[
-          ['products', 'Products'],
-          ['batches', 'Batches'],
-          ['expiry', 'Expiry'],
-          ['low', 'Low Stock'],
-          ['dead', 'Dead Stock'],
-          ['reconcile', 'Stock Reconciliation'],
-        ].map(([id, label]) => (
-          <button
-            key={id}
-            className={tab === id ? 'tab active' : 'tab'}
-            onClick={() => setTab(id)}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-
-      {tab === 'products' && (
-        <>
-          <div className="toolbar">
-            <input
-              className="search-input"
-              placeholder="Search products, generic, strength or manufacturer..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
-
-          {loading ? (
-            <div className="loading">Loading inventory...</div>
-          ) : filteredProducts.length === 0 ? (
-            <Empty
-              title="No products found"
-              text="Add your first product to begin building the inventory."
-            />
-          ) : (
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Product</th>
-                    <th>Generic</th>
-                    <th>Strength</th>
-                    <th>Manufacturer</th>
-                    <th>Pack</th>
-                    <th>GST</th>
-                    <th>Discount</th>
-                  </tr>
-                </thead>
-
-                <tbody>
-                  {filteredProducts.map((row) => {
-                    const p = row.products || {}
-
-                    return (
-                      <tr key={row.id}>
-                        <td><strong>{p.product_name}</strong></td>
-                        <td>{p.generic_name || '—'}</td>
-                        <td>{p.strength || '—'}</td>
-                        <td>{p.manufacturer || '—'}</td>
-                        <td>{p.pack_size || '—'}</td>
-                        <td>{p.gst_rate || 0}%</td>
-                        <td>{p.default_discount_percent || 0}%</td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </>
-      )}
-
-      {tab === 'batches' && (
-        <div className="table-wrap">
-          {batches.length === 0 ? (
-            <Empty title="No batches" text="No stock batches have been created yet." />
-          ) : (
-            <table>
-              <thead>
-                <tr>
-                  <th>Batch</th>
-                  <th>Product ID</th>
-                  <th>Expiry</th>
-                  <th>Stock</th>
-                  <th>Purchase Rate</th>
-                  <th>MRP</th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {batches.map((batch) => (
-                  <tr key={batch.id}>
-                    <td>{batch.batch_number}</td>
-                    <td>{batch.product_id}</td>
-                    <td>{batch.expiry_date || '—'}</td>
-                    <td>{batch.current_stock_units || 0}</td>
-                    <td>{money(batch.purchase_rate_per_pack)}</td>
-                    <td>{money(batch.mrp_per_pack)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      )}
-
-      {tab !== 'products' && tab !== 'batches' && (
-        <Empty
-          title="Section ready"
-          text="This inventory section will be connected to the full stock engine in the next implementation step."
-        />
-      )}
-
-      {showProductModal && (
-        <ProductModal
-          storeId={storeId}
-          onClose={() => setShowProductModal(false)}
-          onSaved={() => {
-            setShowProductModal(false)
-            load()
-          }}
-        />
-      )}
-    </div>
-  )
-}
-
-function CustomerModal({ storeId, onClose, onSaved }) {
-  const [form, setForm] = useState({
-    name: '',
-    phone: '',
-    address: '',
-  })
-
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
-
-  async function save(e) {
-    e.preventDefault()
-    setSaving(true)
-    setError('')
-
-    const { data, error } = await supabase
-      .from('customers')
-      .insert({
-        store_id: storeId,
-        customer_type: 'named',
-        name: form.name.trim(),
-        phone: form.phone.trim(),
-        address: form.address.trim() || null,
-        is_active: true,
-      })
-      .select()
-      .single()
-
-    if (error) {
-      setError(error.message)
-      setSaving(false)
-      return
-    }
-
-    setSaving(false)
-    onSaved(data)
-  }
-
-  return (
-    <Modal title="Add Customer" onClose={onClose}>
-      <form onSubmit={save} className="form-grid">
-        <Field label="Customer name">
-          <input
-            required
-            value={form.name}
-            onChange={(e) =>
-              setForm({ ...form, name: e.target.value })
-            }
-          />
-        </Field>
-
-        <Field label="Phone">
-          <input
-            required
-            value={form.phone}
-            onChange={(e) =>
-              setForm({ ...form, phone: e.target.value })
-            }
-          />
-        </Field>
-
-        <Field label="Address">
-          <textarea
-            value={form.address}
-            onChange={(e) =>
-              setForm({ ...form, address: e.target.value })
-            }
-          />
-        </Field>
-
-        {error && <div className="error-message">{error}</div>}
-
-        <div className="modal-actions">
-          <Button variant="secondary" onClick={onClose}>
-            Cancel
-          </Button>
-
-          <Button type="submit" disabled={saving}>
-            {saving ? 'Saving...' : 'Save Customer'}
-          </Button>
-        </div>
-      </form>
-    </Modal>
-  )
-}
-
-function Customers({ storeId }) {
-  const [customers, setCustomers] = useState([])
-  const [showModal, setShowModal] = useState(false)
-
-  async function load() {
-    const { data } = await supabase
-      .from('customers')
-      .select('*')
-      .eq('store_id', storeId)
-      .order('name')
-
-    setCustomers(data || [])
-  }
-
-  useEffect(() => {
-    load()
-  }, [storeId])
-
-  return (
-    <div className="page-content">
-      <div className="page-heading">
-        <div>
-          <h2>Customers</h2>
-          <p>Customer records and credit history.</p>
-        </div>
-
-        <Button onClick={() => setShowModal(true)}>
-          + Add Customer
-        </Button>
-      </div>
-
-      {customers.length === 0 ? (
-        <Empty
-          title="No customers"
-          text="Customer records will appear here."
-        />
-      ) : (
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Phone</th>
-                <th>Address</th>
-                <th>Type</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {customers.map((customer) => (
-                <tr key={customer.id}>
-                  <td>{customer.name}</td>
-                  <td>{customer.phone}</td>
-                  <td>{customer.address || '—'}</td>
-                  <td>{customer.customer_type}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {showModal && (
-        <CustomerModal
-          storeId={storeId}
-          onClose={() => setShowModal(false)}
-          onSaved={() => {
-            setShowModal(false)
-            load()
-          }}
-        />
-      )}
-    </div>
-  )
-}
-
-function SupplierModal({ storeId, onClose, onSaved }) {
-  const [form, setForm] = useState({
-    supplier_name: '',
-    contact_person: '',
-    phone: '',
-    email: '',
-    address: '',
-    gstin: '',
-  })
-
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
-
-  async function save(e) {
-    e.preventDefault()
-    setSaving(true)
-    setError('')
-
-    const { data, error } = await supabase
-      .from('suppliers')
-      .insert({
-        store_id: storeId,
-        supplier_name: form.supplier_name.trim(),
-        contact_person: form.contact_person.trim() || null,
-        phone: form.phone.trim() || null,
-        email: form.email.trim() || null,
-        address: form.address.trim() || null,
-        gstin: form.gstin.trim() || null,
-        is_active: true,
-      })
-      .select()
-      .single()
-
-    if (error) {
-      setError(error.message)
-      setSaving(false)
-      return
-    }
-
-    setSaving(false)
-    onSaved(data)
-  }
-
-  return (
-    <Modal title="Add Purchase Party" onClose={onClose}>
-      <form onSubmit={save} className="form-grid">
-        <Field label="Supplier / Purchase Party">
-          <input
-            required
-            value={form.supplier_name}
-            onChange={(e) =>
-              setForm({
-                ...form,
-                supplier_name: e.target.value,
-              })
-            }
-          />
-        </Field>
-
-        <Field label="Contact person">
-          <input
-            value={form.contact_person}
-            onChange={(e) =>
-              setForm({
-                ...form,
-                contact_person: e.target.value,
-              })
-            }
-          />
-        </Field>
-
-        <Field label="Phone">
-          <input
-            value={form.phone}
-            onChange={(e) =>
-              setForm({
-                ...form,
-                phone: e.target.value,
-              })
-            }
-          />
-        </Field>
-
-        <Field label="Email">
-          <input
-            type="email"
-            value={form.email}
-            onChange={(e) =>
-              setForm({
-                ...form,
-                email: e.target.value,
-              })
-            }
-          />
-        </Field>
-
-        <Field label="GSTIN">
-          <input
-            value={form.gstin}
-            onChange={(e) =>
-              setForm({
-                ...form,
-                gstin: e.target.value,
-              })
-            }
-          />
-        </Field>
-
-        <Field label="Address">
-          <textarea
-            value={form.address}
-            onChange={(e) =>
-              setForm({
-                ...form,
-                address: e.target.value,
-              })
-            }
-          />
-        </Field>
-
-        {error && <div className="error-message">{error}</div>}
-
-        <div className="modal-actions">
-          <Button variant="secondary" onClick={onClose}>
-            Cancel
-          </Button>
-
-          <Button type="submit" disabled={saving}>
-            {saving ? 'Saving...' : 'Save Purchase Party'}
-          </Button>
-        </div>
-      </form>
-    </Modal>
-  )
-}
-
-function Suppliers({ storeId }) {
-  const [suppliers, setSuppliers] = useState([])
-  const [showModal, setShowModal] = useState(false)
-
-  async function load() {
-    const { data } = await supabase
-      .from('suppliers')
-      .select('*')
-      .eq('store_id', storeId)
-      .eq('is_active', true)
-      .order('supplier_name')
-
-    setSuppliers(data || [])
-  }
-
-  useEffect(() => {
-    load()
-  }, [storeId])
-
-  return (
-    <div className="page-content">
-      <div className="page-heading">
-        <div>
-          <h2>Suppliers</h2>
-          <p>Manage purchase parties and supplier information.</p>
-        </div>
-
-        <Button onClick={() => setShowModal(true)}>
-          + Add Purchase Party
-        </Button>
-      </div>
-
-      {suppliers.length === 0 ? (
-        <Empty
-          title="No suppliers"
-          text="Add a purchase party to begin recording purchases."
-        />
-      ) : (
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Supplier</th>
-                <th>Contact</th>
-                <th>Phone</th>
-                <th>GSTIN</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {suppliers.map((supplier) => (
-                <tr key={supplier.id}>
-                  <td>{supplier.supplier_name}</td>
-                  <td>{supplier.contact_person || '—'}</td>
-                  <td>{supplier.phone || '—'}</td>
-                  <td>{supplier.gstin || '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {showModal && (
-        <SupplierModal
-          storeId={storeId}
-          onClose={() => setShowModal(false)}
-          onSaved={() => {
-            setShowModal(false)
-            load()
-          }}
-        />
-      )}
-    </div>
-  )
-}
-
-function Placeholder({ title, text }) {
-  return (
-    <div className="page-content">
-      <div className="page-heading">
-        <div>
-          <h2>{title}</h2>
-          <p>{text}</p>
-        </div>
-      </div>
-
-      <Empty
-        title="Module connected"
-        text="The database foundation is ready. This module will be expanded next."
-      />
-    </div>
-  )
-}
-
-function PharmacyApp({ user, store, membership }) {
-  const [page, setPage] = useState('dashboard')
-
-  const titles = {
-    dashboard: 'Dashboard',
-    sales: 'Sales',
-    inventory: 'Inventory',
-    purchases: 'Purchases',
-    customers: 'Customers',
-    suppliers: 'Suppliers',
-    reports: 'Reports',
-    alerts: 'Alerts',
-    settings: 'Settings',
-  }
-
-  async function logout() {
-    await supabase.auth.signOut()
-  }
-
-  return (
-    <div className="app-shell">
-      <Sidebar
-        page={page}
-        setPage={setPage}
-        store={store}
-      />
-
-      <main className="main-area">
-        <Topbar
-          title={titles[page]}
-          user={user}
-          onLogout={logout}
-        />
-
-        <div className="main-scroll">
-          {page === 'dashboard' && (
-            <Dashboard storeId={store.id} />
-          )}
-
-          {page === 'inventory' && (
-            <Inventory storeId={store.id} />
-          )}
-
-          {page === 'customers' && (
-            <Customers storeId={store.id} />
-          )}
-
-          {page === 'suppliers' && (
-            <Suppliers storeId={store.id} />
-          )}
-
-          {page === 'sales' && (
-            <Placeholder
-              title="Sales"
-              text="Billing and sales management."
-            />
-          )}
-
-          {page === 'purchases' && (
-            <Placeholder
-              title="Purchases"
-              text="Purchase invoices, stock intake and supplier payments."
-            />
-          )}
-
-          {page === 'reports' && (
-            <Placeholder
-              title="Reports"
-              text="Sales, purchase, stock and financial reports."
-            />
-          )}
-
-          {page === 'alerts' && (
-            <Placeholder
-              title="Alerts"
-              text="Expiry, stock, credit and purchase alerts."
-            />
-          )}
-
-          {page === 'settings' && (
-            <Placeholder
-              title="Settings"
-              text="Store and PharmDesk configuration."
-            />
-          )}
-        </div>
-      </main>
-    </div>
-  )
 }
 
 function App() {
-  const [user, setUser] = useState(null)
-  const [store, setStore] = useState(null)
-  const [membership, setMembership] = useState(null)
+  const [session, setSession] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [store, setStore] = useState(null)
+  const [profile, setProfile] = useState(null)
   const [error, setError] = useState('')
 
   useEffect(() => {
     let mounted = true
 
-    async function initialise() {
+    async function initialize() {
+      setLoading(true)
+
       const {
-        data: { session },
+        data: { session: currentSession },
       } = await supabase.auth.getSession()
 
       if (!mounted) return
 
-      if (!session?.user) {
-        setUser(null)
-        setLoading(false)
-        return
-      }
+      setSession(currentSession)
 
-      await loadUserStore(session.user)
+      if (currentSession?.user) {
+        await loadUserData(currentSession.user.id)
+      }
 
       if (mounted) setLoading(false)
     }
 
-    async function authListener() {
-      const { data } = supabase.auth.onAuthStateChange(
-        async (_event, session) => {
-          if (!session?.user) {
-            setUser(null)
-            setStore(null)
-            setMembership(null)
-            setLoading(false)
-            return
-          }
+    initialize()
 
-          setLoading(true)
-          await loadUserStore(session.user)
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (_event, nextSession) => {
+      if (!mounted) return
 
-          if (mounted) setLoading(false)
-        },
-      )
+      setSession(nextSession)
 
-      return data.subscription
-    }
+      if (nextSession?.user) {
+        await loadUserData(nextSession.user.id)
+      } else {
+        setStore(null)
+        setProfile(null)
+      }
 
-    async function start() {
-      await initialise()
-      await authListener()
-    }
-
-    start()
+      setLoading(false)
+    })
 
     return () => {
       mounted = false
+      subscription.unsubscribe()
     }
   }, [])
 
-  async function loadUserStore(currentUser) {
+  async function loadUserData(userId) {
     setError('')
-    setUser(currentUser)
 
-    const { data: membershipData, error: membershipError } =
-      await supabase
-        .from('store_memberships')
-        .select('id, user_id, store_id, role, is_active')
-        .eq('user_id', currentUser.id)
-        .eq('is_active', true)
-        .limit(1)
-        .maybeSingle()
+    const [{ data: membership, error: membershipError }, { data: profileData }] =
+      await Promise.all([
+        supabase
+          .from('store_memberships')
+          .select('*, stores(*)')
+          .eq('user_id', userId)
+          .eq('is_active', true)
+          .limit(1)
+          .maybeSingle(),
+        supabase
+          .from('user_profiles')
+          .select('*')
+          .eq('id', userId)
+          .maybeSingle(),
+      ])
 
     if (membershipError) {
-      setMembership(null)
-      setStore(null)
       setError(membershipError.message)
       return
     }
 
-    if (!membershipData) {
-      setMembership(null)
-      setStore(null)
-      setError(
-        'Your account is authenticated, but no active store membership was found.',
-      )
-      return
+    setProfile(profileData || null)
+    setStore(membership?.stores || null)
+
+    if (!membership?.stores) {
+      setError('No pharmacy store assigned to this account.')
     }
+  }
 
-    const { data: storeData, error: storeError } =
-      await supabase
-        .from('stores')
-        .select('*')
-        .eq('id', membershipData.store_id)
-        .eq('is_active', true)
-        .maybeSingle()
-
-    if (storeError) {
-      setMembership(membershipData)
-      setStore(null)
-      setError(storeError.message)
-      return
-    }
-
-    if (!storeData) {
-      setMembership(membershipData)
-      setStore(null)
-      setError(
-        'Your store membership exists, but the associated store could not be loaded.',
-      )
-      return
-    }
-
-    setMembership(membershipData)
-    setStore(storeData)
+  async function signOut() {
+    await supabase.auth.signOut()
   }
 
   if (loading) {
-    return (
-      <div className="loading-screen">
-        <div>
-          <strong>PharmDesk</strong>
-          <span>Loading your pharmacy...</span>
-        </div>
-      </div>
-    )
+    return <LoadingScreen />
   }
 
-  if (!user) {
+  if (!session) {
     return <LoginScreen />
   }
 
   if (!store) {
     return (
-      <div className="loading-screen">
-        <div className="error-card">
-          <h1>No pharmacy store assigned</h1>
-          <p>
-            Your account is authenticated, but PharmDesk could not load
-            the associated pharmacy.
+      <div className="auth-page">
+        <div className="auth-card">
+          <div className="brand-mark">P</div>
+          <h1>PharmDesk</h1>
+          <p className="muted">
+            Your account is authenticated, but no active pharmacy store is
+            assigned.
           </p>
-
-          {error && (
-            <div className="error-message">
-              {error}
-            </div>
-          )}
-
-          <button
-            className="logout-button"
-            onClick={() => supabase.auth.signOut()}
-          >
+          {error && <div className="error-box">{error}</div>}
+          <button className="primary-btn full" onClick={signOut}>
             Sign out
           </button>
         </div>
@@ -1327,10 +214,4002 @@ function App() {
 
   return (
     <PharmacyApp
-      user={user}
       store={store}
-      membership={membership}
+      profile={profile}
+      session={session}
+      onSignOut={signOut}
     />
+  )
+}
+
+function LoadingScreen() {
+  return (
+    <div className="auth-page">
+      <div className="loading-card">
+        <div className="brand-mark">P</div>
+        <div className="spinner" />
+        <h2>Loading PharmDesk</h2>
+        <p>Connecting to your pharmacy workspace…</p>
+      </div>
+    </div>
+  )
+}
+
+function LoginScreen() {
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  async function login(event) {
+    event.preventDefault()
+    setBusy(true)
+    setError('')
+
+    const { error: loginError } = await supabase.auth.signInWithPassword({
+      email: email.trim(),
+      password,
+    })
+
+    if (loginError) setError(loginError.message)
+    setBusy(false)
+  }
+
+  return (
+    <div className="auth-page">
+      <div className="auth-card auth-wide">
+        <div className="brand-mark">P</div>
+        <div className="eyebrow">LABDHI PHARMA</div>
+        <h1>PharmDesk</h1>
+        <p className="muted">
+          Pharmacy billing, inventory and business management.
+        </p>
+
+        <form onSubmit={login} className="form-stack">
+          <label>
+            Email
+            <input
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              type="email"
+              autoComplete="email"
+              required
+              placeholder="admin@example.com"
+            />
+          </label>
+
+          <label>
+            Password
+            <input
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              type="password"
+              autoComplete="current-password"
+              required
+              placeholder="••••••••"
+            />
+          </label>
+
+          {error && <div className="error-box">{error}</div>}
+
+          <button className="primary-btn full" disabled={busy}>
+            {busy ? 'Signing in…' : 'Sign in'}
+          </button>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+function PharmacyApp({ store, profile, session, onSignOut }) {
+  const [activePage, setActivePage] = useState('dashboard')
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [globalAlerts, setGlobalAlerts] = useState(0)
+
+  useEffect(() => {
+    async function loadAlertCount() {
+      const { count } = await supabase
+        .from('alerts')
+        .select('*', { count: 'exact', head: true })
+        .eq('store_id', store.id)
+        .eq('is_read', false)
+
+      setGlobalAlerts(count || 0)
+    }
+
+    loadAlertCount()
+  }, [store.id])
+
+  function navigate(page) {
+    setActivePage(page)
+    setSidebarOpen(false)
+  }
+
+  const pageTitle =
+    NAV_ITEMS.find((item) => item.id === activePage)?.label || 'Dashboard'
+
+  return (
+    <div className="app-shell">
+      <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
+        <div className="sidebar-brand">
+          <div className="brand-mark small">P</div>
+          <div>
+            <strong>PharmDesk</strong>
+            <span>LABDHI PHARMA</span>
+          </div>
+        </div>
+
+        <nav className="sidebar-nav">
+          {NAV_ITEMS.map((item) => (
+            <button
+              key={item.id}
+              className={`nav-item ${
+                activePage === item.id ? 'active' : ''
+              }`}
+              onClick={() => navigate(item.id)}
+            >
+              <span className="nav-icon">{item.icon}</span>
+              <span>{item.label}</span>
+
+              {item.id === 'alerts' && globalAlerts > 0 && (
+                <span className="nav-badge">{globalAlerts}</span>
+              )}
+            </button>
+          ))}
+        </nav>
+
+        <div className="sidebar-footer">
+          <div className="user-mini">
+            <div className="avatar">
+              {(profile?.full_name || session.user.email || 'P')
+                .charAt(0)
+                .toUpperCase()}
+            </div>
+            <div>
+              <strong>{profile?.full_name || 'PharmDesk User'}</strong>
+              <span>{session.user.email}</span>
+            </div>
+          </div>
+
+          <button className="logout-btn" onClick={onSignOut}>
+            Sign out
+          </button>
+        </div>
+      </aside>
+
+      <div
+        className={`sidebar-overlay ${sidebarOpen ? 'visible' : ''}`}
+        onClick={() => setSidebarOpen(false)}
+      />
+
+      <main className="main-shell">
+        <header className="topbar">
+          <button
+            className="mobile-menu-btn"
+            onClick={() => setSidebarOpen(true)}
+          >
+            ☰
+          </button>
+
+          <div className="topbar-title">
+            <span className="breadcrumb">PharmDesk</span>
+            <h1>{pageTitle}</h1>
+          </div>
+
+          <div className="topbar-right">
+            <div className="store-chip">
+              <span className="status-dot" />
+              {store.name}
+            </div>
+          </div>
+        </header>
+
+        <div className="page-content">
+          {activePage === 'dashboard' && (
+            <Dashboard store={store} navigate={navigate} />
+          )}
+
+          {activePage === 'sales' && (
+            <SalesModule store={store} profile={profile} />
+          )}
+
+          {activePage === 'purchases' && (
+            <PurchasesModule store={store} profile={profile} />
+          )}
+
+          {activePage === 'inventory' && <InventoryModule store={store} />}
+
+          {activePage === 'customers' && (
+            <CustomersModule store={store} />
+          )}
+
+          {activePage === 'reports' && <ReportsModule store={store} />}
+
+          {activePage === 'alerts' && <AlertsModule store={store} />}
+
+          {activePage === 'settings' && (
+            <SettingsModule store={store} profile={profile} />
+          )}
+        </div>
+      </main>
+    </div>
+  )
+}
+
+/* ============================================================
+   DASHBOARD
+============================================================ */
+
+function Dashboard({ store, navigate }) {
+  const [stats, setStats] = useState({
+    sales: 0,
+    bills: 0,
+    stock: 0,
+    alerts: 0,
+  })
+  const [recentSales, setRecentSales] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    loadDashboard()
+  }, [store.id])
+
+  async function loadDashboard() {
+    setLoading(true)
+
+    const start = `${todayISO()}T00:00:00`
+
+    const [
+      { data: sales },
+      { count: bills },
+      { count: stock },
+      { count: alerts },
+    ] = await Promise.all([
+      supabase
+        .from('sales')
+        .select('id, invoice_number, grand_total, bill_datetime, customers(name)')
+        .eq('store_id', store.id)
+        .eq('status', 'completed')
+        .gte('bill_datetime', start)
+        .order('bill_datetime', { ascending: false })
+        .limit(8),
+
+      supabase
+        .from('sales')
+        .select('*', { count: 'exact', head: true })
+        .eq('store_id', store.id)
+        .eq('status', 'completed')
+        .gte('bill_datetime', start),
+
+      supabase
+        .from('batches')
+        .select('*', { count: 'exact', head: true })
+        .eq('store_id', store.id)
+        .gt('current_stock_units', 0),
+
+      supabase
+        .from('alerts')
+        .select('*', { count: 'exact', head: true })
+        .eq('store_id', store.id)
+        .eq('is_resolved', false),
+    ])
+
+    const totalSales = (sales || []).reduce(
+      (sum, sale) => sum + Number(sale.grand_total || 0),
+      0,
+    )
+
+    setStats({
+      sales: totalSales,
+      bills: bills || 0,
+      stock: stock || 0,
+      alerts: alerts || 0,
+    })
+
+    setRecentSales(sales || [])
+    setLoading(false)
+  }
+
+  return (
+    <div className="dashboard">
+      <section className="welcome-row">
+        <div>
+          <div className="eyebrow">PHARMACY WORKSPACE</div>
+          <h2>Good morning</h2>
+          <p>
+            Here's what is happening at <strong>{store.name}</strong> today.
+          </p>
+        </div>
+
+        <div className="date-card">
+          <span>Today</span>
+          <strong>
+            {new Date().toLocaleDateString('en-IN', {
+              weekday: 'long',
+              day: 'numeric',
+              month: 'long',
+            })}
+          </strong>
+        </div>
+      </section>
+
+      <section className="stat-grid">
+        <StatCard
+          label="Today's Sales"
+          value={money(stats.sales)}
+          icon="₹"
+          loading={loading}
+        />
+        <StatCard
+          label="Bills Today"
+          value={stats.bills}
+          icon="▣"
+          loading={loading}
+        />
+        <StatCard
+          label="Active Stock Batches"
+          value={stats.stock}
+          icon="▦"
+          loading={loading}
+        />
+        <StatCard
+          label="Open Alerts"
+          value={stats.alerts}
+          icon="!"
+          loading={loading}
+        />
+      </section>
+
+      <section className="dashboard-grid">
+        <div className="panel">
+          <div className="panel-header">
+            <div>
+              <h3>Quick actions</h3>
+              <p>Jump directly into common pharmacy tasks.</p>
+            </div>
+          </div>
+
+          <div className="quick-actions">
+            <button onClick={() => navigate('sales')}>
+              <span>＋</span>
+              <div>
+                <strong>New Sale</strong>
+                <small>Create a customer bill</small>
+              </div>
+            </button>
+
+            <button onClick={() => navigate('purchases')}>
+              <span>＋</span>
+              <div>
+                <strong>New Purchase</strong>
+                <small>Receive supplier stock</small>
+              </div>
+            </button>
+
+            <button onClick={() => navigate('inventory')}>
+              <span>▦</span>
+              <div>
+                <strong>Inventory</strong>
+                <small>Products and batches</small>
+              </div>
+            </button>
+
+            <button onClick={() => navigate('customers')}>
+              <span>♙</span>
+              <div>
+                <strong>Customers</strong>
+                <small>History and credit</small>
+              </div>
+            </button>
+          </div>
+        </div>
+
+        <div className="panel">
+          <div className="panel-header">
+            <div>
+              <h3>Recent sales</h3>
+              <p>Latest completed bills today.</p>
+            </div>
+          </div>
+
+          {recentSales.length === 0 ? (
+            <EmptyState
+              icon="▣"
+              title="No sales yet today"
+              text="Completed bills will appear here."
+            />
+          ) : (
+            <div className="list-table">
+              {recentSales.map((sale) => (
+                <div className="list-row" key={sale.id}>
+                  <div>
+                    <strong>{sale.invoice_number}</strong>
+                    <span>
+                      {sale.customers?.name || 'Walk-in Customer'} ·{' '}
+                      {dateTimeText(sale.bill_datetime)}
+                    </span>
+                  </div>
+                  <strong>{money(sale.grand_total)}</strong>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </section>
+    </div>
+  )
+}
+
+function StatCard({ label, value, icon, loading }) {
+  return (
+    <div className="stat-card">
+      <div className="stat-icon">{icon}</div>
+      <div>
+        <span>{label}</span>
+        <strong>{loading ? '…' : value}</strong>
+      </div>
+    </div>
+  )
+}
+
+/* ============================================================
+   SALES
+============================================================ */
+
+function SalesModule({ store, profile }) {
+  const [tab, setTab] = useState('New Sale')
+
+  return (
+    <div className="module">
+      <ModuleHeader
+        eyebrow="SALES"
+        title="Sales & Billing"
+        description="Create bills, manage drafts, returns and customer credit."
+      />
+
+      <TabBar tabs={SALES_TABS} active={tab} onChange={setTab} />
+
+      {tab === 'New Sale' && (
+        <NewSale store={store} profile={profile} />
+      )}
+
+      {tab === 'Draft Bills' && <DraftBills store={store} />}
+
+      {tab === 'Completed Bills' && (
+        <CompletedBills store={store} />
+      )}
+
+      {tab === 'Returns' && <SalesReturns store={store} />}
+
+      {tab === 'Customers' && <CustomersModule store={store} />}
+
+      {tab === 'Credit' && <CustomerCredit store={store} />}
+    </div>
+  )
+}
+
+function NewSale({ store, profile }) {
+  const [customer, setCustomer] = useState(null)
+  const [customerSearch, setCustomerSearch] = useState('')
+  const [customers, setCustomers] = useState([])
+  const [products, setProducts] = useState([])
+  const [batches, setBatches] = useState([])
+  const [items, setItems] = useState([])
+  const [productSearch, setProductSearch] = useState('')
+  const [billDiscount, setBillDiscount] = useState(0)
+  const [billDatetime, setBillDatetime] = useState(
+    new Date().toISOString().slice(0, 16),
+  )
+  const [payments, setPayments] = useState([
+    { payment_method: 'cash', amount: '' },
+  ])
+  const [notes, setNotes] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState('')
+  const [showCustomerForm, setShowCustomerForm] = useState(false)
+  const [showProductForm, setShowProductForm] = useState(false)
+
+  useEffect(() => {
+    loadProducts()
+  }, [store.id])
+
+  async function loadProducts() {
+    const { data } = await supabase
+      .from('store_products')
+      .select(`
+        *,
+        products(
+          id,
+          product_name,
+          generic_display_name,
+          manufacturer,
+          dosage_form,
+          strength_display,
+          pack_quantity,
+          pack_unit,
+          gst_rate,
+          is_active
+        )
+      `)
+      .eq('store_id', store.id)
+      .eq('is_active', true)
+      .limit(500)
+
+    setProducts(
+      (data || [])
+        .filter((row) => row.products?.is_active)
+        .map((row) => ({
+          ...row.products,
+          default_selling_price: row.default_selling_price,
+          default_discount_percent: row.default_discount_percent,
+        })),
+    )
+  }
+
+  async function searchCustomers(value) {
+    setCustomerSearch(value)
+
+    if (!value.trim()) {
+      setCustomers([])
+      return
+    }
+
+    const { data } = await supabase
+      .from('customers')
+      .select('*')
+      .eq('store_id', store.id)
+      .eq('is_active', true)
+      .or(`name.ilike.%${value}%,phone.ilike.%${value}%`)
+      .limit(8)
+
+    setCustomers(data || [])
+  }
+
+  async function loadBatches(productId) {
+    const { data } = await supabase
+      .from('batches')
+      .select('*')
+      .eq('store_id', store.id)
+      .eq('product_id', productId)
+      .eq('is_active', true)
+      .gt('current_stock_units', 0)
+      .order('expiry_date', { ascending: true })
+
+    setBatches(data || [])
+  }
+
+  async function chooseProduct(product) {
+    setProductSearch('')
+    await loadBatches(product.id)
+
+    const { data } = await supabase
+      .from('batches')
+      .select('*')
+      .eq('store_id', store.id)
+      .eq('product_id', product.id)
+      .eq('is_active', true)
+      .gt('current_stock_units', 0)
+      .order('expiry_date', { ascending: true })
+      .limit(1)
+      .maybeSingle()
+
+    if (!data) {
+      setMessage('This product has no available stock.')
+      return
+    }
+
+    setItems((current) => [
+      ...current,
+      {
+        ...emptySaleItem(),
+        product_id: product.id,
+        product_name: product.product_name,
+        batch_id: data.id,
+        batch_number: data.batch_number,
+        units_per_pack: data.units_per_pack,
+        mrp_per_pack: data.mrp_per_pack,
+        selling_price_per_pack:
+          product.default_selling_price || data.mrp_per_pack || 0,
+        default_discount_percent:
+          Number(product.default_discount_percent || 0),
+        discount_percent:
+          Number(product.default_discount_percent || 0),
+        gst_rate: Number(product.gst_rate || 0),
+      },
+    ])
+  }
+
+  function updateItem(index, patch) {
+    setItems((current) =>
+      current.map((item, i) =>
+        i === index ? { ...item, ...patch } : item,
+      ),
+    )
+  }
+
+  function removeItem(index) {
+    setItems((current) => current.filter((_, i) => i !== index))
+  }
+
+  const totals = useMemo(() => {
+    let subtotal = 0
+    let itemDiscount = 0
+    let taxable = 0
+    let gst = 0
+
+    items.forEach((item) => {
+      const quantity = Number(item.quantity_entered || 0)
+      const packUnits = Number(item.units_per_pack || 1)
+      const price = Number(item.selling_price_per_pack || 0)
+      const discount = Number(item.discount_percent || 0)
+      const rate = Number(item.gst_rate || 0)
+
+      const gross =
+        item.unit_type === 'pack'
+          ? quantity * price
+          : (quantity / packUnits) * price
+
+      const disc = gross * (discount / 100)
+      const line = gross - disc
+      const lineTaxable =
+        rate > 0 ? line / (1 + rate / 100) : line
+
+      subtotal += gross
+      itemDiscount += disc
+      taxable += lineTaxable
+      gst += line - lineTaxable
+    })
+
+    const total = Math.max(
+      0,
+      subtotal - itemDiscount - Number(billDiscount || 0),
+    )
+
+    const paid = payments.reduce(
+      (sum, payment) =>
+        sum + Number(payment.amount || 0),
+      0,
+    )
+
+    return {
+      subtotal,
+      itemDiscount,
+      taxable,
+      gst,
+      total,
+      paid,
+      due: Math.max(0, total - paid),
+    }
+  }, [items, billDiscount, payments])
+
+  function updatePayment(index, patch) {
+    setPayments((current) =>
+      current.map((payment, i) =>
+        i === index ? { ...payment, ...patch } : payment,
+      ),
+    )
+  }
+
+  function addPayment() {
+    setPayments((current) => [
+      ...current,
+      { payment_method: 'upi', amount: '' },
+    ])
+  }
+
+  function removePayment(index) {
+    if (payments.length === 1) return
+    setPayments((current) => current.filter((_, i) => i !== index))
+  }
+
+  async function completeSale() {
+    setMessage('')
+
+    if (items.length === 0) {
+      setMessage('Add at least one product.')
+      return
+    }
+
+    if (totals.due > 0 && !customer) {
+      setMessage(
+        'A named customer is required when the bill has an outstanding amount.',
+      )
+      return
+    }
+
+    const payloadItems = items.map((item) => ({
+      product_id: item.product_id,
+      batch_id: item.batch_id,
+      unit_type: item.unit_type,
+      quantity_entered: Number(item.quantity_entered),
+      units_per_pack: Number(item.units_per_pack),
+      mrp_per_pack: Number(item.mrp_per_pack),
+      selling_price_per_pack: Number(item.selling_price_per_pack),
+      default_discount_percent: Number(
+        item.default_discount_percent || 0,
+      ),
+      discount_percent: Number(item.discount_percent || 0),
+      gst_rate: Number(item.gst_rate || 0),
+    }))
+
+    const payloadPayments = payments
+      .filter((payment) => Number(payment.amount || 0) > 0)
+      .map((payment) => ({
+        payment_method: payment.payment_method,
+        amount: Number(payment.amount),
+      }))
+
+    if (totals.paid > totals.total) {
+      setMessage('Payment exceeds the bill total.')
+      return
+    }
+
+    if (
+      totals.due > 0 &&
+      !payloadPayments.some(
+        (payment) => payment.payment_method === 'credit',
+      )
+    ) {
+      payloadPayments.push({
+        payment_method: 'credit',
+        amount: Number(totals.due.toFixed(2)),
+      })
+    }
+
+    setBusy(true)
+
+    const { data, error } = await supabase.rpc(
+      'pharmdesk_complete_sale',
+      {
+        p_store_id: store.id,
+        p_customer_id: customer?.id || null,
+        p_bill_datetime: new Date(billDatetime).toISOString(),
+        p_bill_discount_amount: Number(billDiscount || 0),
+        p_notes: notes || null,
+        p_items: payloadItems,
+        p_payments: payloadPayments,
+      },
+    )
+
+    if (error) {
+      setMessage(error.message)
+      setBusy(false)
+      return
+    }
+
+    setMessage(`Sale completed successfully. Sale ID: ${data}`)
+    setItems([])
+    setCustomer(null)
+    setCustomerSearch('')
+    setBillDiscount(0)
+    setPayments([{ payment_method: 'cash', amount: '' }])
+    setNotes('')
+    setBusy(false)
+  }
+
+  const filteredProducts = products.filter((product) => {
+    const q = productSearch.toLowerCase().trim()
+    if (!q) return false
+
+    return [
+      product.product_name,
+      product.generic_display_name,
+      product.manufacturer,
+      product.strength_display,
+      product.dosage_form,
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase()
+      .includes(q)
+  })
+
+  return (
+    <div className="workspace-grid">
+      <div className="workspace-main">
+        <div className="panel">
+          <div className="panel-header">
+            <div>
+              <h3>New sale</h3>
+              <p>Create a bill without leaving the current workflow.</p>
+            </div>
+          </div>
+
+          <div className="form-grid two">
+            <label>
+              Customer
+              <div className="search-with-action">
+                <input
+                  value={customerSearch}
+                  onChange={(e) => searchCustomers(e.target.value)}
+                  placeholder="Search name or phone"
+                />
+                <button
+                  className="inline-btn"
+                  onClick={() => setShowCustomerForm(true)}
+                >
+                  + Add
+                </button>
+              </div>
+
+              {customer && (
+                <div className="selected-chip">
+                  <strong>{customer.name}</strong>
+                  <span>{customer.phone}</span>
+                  <button onClick={() => setCustomer(null)}>×</button>
+                </div>
+              )}
+
+              {!customer &&
+                customerSearch &&
+                customers.length > 0 && (
+                  <div className="suggestion-list">
+                    {customers.map((item) => (
+                      <button
+                        key={item.id}
+                        onClick={() => {
+                          setCustomer(item)
+                          setCustomerSearch(item.name)
+                          setCustomers([])
+                        }}
+                      >
+                        <strong>{item.name}</strong>
+                        <span>{item.phone}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+            </label>
+
+            <label>
+              Bill date & time
+              <input
+                type="datetime-local"
+                value={billDatetime}
+                onChange={(e) => setBillDatetime(e.target.value)}
+              />
+            </label>
+          </div>
+
+          <div className="product-entry">
+            <label>
+              Add product
+              <div className="search-with-action">
+                <input
+                  value={productSearch}
+                  onChange={(e) => setProductSearch(e.target.value)}
+                  placeholder="Search medicine, brand, generic or manufacturer"
+                />
+                <button
+                  className="inline-btn"
+                  onClick={() => setShowProductForm(true)}
+                >
+                  + New
+                </button>
+              </div>
+            </label>
+
+            {filteredProducts.length > 0 && (
+              <div className="suggestion-list product-results">
+                {filteredProducts.slice(0, 8).map((product) => (
+                  <button
+                    key={product.id}
+                    onClick={() => chooseProduct(product)}
+                  >
+                    <div>
+                      <strong>{product.product_name}</strong>
+                      <span>
+                        {product.generic_display_name || 'No generic name'}
+                      </span>
+                    </div>
+                    <small>
+                      {product.strength_display || ''}{' '}
+                      {product.dosage_form || ''}
+                    </small>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="sale-items">
+            {items.length === 0 ? (
+              <EmptyState
+                icon="▣"
+                title="No products added"
+                text="Search for a product above to begin the bill."
+              />
+            ) : (
+              items.map((item, index) => (
+                <SaleItemRow
+                  key={`${item.product_id}-${index}`}
+                  item={item}
+                  index={index}
+                  batches={batches}
+                  updateItem={updateItem}
+                  removeItem={removeItem}
+                />
+              ))
+            )}
+          </div>
+
+          <div className="form-grid two">
+            <label>
+              Bill discount
+              <input
+                type="number"
+                min="0"
+                value={billDiscount}
+                onChange={(e) => setBillDiscount(e.target.value)}
+              />
+            </label>
+
+            <label>
+              Notes
+              <input
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Optional"
+              />
+            </label>
+          </div>
+
+          {message && (
+            <div
+              className={
+                message.includes('successfully')
+                  ? 'success-box'
+                  : 'error-box'
+              }
+            >
+              {message}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <aside className="workspace-side">
+        <div className="panel sticky-panel">
+          <div className="panel-header">
+            <div>
+              <h3>Payment</h3>
+              <p>Split payments are supported.</p>
+            </div>
+          </div>
+
+          <div className="bill-total">
+            <span>Grand total</span>
+            <strong>{money(totals.total)}</strong>
+          </div>
+
+          <div className="payment-list">
+            {payments.map((payment, index) => (
+              <div className="payment-row" key={index}>
+                <select
+                  value={payment.payment_method}
+                  onChange={(e) =>
+                    updatePayment(index, {
+                      payment_method: e.target.value,
+                    })
+                  }
+                >
+                  <option value="cash">Cash</option>
+                  <option value="upi">UPI</option>
+                  <option value="card">Card</option>
+                  <option value="credit">Credit</option>
+                </select>
+
+                <input
+                  type="number"
+                  min="0"
+                  value={payment.amount}
+                  onChange={(e) =>
+                    updatePayment(index, {
+                      amount: e.target.value,
+                    })
+                  }
+                  placeholder="Amount"
+                />
+
+                {payments.length > 1 && (
+                  <button
+                    className="icon-btn"
+                    onClick={() => removePayment(index)}
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+
+          <button className="text-btn" onClick={addPayment}>
+            + Add payment method
+          </button>
+
+          <div className="totals-list">
+            <div>
+              <span>Subtotal</span>
+              <strong>{money(totals.subtotal)}</strong>
+            </div>
+            <div>
+              <span>Item discount</span>
+              <strong>-{money(totals.itemDiscount)}</strong>
+            </div>
+            <div>
+              <span>GST included</span>
+              <strong>{money(totals.gst)}</strong>
+            </div>
+            <div>
+              <span>Paid</span>
+              <strong>{money(totals.paid)}</strong>
+            </div>
+            <div className="due">
+              <span>Due</span>
+              <strong>{money(totals.due)}</strong>
+            </div>
+          </div>
+
+          <button
+            className="primary-btn full"
+            disabled={busy || items.length === 0}
+            onClick={completeSale}
+          >
+            {busy ? 'Completing…' : 'Complete Sale'}
+          </button>
+        </div>
+      </aside>
+
+      {showCustomerForm && (
+        <CustomerModal
+          store={store}
+          onClose={() => setShowCustomerForm(false)}
+          onCreated={(newCustomer) => {
+            setCustomer(newCustomer)
+            setCustomerSearch(newCustomer.name)
+            setShowCustomerForm(false)
+          }}
+        />
+      )}
+
+      {showProductForm && (
+        <ProductModal
+          store={store}
+          onClose={() => setShowProductForm(false)}
+          onCreated={async (product) => {
+            setShowProductForm(false)
+            await loadProducts()
+            await chooseProduct(product)
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+function SaleItemRow({
+  item,
+  index,
+  updateItem,
+  removeItem,
+}) {
+  const quantity =
+    Number(item.quantity_entered || 0) *
+    (item.unit_type === 'pack'
+      ? Number(item.units_per_pack || 1)
+      : 1)
+
+  const gross =
+    item.unit_type === 'pack'
+      ? Number(item.quantity_entered || 0) *
+        Number(item.selling_price_per_pack || 0)
+      : (Number(item.quantity_entered || 0) /
+          Number(item.units_per_pack || 1)) *
+        Number(item.selling_price_per_pack || 0)
+
+  const discount =
+    gross * (Number(item.discount_percent || 0) / 100)
+
+  return (
+    <div className="sale-item-card">
+      <div className="sale-item-top">
+        <div>
+          <strong>{item.product_name}</strong>
+          <span>
+            Batch {item.batch_number} · {quantity} units
+          </span>
+        </div>
+
+        <button
+          className="danger-text"
+          onClick={() => removeItem(index)}
+        >
+          Remove
+        </button>
+      </div>
+
+      <div className="form-grid four">
+        <label>
+          Sell as
+          <select
+            value={item.unit_type}
+            onChange={(e) =>
+              updateItem(index, {
+                unit_type: e.target.value,
+              })
+            }
+          >
+            <option value="pack">Strip / Pack</option>
+            <option value="unit">Tablets / Units</option>
+          </select>
+        </label>
+
+        <label>
+          Quantity
+          <input
+            type="number"
+            min="0.01"
+            value={item.quantity_entered}
+            onChange={(e) =>
+              updateItem(index, {
+                quantity_entered: e.target.value,
+              })
+            }
+          />
+        </label>
+
+        <label>
+          Selling price / pack
+          <input
+            type="number"
+            min="0"
+            value={item.selling_price_per_pack}
+            onChange={(e) =>
+              updateItem(index, {
+                selling_price_per_pack: e.target.value,
+              })
+            }
+          />
+        </label>
+
+        <label>
+          Discount %
+          <input
+            type="number"
+            min="0"
+            max="100"
+            value={item.discount_percent}
+            onChange={(e) =>
+              updateItem(index, {
+                discount_percent: e.target.value,
+              })
+            }
+          />
+        </label>
+      </div>
+
+      <div className="sale-item-footer">
+        <span>MRP {money(item.mrp_per_pack)}</span>
+        <span>GST {item.gst_rate}%</span>
+        <strong>{money(gross - discount)}</strong>
+      </div>
+    </div>
+  )
+}
+
+function DraftBills({ store }) {
+  const [drafts, setDrafts] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    loadDrafts()
+  }, [store.id])
+
+  async function loadDrafts() {
+    setLoading(true)
+
+    const { data } = await supabase
+      .from('sales')
+      .select(`
+        *,
+        customers(name, phone)
+      `)
+      .eq('store_id', store.id)
+      .eq('status', 'draft')
+      .order('created_at', { ascending: false })
+
+    setDrafts(data || [])
+    setLoading(false)
+  }
+
+  return (
+    <PanelList
+      title="Draft bills"
+      subtitle="Incomplete bills saved for later."
+      loading={loading}
+      empty="No saved draft bills."
+    >
+      {drafts.map((draft) => (
+        <div className="list-row" key={draft.id}>
+          <div>
+            <strong>{draft.invoice_number}</strong>
+            <span>
+              {draft.customers?.name || 'Walk-in'} ·{' '}
+              {dateTimeText(draft.created_at)}
+            </span>
+          </div>
+          <span className="status-pill warning">Draft</span>
+        </div>
+      ))}
+    </PanelList>
+  )
+}
+
+function CompletedBills({ store }) {
+  const [sales, setSales] = useState([])
+  const [search, setSearch] = useState('')
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    loadSales()
+  }, [store.id])
+
+  async function loadSales() {
+    setLoading(true)
+
+    const { data } = await supabase
+      .from('sales')
+      .select(`
+        *,
+        customers(name, phone)
+      `)
+      .eq('store_id', store.id)
+      .eq('status', 'completed')
+      .order('bill_datetime', { ascending: false })
+      .limit(200)
+
+    setSales(data || [])
+    setLoading(false)
+  }
+
+  const filtered = sales.filter((sale) =>
+    [
+      sale.invoice_number,
+      sale.customers?.name,
+      sale.customers?.phone,
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase()
+      .includes(search.toLowerCase()),
+  )
+
+  return (
+    <div className="panel">
+      <div className="panel-header">
+        <div>
+          <h3>Completed bills</h3>
+          <p>Search previous sales.</p>
+        </div>
+        <input
+          className="compact-search"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Invoice / customer / phone"
+        />
+      </div>
+
+      {loading ? (
+        <LoadingInline />
+      ) : filtered.length === 0 ? (
+        <EmptyState title="No completed bills found." />
+      ) : (
+        <div className="list-table">
+          {filtered.map((sale) => (
+            <div className="list-row" key={sale.id}>
+              <div>
+                <strong>{sale.invoice_number}</strong>
+                <span>
+                  {sale.customers?.name || 'Walk-in Customer'} ·{' '}
+                  {dateTimeText(sale.bill_datetime)}
+                </span>
+              </div>
+              <div className="row-right">
+                <strong>{money(sale.grand_total)}</strong>
+                <span className="status-pill success">
+                  {sale.amount_due > 0 ? 'Credit' : 'Paid'}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function SalesReturns({ store }) {
+  const [sales, setSales] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    loadReturns()
+  }, [store.id])
+
+  async function loadReturns() {
+    setLoading(true)
+
+    const { data } = await supabase
+      .from('sales_returns')
+      .select(`
+        *,
+        sales:original_sale_id(invoice_number),
+        customers:customer_id(name)
+      `)
+      .eq('store_id', store.id)
+      .order('created_at', { ascending: false })
+      .limit(100)
+
+    setSales(data || [])
+    setLoading(false)
+  }
+
+  return (
+    <PanelList
+      title="Sales returns"
+      subtitle="Return history and refunds."
+      loading={loading}
+      empty="No sales returns recorded."
+    >
+      {sales.map((item) => (
+        <div className="list-row" key={item.id}>
+          <div>
+            <strong>
+              {item.sales?.invoice_number || 'Original bill'}
+            </strong>
+            <span>
+              {item.customers?.name || 'Walk-in'} ·{' '}
+              {dateText(item.created_at)}
+            </span>
+          </div>
+          <strong>{money(item.refund_amount)}</strong>
+        </div>
+      ))}
+    </PanelList>
+  )
+}
+
+function CustomerCredit({ store }) {
+  const [transactions, setTransactions] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    loadCredit()
+  }, [store.id])
+
+  async function loadCredit() {
+    setLoading(true)
+
+    const { data } = await supabase
+      .from('customer_credit_transactions')
+      .select(`
+        *,
+        customers:customer_id(name, phone)
+      `)
+      .eq('store_id', store.id)
+      .order('created_at', { ascending: false })
+      .limit(200)
+
+    setTransactions(data || [])
+    setLoading(false)
+  }
+
+  return (
+    <PanelList
+      title="Customer credit"
+      subtitle="Udhar and customer credit transactions."
+      loading={loading}
+      empty="No credit transactions found."
+    >
+      {transactions.map((item) => (
+        <div className="list-row" key={item.id}>
+          <div>
+            <strong>{item.customers?.name || 'Customer'}</strong>
+            <span>
+              {item.transaction_type} · {dateTimeText(item.created_at)}
+            </span>
+          </div>
+          <strong>{money(item.amount)}</strong>
+        </div>
+      ))}
+    </PanelList>
+  )
+}
+
+/* ============================================================
+   PURCHASES
+============================================================ */
+
+function PurchasesModule({ store, profile }) {
+  const [tab, setTab] = useState('New Purchase')
+
+  return (
+    <div className="module">
+      <ModuleHeader
+        eyebrow="PURCHASES"
+        title="Purchases & Suppliers"
+        description="Receive stock, manage supplier invoices and payments."
+      />
+
+      <TabBar tabs={PURCHASE_TABS} active={tab} onChange={setTab} />
+
+      {tab === 'New Purchase' && (
+        <NewPurchase store={store} profile={profile} />
+      )}
+
+      {tab === 'Supplier Invoices' && (
+        <SupplierInvoices store={store} />
+      )}
+
+      {tab === 'Pending Payments' && (
+        <PendingSupplierPayments store={store} />
+      )}
+
+      {tab === 'Purchase Orders' && (
+        <PurchaseOrders store={store} />
+      )}
+
+      {tab === 'AI Recommendations' && (
+        <AIRecommendations store={store} />
+      )}
+    </div>
+  )
+}
+
+function NewPurchase({ store, profile }) {
+  const [supplier, setSupplier] = useState(null)
+  const [supplierSearch, setSupplierSearch] = useState('')
+  const [suppliers, setSuppliers] = useState([])
+  const [products, setProducts] = useState([])
+  const [productSearch, setProductSearch] = useState('')
+  const [items, setItems] = useState([])
+  const [invoiceNumber, setInvoiceNumber] = useState('')
+  const [invoiceDate, setInvoiceDate] = useState(todayISO())
+  const [discount, setDiscount] = useState(0)
+  const [cgst, setCgst] = useState(0)
+  const [sgst, setSgst] = useState(0)
+  const [igst, setIgst] = useState(0)
+  const [otherCharges, setOtherCharges] = useState(0)
+  const [notes, setNotes] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState('')
+  const [showSupplierForm, setShowSupplierForm] = useState(false)
+  const [showProductForm, setShowProductForm] = useState(false)
+
+  useEffect(() => {
+    loadProducts()
+  }, [store.id])
+
+  async function loadProducts() {
+    const { data } = await supabase
+      .from('products')
+      .select(`
+        id,
+        product_name,
+        generic_display_name,
+        manufacturer,
+        strength_display,
+        dosage_form,
+        gst_rate
+      `)
+      .eq('is_active', true)
+      .order('product_name')
+      .limit(500)
+
+    setProducts(data || [])
+  }
+
+  async function searchSuppliers(value) {
+    setSupplierSearch(value)
+
+    if (!value.trim()) {
+      setSuppliers([])
+      return
+    }
+
+    const { data } = await supabase
+      .from('suppliers')
+      .select('*')
+      .eq('store_id', store.id)
+      .eq('is_active', true)
+      .ilike('supplier_name', `%${value}%`)
+      .limit(8)
+
+    setSuppliers(data || [])
+  }
+
+  function addProduct(product) {
+    setProductSearch('')
+
+    setItems((current) => [
+      ...current,
+      {
+        ...emptyPurchaseItem(),
+        product_id: product.id,
+        product_name: product.product_name,
+        gst_rate: Number(product.gst_rate || 0),
+      },
+    ])
+  }
+
+  function updateItem(index, patch) {
+    setItems((current) =>
+      current.map((item, i) =>
+        i === index ? { ...item, ...patch } : item,
+      ),
+    )
+  }
+
+  function removeItem(index) {
+    setItems((current) => current.filter((_, i) => i !== index))
+  }
+
+  const subtotal = items.reduce(
+    (sum, item) =>
+      sum +
+      Number(item.paid_packs || 0) *
+        Number(item.purchase_rate_per_pack || 0),
+    0,
+  )
+
+  const total =
+    subtotal -
+    Number(discount || 0) +
+    Number(cgst || 0) +
+    Number(sgst || 0) +
+    Number(igst || 0) +
+    Number(otherCharges || 0)
+
+  const filteredProducts = products.filter((product) =>
+    [
+      product.product_name,
+      product.generic_display_name,
+      product.manufacturer,
+      product.strength_display,
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase()
+      .includes(productSearch.toLowerCase()),
+  )
+
+  async function completePurchase() {
+    setMessage('')
+
+    if (!supplier) {
+      setMessage('Select a supplier first.')
+      return
+    }
+
+    if (!invoiceNumber.trim()) {
+      setMessage('Supplier invoice number is required.')
+      return
+    }
+
+    if (items.length === 0) {
+      setMessage('Add at least one purchase item.')
+      return
+    }
+
+    setBusy(true)
+
+    const payload = items.map((item) => ({
+      product_id: item.product_id,
+      batch_number: item.batch_number,
+      expiry_date: item.expiry_date,
+      units_per_pack: Number(item.units_per_pack),
+      paid_packs: Number(item.paid_packs || 0),
+      free_packs: Number(item.free_packs || 0),
+      loose_units: Number(item.loose_units || 0),
+      purchase_rate_per_pack: Number(
+        item.purchase_rate_per_pack || 0,
+      ),
+      mrp_per_pack: Number(item.mrp_per_pack || 0),
+      supplier_discount_percent: Number(
+        item.supplier_discount_percent || 0,
+      ),
+      gst_rate: Number(item.gst_rate || 0),
+    }))
+
+    const { data, error } = await supabase.rpc(
+      'pharmdesk_complete_purchase',
+      {
+        p_store_id: store.id,
+        p_supplier_id: supplier.id,
+        p_invoice_number: invoiceNumber.trim(),
+        p_invoice_date: invoiceDate,
+        p_items: payload,
+        p_discount_amount: Number(discount || 0),
+        p_cgst_amount: Number(cgst || 0),
+        p_sgst_amount: Number(sgst || 0),
+        p_igst_amount: Number(igst || 0),
+        p_other_charges: Number(otherCharges || 0),
+        p_notes: notes || null,
+      },
+    )
+
+    if (error) {
+      setMessage(error.message)
+      setBusy(false)
+      return
+    }
+
+    setMessage(`Purchase received successfully. Invoice ID: ${data}`)
+    setItems([])
+    setSupplier(null)
+    setSupplierSearch('')
+    setInvoiceNumber('')
+    setDiscount(0)
+    setCgst(0)
+    setSgst(0)
+    setIgst(0)
+    setOtherCharges(0)
+    setNotes('')
+    setBusy(false)
+  }
+
+  return (
+    <div className="workspace-grid">
+      <div className="workspace-main">
+        <div className="panel">
+          <div className="panel-header">
+            <div>
+              <h3>New purchase</h3>
+              <p>Receive supplier stock into inventory.</p>
+            </div>
+          </div>
+
+          <div className="form-grid three">
+            <label>
+              Purchase party
+              <div className="search-with-action">
+                <input
+                  value={supplierSearch}
+                  onChange={(e) =>
+                    searchSuppliers(e.target.value)
+                  }
+                  placeholder="Search supplier"
+                />
+                <button
+                  className="inline-btn"
+                  onClick={() => setShowSupplierForm(true)}
+                >
+                  + Add
+                </button>
+              </div>
+
+              {supplier && (
+                <div className="selected-chip">
+                  <strong>{supplier.supplier_name}</strong>
+                  <button onClick={() => setSupplier(null)}>
+                    ×
+                  </button>
+                </div>
+              )}
+
+              {!supplier &&
+                supplierSearch &&
+                suppliers.length > 0 && (
+                  <div className="suggestion-list">
+                    {suppliers.map((item) => (
+                      <button
+                        key={item.id}
+                        onClick={() => {
+                          setSupplier(item)
+                          setSupplierSearch(item.supplier_name)
+                          setSuppliers([])
+                        }}
+                      >
+                        <strong>{item.supplier_name}</strong>
+                        <span>{item.phone || 'No phone'}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+            </label>
+
+            <label>
+              Supplier invoice number
+              <input
+                value={invoiceNumber}
+                onChange={(e) =>
+                  setInvoiceNumber(e.target.value)
+                }
+                placeholder="e.g. INV-4582"
+              />
+            </label>
+
+            <label>
+              Invoice date
+              <input
+                type="date"
+                value={invoiceDate}
+                onChange={(e) => setInvoiceDate(e.target.value)}
+              />
+            </label>
+          </div>
+
+          <label>
+            Add product
+            <div className="search-with-action">
+              <input
+                value={productSearch}
+                onChange={(e) => setProductSearch(e.target.value)}
+                placeholder="Search product"
+              />
+              <button
+                className="inline-btn"
+                onClick={() => setShowProductForm(true)}
+              >
+                + New Product
+              </button>
+            </div>
+          </label>
+
+          {filteredProducts.length > 0 && (
+            <div className="suggestion-list product-results">
+              {filteredProducts.slice(0, 8).map((product) => (
+                <button
+                  key={product.id}
+                  onClick={() => addProduct(product)}
+                >
+                  <div>
+                    <strong>{product.product_name}</strong>
+                    <span>
+                      {product.generic_display_name || 'No generic'}
+                    </span>
+                  </div>
+                  <small>{product.manufacturer || ''}</small>
+                </button>
+              ))}
+            </div>
+          )}
+
+          <div className="purchase-items">
+            {items.length === 0 ? (
+              <EmptyState
+                icon="▤"
+                title="No purchase items"
+                text="Search for a product above to add stock."
+              />
+            ) : (
+              items.map((item, index) => (
+                <PurchaseItemRow
+                  key={`${item.product_id}-${index}`}
+                  item={item}
+                  index={index}
+                  updateItem={updateItem}
+                  removeItem={removeItem}
+                />
+              ))
+            )}
+          </div>
+
+          {message && (
+            <div
+              className={
+                message.includes('successfully')
+                  ? 'success-box'
+                  : 'error-box'
+              }
+            >
+              {message}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <aside className="workspace-side">
+        <div className="panel sticky-panel">
+          <div className="panel-header">
+            <div>
+              <h3>Invoice totals</h3>
+              <p>Charges from the supplier invoice.</p>
+            </div>
+          </div>
+
+          <div className="totals-list">
+            <div>
+              <span>Subtotal</span>
+              <strong>{money(subtotal)}</strong>
+            </div>
+
+            <label>
+              Discount
+              <input
+                type="number"
+                min="0"
+                value={discount}
+                onChange={(e) => setDiscount(e.target.value)}
+              />
+            </label>
+
+            <label>
+              CGST
+              <input
+                type="number"
+                min="0"
+                value={cgst}
+                onChange={(e) => setCgst(e.target.value)}
+              />
+            </label>
+
+            <label>
+              SGST
+              <input
+                type="number"
+                min="0"
+                value={sgst}
+                onChange={(e) => setSgst(e.target.value)}
+              />
+            </label>
+
+            <label>
+              IGST
+              <input
+                type="number"
+                min="0"
+                value={igst}
+                onChange={(e) => setIgst(e.target.value)}
+              />
+            </label>
+
+            <label>
+              Other charges
+              <input
+                type="number"
+                min="0"
+                value={otherCharges}
+                onChange={(e) =>
+                  setOtherCharges(e.target.value)
+                }
+              />
+            </label>
+
+            <div className="grand-total">
+              <span>Total</span>
+              <strong>{money(total)}</strong>
+            </div>
+          </div>
+
+          <label>
+            Notes
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Optional purchase notes"
+              rows="3"
+            />
+          </label>
+
+          <button
+            className="primary-btn full"
+            disabled={busy || items.length === 0}
+            onClick={completePurchase}
+          >
+            {busy ? 'Receiving…' : 'Receive Purchase'}
+          </button>
+        </div>
+      </aside>
+
+      {showSupplierForm && (
+        <SupplierModal
+          store={store}
+          onClose={() => setShowSupplierForm(false)}
+          onCreated={(newSupplier) => {
+            setSupplier(newSupplier)
+            setSupplierSearch(newSupplier.supplier_name)
+            setShowSupplierForm(false)
+          }}
+        />
+      )}
+
+      {showProductForm && (
+        <ProductModal
+          store={store}
+          onClose={() => setShowProductForm(false)}
+          onCreated={async (product) => {
+            setShowProductForm(false)
+            await loadProducts()
+            addProduct(product)
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+function PurchaseItemRow({
+  item,
+  index,
+  updateItem,
+  removeItem,
+}) {
+  return (
+    <div className="purchase-item-card">
+      <div className="sale-item-top">
+        <div>
+          <strong>{item.product_name}</strong>
+          <span>Purchase stock and batch information</span>
+        </div>
+
+        <button
+          className="danger-text"
+          onClick={() => removeItem(index)}
+        >
+          Remove
+        </button>
+      </div>
+
+      <div className="form-grid four">
+        <label>
+          Batch
+          <input
+            value={item.batch_number}
+            onChange={(e) =>
+              updateItem(index, {
+                batch_number: e.target.value,
+              })
+            }
+            placeholder="Batch no."
+          />
+        </label>
+
+        <label>
+          Expiry
+          <input
+            type="date"
+            value={item.expiry_date}
+            onChange={(e) =>
+              updateItem(index, {
+                expiry_date: e.target.value,
+              })
+            }
+          />
+        </label>
+
+        <label>
+          Units / pack
+          <input
+            type="number"
+            min="1"
+            value={item.units_per_pack}
+            onChange={(e) =>
+              updateItem(index, {
+                units_per_pack: e.target.value,
+              })
+            }
+          />
+        </label>
+
+        <label>
+          Purchase rate
+          <input
+            type="number"
+            min="0"
+            value={item.purchase_rate_per_pack}
+            onChange={(e) =>
+              updateItem(index, {
+                purchase_rate_per_pack: e.target.value,
+              })
+            }
+          />
+        </label>
+
+        <label>
+          Paid packs
+          <input
+            type="number"
+            min="0"
+            value={item.paid_packs}
+            onChange={(e) =>
+              updateItem(index, {
+                paid_packs: e.target.value,
+              })
+            }
+          />
+        </label>
+
+        <label>
+          Free packs
+          <input
+            type="number"
+            min="0"
+            value={item.free_packs}
+            onChange={(e) =>
+              updateItem(index, {
+                free_packs: e.target.value,
+              })
+            }
+          />
+        </label>
+
+        <label>
+          Loose units
+          <input
+            type="number"
+            min="0"
+            value={item.loose_units}
+            onChange={(e) =>
+              updateItem(index, {
+                loose_units: e.target.value,
+              })
+            }
+          />
+        </label>
+
+        <label>
+          MRP / pack
+          <input
+            type="number"
+            min="0"
+            value={item.mrp_per_pack}
+            onChange={(e) =>
+              updateItem(index, {
+                mrp_per_pack: e.target.value,
+              })
+            }
+          />
+        </label>
+      </div>
+    </div>
+  )
+}
+
+function SupplierInvoices({ store }) {
+  const [invoices, setInvoices] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    load()
+  }, [store.id])
+
+  async function load() {
+    setLoading(true)
+
+    const { data } = await supabase
+      .from('purchase_invoices')
+      .select(`
+        *,
+        suppliers(supplier_name, phone)
+      `)
+      .eq('store_id', store.id)
+      .order('invoice_date', { ascending: false })
+      .limit(200)
+
+    setInvoices(data || [])
+    setLoading(false)
+  }
+
+  return (
+    <PanelList
+      title="Supplier invoices"
+      subtitle="Purchase invoice history."
+      loading={loading}
+      empty="No purchase invoices found."
+    >
+      {invoices.map((invoice) => (
+        <div className="list-row" key={invoice.id}>
+          <div>
+            <strong>{invoice.invoice_number}</strong>
+            <span>
+              {invoice.suppliers?.supplier_name || 'Supplier'} ·{' '}
+              {dateText(invoice.invoice_date)}
+            </span>
+          </div>
+
+          <div className="row-right">
+            <strong>{money(invoice.total_amount)}</strong>
+            <span
+              className={`status-pill ${
+                invoice.payment_status === 'paid'
+                  ? 'success'
+                  : invoice.payment_status === 'partial'
+                    ? 'warning'
+                    : 'danger'
+              }`}
+            >
+              {invoice.payment_status}
+            </span>
+          </div>
+        </div>
+      ))}
+    </PanelList>
+  )
+}
+
+function PendingSupplierPayments({ store }) {
+  const [suppliers, setSuppliers] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    load()
+  }, [store.id])
+
+  async function load() {
+    setLoading(true)
+
+    const { data } = await supabase
+      .from('purchase_invoices')
+      .select(`
+        id,
+        invoice_number,
+        invoice_date,
+        total_amount,
+        payment_status,
+        suppliers(supplier_name)
+      `)
+      .eq('store_id', store.id)
+      .neq('payment_status', 'paid')
+      .order('invoice_date', { ascending: true })
+
+    setSuppliers(data || [])
+    setLoading(false)
+  }
+
+  return (
+    <PanelList
+      title="Pending supplier payments"
+      subtitle="Invoices requiring payment."
+      loading={loading}
+      empty="No pending supplier payments."
+    >
+      {suppliers.map((invoice) => (
+        <div className="list-row" key={invoice.id}>
+          <div>
+            <strong>{invoice.suppliers?.supplier_name}</strong>
+            <span>
+              {invoice.invoice_number} ·{' '}
+              {dateText(invoice.invoice_date)}
+            </span>
+          </div>
+          <strong>{money(invoice.total_amount)}</strong>
+        </div>
+      ))}
+    </PanelList>
+  )
+}
+
+function PurchaseOrders({ store }) {
+  const [orders, setOrders] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    load()
+  }, [store.id])
+
+  async function load() {
+    setLoading(true)
+
+    const { data } = await supabase
+      .from('purchase_orders')
+      .select(`
+        *,
+        suppliers(supplier_name)
+      `)
+      .eq('store_id', store.id)
+      .order('order_date', { ascending: false })
+      .limit(100)
+
+    setOrders(data || [])
+    setLoading(false)
+  }
+
+  return (
+    <PanelList
+      title="Purchase orders"
+      subtitle="Supplier order planning."
+      loading={loading}
+      empty="No purchase orders yet."
+    >
+      {orders.map((order) => (
+        <div className="list-row" key={order.id}>
+          <div>
+            <strong>{order.order_number || 'Purchase Order'}</strong>
+            <span>
+              {order.suppliers?.supplier_name || 'Supplier'} ·{' '}
+              {dateText(order.order_date)}
+            </span>
+          </div>
+          <span className="status-pill">
+            {order.status}
+          </span>
+        </div>
+      ))}
+    </PanelList>
+  )
+}
+
+function AIRecommendations({ store }) {
+  const [recommendations, setRecommendations] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    load()
+  }, [store.id])
+
+  async function load() {
+    setLoading(true)
+
+    const { data } = await supabase
+      .from('ai_purchase_recommendations')
+      .select(`
+        *,
+        products(product_name),
+        suppliers(supplier_name)
+      `)
+      .eq('store_id', store.id)
+      .order('generated_at', { ascending: false })
+      .limit(100)
+
+    setRecommendations(data || [])
+    setLoading(false)
+  }
+
+  return (
+    <PanelList
+      title="AI purchase recommendations"
+      subtitle="Recommendations generated from stock and movement data."
+      loading={loading}
+      empty="No recommendations available yet."
+    >
+      {recommendations.map((item) => (
+        <div className="list-row" key={item.id}>
+          <div>
+            <strong>{item.products?.product_name}</strong>
+            <span>
+              {item.suppliers?.supplier_name || 'Supplier'} ·{' '}
+              {item.reasoning || 'No reasoning provided'}
+            </span>
+          </div>
+          <div className="row-right">
+            <strong>{item.suggested_quantity}</strong>
+            <span className="status-pill">
+              {item.status}
+            </span>
+          </div>
+        </div>
+      ))}
+    </PanelList>
+  )
+}
+
+/* ============================================================
+   INVENTORY
+============================================================ */
+
+function InventoryModule({ store }) {
+  const [tab, setTab] = useState('Products')
+
+  return (
+    <div className="module">
+      <ModuleHeader
+        eyebrow="INVENTORY"
+        title="Inventory"
+        description="Products, batches, expiry and stock control."
+      />
+
+      <TabBar
+        tabs={INVENTORY_TABS}
+        active={tab}
+        onChange={setTab}
+      />
+
+      {tab === 'Products' && <ProductsInventory store={store} />}
+      {tab === 'Batches' && <BatchesInventory store={store} />}
+      {tab === 'Expiry' && <ExpiryInventory store={store} />}
+      {tab === 'Low Stock' && <LowStockInventory store={store} />}
+      {tab === 'Dead Stock' && <DeadStockInventory store={store} />}
+      {tab === 'Stock Reconciliation' && (
+        <StockReconciliation store={store} />
+      )}
+    </div>
+  )
+}
+
+function ProductsInventory({ store }) {
+  const [products, setProducts] = useState([])
+  const [search, setSearch] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [showProductForm, setShowProductForm] = useState(false)
+
+  useEffect(() => {
+    load()
+  }, [store.id])
+
+  async function load() {
+    setLoading(true)
+
+    const { data } = await supabase
+      .from('store_products')
+      .select(`
+        *,
+        products(
+          id,
+          product_name,
+          generic_display_name,
+          manufacturer,
+          dosage_form,
+          strength_display,
+          pack_quantity,
+          pack_unit,
+          hsn_code,
+          gst_rate,
+          product_categories(name)
+        )
+      `)
+      .eq('store_id', store.id)
+      .eq('is_active', true)
+      .order('created_at', { ascending: false })
+
+    setProducts(data || [])
+    setLoading(false)
+  }
+
+  const filtered = products.filter((row) =>
+    [
+      row.products?.product_name,
+      row.products?.generic_display_name,
+      row.products?.manufacturer,
+      row.products?.strength_display,
+      row.products?.dosage_form,
+      row.products?.product_categories?.name,
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase()
+      .includes(search.toLowerCase()),
+  )
+
+  return (
+    <>
+      <div className="panel">
+        <div className="panel-header">
+          <div>
+            <h3>Products</h3>
+            <p>Product master and store-specific selling settings.</p>
+          </div>
+
+          <div className="header-actions">
+            <input
+              className="compact-search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search products"
+            />
+
+            <button
+              className="primary-btn"
+              onClick={() => setShowProductForm(true)}
+            >
+              + Add Product
+            </button>
+          </div>
+        </div>
+
+        {loading ? (
+          <LoadingInline />
+        ) : filtered.length === 0 ? (
+          <EmptyState
+            title="No products found"
+            text="Add your first product to begin."
+          />
+        ) : (
+          <div className="product-grid">
+            {filtered.map((row) => (
+              <div className="product-card" key={row.id}>
+                <div>
+                  <span className="product-category">
+                    {row.products?.product_categories?.name ||
+                      'Product'}
+                  </span>
+                  <h3>{row.products?.product_name}</h3>
+                  <p>
+                    {row.products?.generic_display_name ||
+                      'Generic composition not assigned'}
+                  </p>
+                </div>
+
+                <div className="product-meta">
+                  <span>
+                    {row.products?.strength_display || ''}
+                  </span>
+                  <span>
+                    {row.products?.manufacturer || ''}
+                  </span>
+                </div>
+
+                <div className="product-pricing">
+                  <div>
+                    <small>Selling price</small>
+                    <strong>
+                      {money(row.default_selling_price)}
+                    </strong>
+                  </div>
+                  <div>
+                    <small>Discount</small>
+                    <strong>
+                      {Number(
+                        row.default_discount_percent || 0,
+                      )}
+                      %
+                    </strong>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {showProductForm && (
+        <ProductModal
+          store={store}
+          onClose={() => setShowProductForm(false)}
+          onCreated={() => {
+            setShowProductForm(false)
+            load()
+          }}
+        />
+      )}
+    </>
+  )
+}
+
+function BatchesInventory({ store }) {
+  const [batches, setBatches] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    load()
+  }, [store.id])
+
+  async function load() {
+    setLoading(true)
+
+    const { data } = await supabase
+      .from('batches')
+      .select(`
+        *,
+        products(product_name, manufacturer, strength_display)
+      `)
+      .eq('store_id', store.id)
+      .eq('is_active', true)
+      .order('expiry_date', { ascending: true })
+      .limit(500)
+
+    setBatches(data || [])
+    setLoading(false)
+  }
+
+  return (
+    <div className="panel">
+      <div className="panel-header">
+        <div>
+          <h3>Stock batches</h3>
+          <p>Batch-wise stock, purchase rate, MRP and expiry.</p>
+        </div>
+      </div>
+
+      {loading ? (
+        <LoadingInline />
+      ) : (
+        <div className="data-table-wrap">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Product</th>
+                <th>Batch</th>
+                <th>Expiry</th>
+                <th>Stock</th>
+                <th>Purchase</th>
+                <th>MRP</th>
+              </tr>
+            </thead>
+            <tbody>
+              {batches.map((batch) => (
+                <tr key={batch.id}>
+                  <td>
+                    <strong>{batch.products?.product_name}</strong>
+                    <span>
+                      {batch.products?.strength_display || ''}
+                    </span>
+                  </td>
+                  <td>{batch.batch_number}</td>
+                  <td>{dateText(batch.expiry_date)}</td>
+                  <td>
+                    {batch.current_stock_units}{' '}
+                    <small>units</small>
+                  </td>
+                  <td>{money(batch.purchase_rate_per_pack)}</td>
+                  <td>{money(batch.mrp_per_pack)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ExpiryInventory({ store }) {
+  const [batches, setBatches] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    load()
+  }, [store.id])
+
+  async function load() {
+    setLoading(true)
+
+    const cutoff = new Date()
+    cutoff.setDate(cutoff.getDate() + 90)
+
+    const { data } = await supabase
+      .from('batches')
+      .select(`
+        *,
+        products(product_name)
+      `)
+      .eq('store_id', store.id)
+      .eq('is_active', true)
+      .gt('current_stock_units', 0)
+      .lte('expiry_date', cutoff.toISOString().slice(0, 10))
+      .order('expiry_date', { ascending: true })
+
+    setBatches(data || [])
+    setLoading(false)
+  }
+
+  return (
+    <PanelList
+      title="Expiry watch"
+      subtitle="Stock expiring within the next 90 days."
+      loading={loading}
+      empty="No stock is currently within the 90-day expiry window."
+    >
+      {batches.map((batch) => (
+        <div className="list-row" key={batch.id}>
+          <div>
+            <strong>{batch.products?.product_name}</strong>
+            <span>
+              Batch {batch.batch_number} · {batch.current_stock_units}{' '}
+              units
+            </span>
+          </div>
+          <span className="status-pill danger">
+            {dateText(batch.expiry_date)}
+          </span>
+        </div>
+      ))}
+    </PanelList>
+  )
+}
+
+function LowStockInventory({ store }) {
+  const [products, setProducts] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    load()
+  }, [store.id])
+
+  async function load() {
+    setLoading(true)
+
+    const { data } = await supabase
+      .from('store_products')
+      .select(`
+        *,
+        products(product_name, generic_display_name)
+      `)
+      .eq('store_id', store.id)
+      .eq('is_active', true)
+
+    const rows = data || []
+
+    const enriched = await Promise.all(
+      rows.map(async (row) => {
+        const { data: batches } = await supabase
+          .from('batches')
+          .select('current_stock_units')
+          .eq('store_id', store.id)
+          .eq('product_id', row.product_id)
+          .eq('is_active', true)
+
+        const stock = (batches || []).reduce(
+          (sum, batch) =>
+            sum + Number(batch.current_stock_units || 0),
+          0,
+        )
+
+        return {
+          ...row,
+          stock,
+        }
+      }),
+    )
+
+    setProducts(
+      enriched.filter(
+        (row) => row.stock <= Number(row.reorder_level || 0),
+      ),
+    )
+
+    setLoading(false)
+  }
+
+  return (
+    <PanelList
+      title="Low stock"
+      subtitle="Products at or below their reorder level."
+      loading={loading}
+      empty="No products currently require replenishment."
+    >
+      {products.map((row) => (
+        <div className="list-row" key={row.id}>
+          <div>
+            <strong>{row.products?.product_name}</strong>
+            <span>
+              Reorder level: {row.reorder_level || 0}
+            </span>
+          </div>
+          <span className="status-pill warning">
+            {row.stock} units
+          </span>
+        </div>
+      ))}
+    </PanelList>
+  )
+}
+
+function DeadStockInventory({ store }) {
+  const [snapshots, setSnapshots] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    load()
+  }, [store.id])
+
+  async function load() {
+    setLoading(true)
+
+    const { data } = await supabase
+      .from('stock_risk_snapshots')
+      .select(`
+        *,
+        products(product_name)
+      `)
+      .eq('store_id', store.id)
+      .eq('risk_category', 'dead_stock')
+      .order('snapshot_date', { ascending: false })
+      .limit(100)
+
+    setSnapshots(data || [])
+    setLoading(false)
+  }
+
+  return (
+    <PanelList
+      title="Dead stock"
+      subtitle="Stock identified as slow or non-moving."
+      loading={loading}
+      empty="No dead-stock snapshots available yet."
+    >
+      {snapshots.map((item) => (
+        <div className="list-row" key={item.id}>
+          <div>
+            <strong>{item.products?.product_name}</strong>
+            <span>
+              {item.stock_units} units ·{' '}
+              {item.days_to_expiry ?? '—'} days to expiry
+            </span>
+          </div>
+          <span className="status-pill danger">
+            Dead stock
+          </span>
+        </div>
+      ))}
+    </PanelList>
+  )
+}
+
+function StockReconciliation({ store }) {
+  const [batches, setBatches] = useState([])
+  const [physical, setPhysical] = useState({})
+  const [message, setMessage] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    load()
+  }, [store.id])
+
+  async function load() {
+    const { data } = await supabase
+      .from('batches')
+      .select(`
+        id,
+        batch_number,
+        current_stock_units,
+        products(product_name)
+      `)
+      .eq('store_id', store.id)
+      .eq('is_active', true)
+      .gt('current_stock_units', 0)
+      .order('batch_number')
+      .limit(200)
+
+    setBatches(data || [])
+  }
+
+  async function saveReconciliation(batch) {
+    const value = Number(physical[batch.id])
+
+    if (!Number.isFinite(value) || value < 0) {
+      setMessage('Enter a valid physical stock quantity.')
+      return
+    }
+
+    setBusy(true)
+
+    const difference =
+      value - Number(batch.current_stock_units || 0)
+
+    const { error } = await supabase
+      .from('stock_reconciliations')
+      .insert({
+        store_id: store.id,
+        product_id: batch.products?.id || null,
+        batch_id: batch.id,
+        system_stock_units: batch.current_stock_units,
+        physical_stock_units: value,
+        difference_units: difference,
+        reason: 'Physical stock reconciliation',
+      })
+
+    if (error) setMessage(error.message)
+    else setMessage('Reconciliation recorded.')
+
+    setBusy(false)
+  }
+
+  return (
+    <div className="panel">
+      <div className="panel-header">
+        <div>
+          <h3>Stock reconciliation</h3>
+          <p>Compare system stock with physical stock.</p>
+        </div>
+      </div>
+
+      {message && <div className="success-box">{message}</div>}
+
+      <div className="list-table">
+        {batches.map((batch) => (
+          <div className="list-row" key={batch.id}>
+            <div>
+              <strong>{batch.products?.product_name}</strong>
+              <span>Batch {batch.batch_number}</span>
+            </div>
+
+            <span>
+              System: <strong>{batch.current_stock_units}</strong>
+            </span>
+
+            <input
+              className="small-input"
+              type="number"
+              min="0"
+              value={physical[batch.id] ?? ''}
+              onChange={(e) =>
+                setPhysical((current) => ({
+                  ...current,
+                  [batch.id]: e.target.value,
+                }))
+              }
+              placeholder="Physical"
+            />
+
+            <button
+              className="secondary-btn"
+              disabled={busy}
+              onClick={() => saveReconciliation(batch)}
+            >
+              Record
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/* ============================================================
+   CUSTOMERS
+============================================================ */
+
+function CustomersModule({ store }) {
+  const [customers, setCustomers] = useState([])
+  const [search, setSearch] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [showModal, setShowModal] = useState(false)
+
+  useEffect(() => {
+    load()
+  }, [store.id])
+
+  async function load() {
+    setLoading(true)
+
+    const { data } = await supabase
+      .from('customers')
+      .select('*')
+      .eq('store_id', store.id)
+      .eq('is_active', true)
+      .order('name')
+      .limit(500)
+
+    setCustomers(data || [])
+    setLoading(false)
+  }
+
+  const filtered = customers.filter((customer) =>
+    [customer.name, customer.phone]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase()
+      .includes(search.toLowerCase()),
+  )
+
+  return (
+    <div className="module">
+      <ModuleHeader
+        eyebrow="CUSTOMERS"
+        title="Customers"
+        description="Customer profiles, history and credit relationships."
+      />
+
+      <div className="panel">
+        <div className="panel-header">
+          <div>
+            <h3>Customer directory</h3>
+            <p>Named customers and their contact information.</p>
+          </div>
+
+          <div className="header-actions">
+            <input
+              className="compact-search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search name or phone"
+            />
+
+            <button
+              className="primary-btn"
+              onClick={() => setShowModal(true)}
+            >
+              + Add Customer
+            </button>
+          </div>
+        </div>
+
+        {loading ? (
+          <LoadingInline />
+        ) : filtered.length === 0 ? (
+          <EmptyState
+            title="No customers found"
+            text="Add a customer to maintain named billing history."
+          />
+        ) : (
+          <div className="customer-grid">
+            {filtered.map((customer) => (
+              <div className="customer-card" key={customer.id}>
+                <div className="avatar large">
+                  {customer.name?.charAt(0)?.toUpperCase() || 'C'}
+                </div>
+
+                <div>
+                  <strong>{customer.name}</strong>
+                  <span>{customer.phone}</span>
+                  <small>
+                    {customer.address || 'No address added'}
+                  </small>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {showModal && (
+        <CustomerModal
+          store={store}
+          onClose={() => setShowModal(false)}
+          onCreated={() => {
+            setShowModal(false)
+            load()
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+/* ============================================================
+   REPORTS
+============================================================ */
+
+function ReportsModule({ store }) {
+  const [sales, setSales] = useState([])
+  const [purchases, setPurchases] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    load()
+  }, [store.id])
+
+  async function load() {
+    setLoading(true)
+
+    const [{ data: salesData }, { data: purchaseData }] =
+      await Promise.all([
+        supabase
+          .from('sales')
+          .select('grand_total, amount_paid, amount_due')
+          .eq('store_id', store.id)
+          .eq('status', 'completed')
+          .limit(5000),
+
+        supabase
+          .from('purchase_invoices')
+          .select('total_amount')
+          .eq('store_id', store.id)
+          .limit(5000),
+      ])
+
+    setSales(salesData || [])
+    setPurchases(purchaseData || [])
+    setLoading(false)
+  }
+
+  const salesTotal = sales.reduce(
+    (sum, row) => sum + Number(row.grand_total || 0),
+    0,
+  )
+
+  const collected = sales.reduce(
+    (sum, row) => sum + Number(row.amount_paid || 0),
+    0,
+  )
+
+  const customerDue = sales.reduce(
+    (sum, row) => sum + Number(row.amount_due || 0),
+    0,
+  )
+
+  const purchaseTotal = purchases.reduce(
+    (sum, row) => sum + Number(row.total_amount || 0),
+    0,
+  )
+
+  if (loading) {
+    return (
+      <div className="module">
+        <ModuleHeader
+          eyebrow="REPORTS"
+          title="Reports"
+          description="Business overview from your pharmacy data."
+        />
+        <LoadingInline />
+      </div>
+    )
+  }
+
+  return (
+    <div className="module">
+      <ModuleHeader
+        eyebrow="REPORTS"
+        title="Reports"
+        description="Business overview from your pharmacy data."
+      />
+
+      <div className="stat-grid">
+        <StatCard
+          label="Total Sales"
+          value={money(salesTotal)}
+          icon="₹"
+        />
+        <StatCard
+          label="Collected"
+          value={money(collected)}
+          icon="✓"
+        />
+        <StatCard
+          label="Customer Due"
+          value={money(customerDue)}
+          icon="!"
+        />
+        <StatCard
+          label="Purchases"
+          value={money(purchaseTotal)}
+          icon="▤"
+        />
+      </div>
+
+      <div className="dashboard-grid">
+        <div className="panel">
+          <h3>Sales report</h3>
+          <p className="muted">
+            Current completed sales available in the system.
+          </p>
+
+          <div className="report-metric">
+            <span>Completed bills</span>
+            <strong>{sales.length}</strong>
+          </div>
+
+          <div className="report-metric">
+            <span>Average bill</span>
+            <strong>
+              {money(sales.length ? salesTotal / sales.length : 0)}
+            </strong>
+          </div>
+        </div>
+
+        <div className="panel">
+          <h3>Purchase report</h3>
+          <p className="muted">
+            Supplier purchase activity recorded in PharmDesk.
+          </p>
+
+          <div className="report-metric">
+            <span>Purchase invoices</span>
+            <strong>{purchases.length}</strong>
+          </div>
+
+          <div className="report-metric">
+            <span>Average invoice</span>
+            <strong>
+              {money(
+                purchases.length
+                  ? purchaseTotal / purchases.length
+                  : 0,
+              )}
+            </strong>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ============================================================
+   ALERTS
+============================================================ */
+
+function AlertsModule({ store }) {
+  const [alerts, setAlerts] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    load()
+  }, [store.id])
+
+  async function load() {
+    setLoading(true)
+
+    const { data } = await supabase
+      .from('alerts')
+      .select(`
+        *,
+        products(product_name),
+        suppliers(supplier_name),
+        customers(name)
+      `)
+      .eq('store_id', store.id)
+      .eq('is_resolved', false)
+      .order('created_at', { ascending: false })
+      .limit(200)
+
+    setAlerts(data || [])
+    setLoading(false)
+  }
+
+  async function resolve(id) {
+    await supabase
+      .from('alerts')
+      .update({
+        is_resolved: true,
+        resolved_at: new Date().toISOString(),
+      })
+      .eq('id', id)
+
+    load()
+  }
+
+  return (
+    <div className="module">
+      <ModuleHeader
+        eyebrow="ALERTS"
+        title="Alerts"
+        description="Items requiring attention without interrupting normal billing."
+      />
+
+      <div className="panel">
+        {loading ? (
+          <LoadingInline />
+        ) : alerts.length === 0 ? (
+          <EmptyState
+            icon="✓"
+            title="No open alerts"
+            text="Everything currently recorded is within your alert thresholds."
+          />
+        ) : (
+          <div className="alert-list">
+            {alerts.map((alert) => (
+              <div className="alert-card" key={alert.id}>
+                <div className={`alert-icon ${alert.severity || ''}`}>
+                  !
+                </div>
+
+                <div className="alert-content">
+                  <strong>{alert.title}</strong>
+                  <p>{alert.message}</p>
+                  <small>{dateTimeText(alert.created_at)}</small>
+                </div>
+
+                <button
+                  className="secondary-btn"
+                  onClick={() => resolve(alert.id)}
+                >
+                  Resolve
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/* ============================================================
+   SETTINGS
+============================================================ */
+
+function SettingsModule({ store, profile }) {
+  const [settings, setSettings] = useState(null)
+  const [form, setForm] = useState({})
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState('')
+
+  useEffect(() => {
+    load()
+  }, [store.id])
+
+  async function load() {
+    const { data } = await supabase
+      .from('store_settings')
+      .select('*')
+      .eq('store_id', store.id)
+      .maybeSingle()
+
+    setSettings(data)
+
+    if (data) {
+      setForm(data)
+    }
+  }
+
+  async function save() {
+    setBusy(true)
+    setMessage('')
+
+    const payload = {
+      store_id: store.id,
+      currency: form.currency || 'INR',
+      gst_enabled: form.gst_enabled ?? true,
+      default_gst_mode:
+        form.default_gst_mode || 'inclusive',
+      invoice_prefix: form.invoice_prefix || 'INV',
+      invoice_start_number:
+        Number(form.invoice_start_number || 1),
+      near_expiry_days:
+        Number(form.near_expiry_days || 90),
+      dead_stock_days:
+        Number(form.dead_stock_days || 60),
+      allow_past_dated_bills:
+        form.allow_past_dated_bills ?? true,
+      allow_walk_in_sales:
+        form.allow_walk_in_sales ?? true,
+      require_salesperson:
+        form.require_salesperson ?? false,
+    }
+
+    const { error } = await supabase
+      .from('store_settings')
+      .upsert(payload)
+
+    if (error) setMessage(error.message)
+    else {
+      setMessage('Settings saved successfully.')
+      load()
+    }
+
+    setBusy(false)
+  }
+
+  function setField(field, value) {
+    setForm((current) => ({
+      ...current,
+      [field]: value,
+    }))
+  }
+
+  return (
+    <div className="module">
+      <ModuleHeader
+        eyebrow="SETTINGS"
+        title="Settings"
+        description="Configure your pharmacy workspace."
+      />
+
+      <div className="settings-grid">
+        <div className="panel">
+          <h3>Store information</h3>
+
+          <div className="settings-store">
+            <div className="store-avatar">LP</div>
+            <div>
+              <strong>{store.name}</strong>
+              <span>{store.phone || 'Phone not added'}</span>
+              <span>{store.email || 'Email not added'}</span>
+            </div>
+          </div>
+
+          <div className="form-grid two">
+            <label>
+              Currency
+              <input
+                value={form.currency || 'INR'}
+                onChange={(e) =>
+                  setField('currency', e.target.value)
+                }
+              />
+            </label>
+
+            <label>
+              Invoice prefix
+              <input
+                value={form.invoice_prefix || 'INV'}
+                onChange={(e) =>
+                  setField('invoice_prefix', e.target.value)
+                }
+              />
+            </label>
+
+            <label>
+              Near-expiry threshold (days)
+              <input
+                type="number"
+                value={form.near_expiry_days || 90}
+                onChange={(e) =>
+                  setField(
+                    'near_expiry_days',
+                    e.target.value,
+                  )
+                }
+              />
+            </label>
+
+            <label>
+              Dead-stock threshold (days)
+              <input
+                type="number"
+                value={form.dead_stock_days || 60}
+                onChange={(e) =>
+                  setField(
+                    'dead_stock_days',
+                    e.target.value,
+                  )
+                }
+              />
+            </label>
+          </div>
+        </div>
+
+        <div className="panel">
+          <h3>Billing preferences</h3>
+
+          <div className="settings-list">
+            <ToggleRow
+              label="GST enabled"
+              description="Use GST fields throughout billing."
+              value={form.gst_enabled ?? true}
+              onChange={(value) =>
+                setField('gst_enabled', value)
+              }
+            />
+
+            <ToggleRow
+              label="Allow walk-in sales"
+              description="Permit anonymous rush-hour billing."
+              value={form.allow_walk_in_sales ?? true}
+              onChange={(value) =>
+                setField('allow_walk_in_sales', value)
+              }
+            />
+
+            <ToggleRow
+              label="Allow past-dated bills"
+              description="Permit authorized users to create past-dated bills."
+              value={form.allow_past_dated_bills ?? true}
+              onChange={(value) =>
+                setField(
+                  'allow_past_dated_bills',
+                  value,
+                )
+              }
+            />
+
+            <ToggleRow
+              label="Require salesperson"
+              description="Require a salesperson on every completed bill."
+              value={form.require_salesperson ?? false}
+              onChange={(value) =>
+                setField('require_salesperson', value)
+              }
+            />
+          </div>
+
+          {message && <div className="success-box">{message}</div>}
+
+          <button
+            className="primary-btn"
+            disabled={busy}
+            onClick={save}
+          >
+            {busy ? 'Saving…' : 'Save Settings'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ============================================================
+   MODALS
+============================================================ */
+
+function CustomerModal({ store, onClose, onCreated }) {
+  const [name, setName] = useState('')
+  const [phone, setPhone] = useState('')
+  const [address, setAddress] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  async function save(event) {
+    event.preventDefault()
+    setError('')
+
+    if (!name.trim() || !phone.trim()) {
+      setError('Customer name and phone are required.')
+      return
+    }
+
+    setBusy(true)
+
+    const { data, error: insertError } = await supabase
+      .from('customers')
+      .insert({
+        store_id: store.id,
+        customer_type: 'named',
+        name: name.trim(),
+        phone: phone.trim(),
+        address: address.trim() || null,
+        is_active: true,
+      })
+      .select('*')
+      .single()
+
+    if (insertError) {
+      setError(insertError.message)
+      setBusy(false)
+      return
+    }
+
+    onCreated(data)
+    setBusy(false)
+  }
+
+  return (
+    <Modal title="Add customer" onClose={onClose}>
+      <form className="form-stack" onSubmit={save}>
+        <label>
+          Customer name *
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            autoFocus
+            required
+          />
+        </label>
+
+        <label>
+          Phone *
+          <input
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            required
+          />
+        </label>
+
+        <label>
+          Address
+          <textarea
+            value={address}
+            onChange={(e) => setAddress(e.target.value)}
+            rows="3"
+          />
+        </label>
+
+        {error && <div className="error-box">{error}</div>}
+
+        <ModalActions
+          onClose={onClose}
+          busy={busy}
+          label="Save Customer"
+        />
+      </form>
+    </Modal>
+  )
+}
+
+function SupplierModal({ store, onClose, onCreated }) {
+  const [supplierName, setSupplierName] = useState('')
+  const [contactPerson, setContactPerson] = useState('')
+  const [phone, setPhone] = useState('')
+  const [email, setEmail] = useState('')
+  const [gstin, setGstin] = useState('')
+  const [address, setAddress] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  async function save(event) {
+    event.preventDefault()
+    setError('')
+
+    if (!supplierName.trim()) {
+      setError('Supplier name is required.')
+      return
+    }
+
+    setBusy(true)
+
+    const { data, error: insertError } = await supabase
+      .from('suppliers')
+      .insert({
+        store_id: store.id,
+        supplier_name: supplierName.trim(),
+        contact_person: contactPerson.trim() || null,
+        phone: phone.trim() || null,
+        email: email.trim() || null,
+        gstin: gstin.trim() || null,
+        address: address.trim() || null,
+        is_active: true,
+      })
+      .select('*')
+      .single()
+
+    if (insertError) {
+      setError(insertError.message)
+      setBusy(false)
+      return
+    }
+
+    onCreated(data)
+    setBusy(false)
+  }
+
+  return (
+    <Modal title="Add purchase party" onClose={onClose}>
+      <form className="form-stack" onSubmit={save}>
+        <label>
+          Supplier / purchase party *
+          <input
+            value={supplierName}
+            onChange={(e) =>
+              setSupplierName(e.target.value)
+            }
+            autoFocus
+            required
+          />
+        </label>
+
+        <div className="form-grid two">
+          <label>
+            Contact person
+            <input
+              value={contactPerson}
+              onChange={(e) =>
+                setContactPerson(e.target.value)
+              }
+            />
+          </label>
+
+          <label>
+            Phone
+            <input
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+            />
+          </label>
+
+          <label>
+            Email
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </label>
+
+          <label>
+            GSTIN
+            <input
+              value={gstin}
+              onChange={(e) => setGstin(e.target.value)}
+            />
+          </label>
+        </div>
+
+        <label>
+          Address
+          <textarea
+            value={address}
+            onChange={(e) => setAddress(e.target.value)}
+            rows="3"
+          />
+        </label>
+
+        {error && <div className="error-box">{error}</div>}
+
+        <ModalActions
+          onClose={onClose}
+          busy={busy}
+          label="Save Purchase Party"
+        />
+      </form>
+    </Modal>
+  )
+}
+
+function ProductModal({ store, onClose, onCreated }) {
+  const [categories, setCategories] = useState([])
+  const [name, setName] = useState('')
+  const [generic, setGeneric] = useState('')
+  const [manufacturer, setManufacturer] = useState('')
+  const [dosageForm, setDosageForm] = useState('')
+  const [strength, setStrength] = useState('')
+  const [packQuantity, setPackQuantity] = useState(1)
+  const [packUnit, setPackUnit] = useState('strip')
+  const [categoryId, setCategoryId] = useState('')
+  const [hsn, setHsn] = useState('')
+  const [gst, setGst] = useState(0)
+  const [sellingPrice, setSellingPrice] = useState('')
+  const [discount, setDiscount] = useState(0)
+  const [minimumStock, setMinimumStock] = useState(0)
+  const [reorderLevel, setReorderLevel] = useState(0)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    async function loadCategories() {
+      const { data } = await supabase
+        .from('product_categories')
+        .select('*')
+        .eq('is_active', true)
+        .order('name')
+
+      setCategories(data || [])
+    }
+
+    loadCategories()
+  }, [])
+
+  async function save(event) {
+    event.preventDefault()
+    setError('')
+
+    if (!name.trim()) {
+      setError('Product name is required.')
+      return
+    }
+
+    setBusy(true)
+
+    const { data: product, error: productError } =
+      await supabase
+        .from('products')
+        .insert({
+          product_name: name.trim(),
+          generic_display_name: generic.trim() || null,
+          category_id: categoryId || null,
+          manufacturer: manufacturer.trim() || null,
+          dosage_form: dosageForm.trim() || null,
+          strength_display: strength.trim() || null,
+          pack_quantity: Number(packQuantity || 1),
+          pack_unit: packUnit.trim() || null,
+          hsn_code: hsn.trim() || null,
+          gst_rate: Number(gst || 0),
+          is_active: true,
+        })
+        .select('*')
+        .single()
+
+    if (productError) {
+      setError(productError.message)
+      setBusy(false)
+      return
+    }
+
+    const { error: storeProductError } = await supabase
+      .from('store_products')
+      .insert({
+        store_id: store.id,
+        product_id: product.id,
+        default_selling_price:
+          Number(sellingPrice || 0),
+        default_discount_percent:
+          Number(discount || 0),
+        minimum_stock:
+          Number(minimumStock || 0),
+        reorder_level:
+          Number(reorderLevel || 0),
+        is_active: true,
+      })
+
+    if (storeProductError) {
+      setError(storeProductError.message)
+      setBusy(false)
+      return
+    }
+
+    onCreated(product)
+    setBusy(false)
+  }
+
+  return (
+    <Modal title="Add new product" onClose={onClose}>
+      <form className="form-stack" onSubmit={save}>
+        <div className="form-grid two">
+          <label>
+            Brand / product name *
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              autoFocus
+              required
+              placeholder="e.g. Crocin 650"
+            />
+          </label>
+
+          <label>
+            Generic / composition
+            <input
+              value={generic}
+              onChange={(e) => setGeneric(e.target.value)}
+              placeholder="e.g. Paracetamol 650 mg"
+            />
+          </label>
+
+          <label>
+            Manufacturer
+            <input
+              value={manufacturer}
+              onChange={(e) =>
+                setManufacturer(e.target.value)
+              }
+            />
+          </label>
+
+          <label>
+            Category
+            <select
+              value={categoryId}
+              onChange={(e) =>
+                setCategoryId(e.target.value)
+              }
+            >
+              <option value="">Select category</option>
+              {categories.map((category) => (
+                <option
+                  key={category.id}
+                  value={category.id}
+                >
+                  {category.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label>
+            Dosage form
+            <input
+              value={dosageForm}
+              onChange={(e) =>
+                setDosageForm(e.target.value)
+              }
+              placeholder="Tablet / Syrup / Cream"
+            />
+          </label>
+
+          <label>
+            Strength
+            <input
+              value={strength}
+              onChange={(e) => setStrength(e.target.value)}
+              placeholder="650 mg"
+            />
+          </label>
+
+          <label>
+            Pack quantity
+            <input
+              type="number"
+              min="1"
+              value={packQuantity}
+              onChange={(e) =>
+                setPackQuantity(e.target.value)
+              }
+            />
+          </label>
+
+          <label>
+            Pack unit
+            <input
+              value={packUnit}
+              onChange={(e) =>
+                setPackUnit(e.target.value)
+              }
+              placeholder="strip / bottle / tube"
+            />
+          </label>
+
+          <label>
+            HSN
+            <input
+              value={hsn}
+              onChange={(e) => setHsn(e.target.value)}
+            />
+          </label>
+
+          <label>
+            GST %
+            <input
+              type="number"
+              min="0"
+              max="100"
+              value={gst}
+              onChange={(e) => setGst(e.target.value)}
+            />
+          </label>
+
+          <label>
+            Default selling price
+            <input
+              type="number"
+              min="0"
+              value={sellingPrice}
+              onChange={(e) =>
+                setSellingPrice(e.target.value)
+              }
+            />
+          </label>
+
+          <label>
+            Default discount %
+            <input
+              type="number"
+              min="0"
+              max="100"
+              value={discount}
+              onChange={(e) =>
+                setDiscount(e.target.value)
+              }
+            />
+          </label>
+
+          <label>
+            Minimum stock
+            <input
+              type="number"
+              min="0"
+              value={minimumStock}
+              onChange={(e) =>
+                setMinimumStock(e.target.value)
+              }
+            />
+          </label>
+
+          <label>
+            Reorder level
+            <input
+              type="number"
+              min="0"
+              value={reorderLevel}
+              onChange={(e) =>
+                setReorderLevel(e.target.value)
+              }
+            />
+          </label>
+        </div>
+
+        {error && <div className="error-box">{error}</div>}
+
+        <ModalActions
+          onClose={onClose}
+          busy={busy}
+          label="Save Product"
+        />
+      </form>
+    </Modal>
+  )
+}
+
+/* ============================================================
+   SHARED COMPONENTS
+============================================================ */
+
+function ModuleHeader({ eyebrow, title, description }) {
+  return (
+    <section className="module-header">
+      <div>
+        <div className="eyebrow">{eyebrow}</div>
+        <h2>{title}</h2>
+        <p>{description}</p>
+      </div>
+    </section>
+  )
+}
+
+function TabBar({ tabs, active, onChange }) {
+  return (
+    <div className="tab-bar">
+      {tabs.map((tab) => (
+        <button
+          key={tab}
+          className={active === tab ? 'active' : ''}
+          onClick={() => onChange(tab)}
+        >
+          {tab}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function PanelList({
+  title,
+  subtitle,
+  loading,
+  empty,
+  children,
+}) {
+  return (
+    <div className="panel">
+      <div className="panel-header">
+        <div>
+          <h3>{title}</h3>
+          <p>{subtitle}</p>
+        </div>
+      </div>
+
+      {loading ? (
+        <LoadingInline />
+      ) : React.Children.count(children) === 0 ? (
+        <EmptyState title={empty} />
+      ) : (
+        <div className="list-table">{children}</div>
+      )}
+    </div>
+  )
+}
+
+function EmptyState({ icon = '○', title, text }) {
+  return (
+    <div className="empty-state">
+      <div className="empty-icon">{icon}</div>
+      <strong>{title}</strong>
+      {text && <span>{text}</span>}
+    </div>
+  )
+}
+
+function LoadingInline() {
+  return (
+    <div className="loading-inline">
+      <div className="spinner small" />
+      <span>Loading…</span>
+    </div>
+  )
+}
+
+function Modal({ title, onClose, children }) {
+  return (
+    <div className="modal-backdrop">
+      <div className="modal">
+        <div className="modal-header">
+          <div>
+            <h2>{title}</h2>
+          </div>
+          <button className="modal-close" onClick={onClose}>
+            ×
+          </button>
+        </div>
+
+        <div className="modal-body">{children}</div>
+      </div>
+    </div>
+  )
+}
+
+function ModalActions({ onClose, busy, label }) {
+  return (
+    <div className="modal-actions">
+      <button
+        type="button"
+        className="secondary-btn"
+        onClick={onClose}
+      >
+        Cancel
+      </button>
+
+      <button
+        type="submit"
+        className="primary-btn"
+        disabled={busy}
+      >
+        {busy ? 'Saving…' : label}
+      </button>
+    </div>
+  )
+}
+
+function ToggleRow({
+  label,
+  description,
+  value,
+  onChange,
+}) {
+  return (
+    <div className="toggle-row">
+      <div>
+        <strong>{label}</strong>
+        <span>{description}</span>
+      </div>
+
+      <button
+        type="button"
+        className={`toggle ${value ? 'on' : ''}`}
+        onClick={() => onChange(!value)}
+        aria-pressed={value}
+      >
+        <span />
+      </button>
+    </div>
   )
 }
 
