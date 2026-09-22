@@ -1136,5 +1136,11 @@ async dashboardSnapshot(storeId, startDate, expiryDays = 90) {
   },
 }
 
-export { call as pharmdeskRpc, select as pharmdeskSelect, invoke as pharmdeskInvoke }
+export {
+  call as pharmdeskRpc,
+  select as pharmdeskSelect,
+  invoke as pharmdeskInvoke,
+  pharmdeskDb
+}
+
 export default PharmDeskAPI
