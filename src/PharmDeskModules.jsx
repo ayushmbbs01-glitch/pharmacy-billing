@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import PharmDeskAPI from './pharmdeskApi'
+import PharmDeskAPI, { pharmdeskDb } from './pharmdeskApi'
 
 /* =========================================================  
    CONSTANTS  
