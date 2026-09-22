@@ -4220,8 +4220,25 @@ function ProductModal({
   const [reorderLevel, setReorderLevel] =
     useState(0)
 
+  const [packagingLevels, setPackagingLevels] =
+    useState([
+      {
+        level_number: 1,
+        unit_name: '',
+        units_per_parent: 1,
+        is_purchase_unit: true,
+        is_sale_unit: true,
+        is_preferred_sale_unit: true,
+        is_stock_unit: true,
+      },
+    ])
+
+  const [packagingName, setPackagingName] =
+    useState('Standard')
+
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+
   const [
     showCompositionForm,
     setShowCompositionForm,
@@ -4375,6 +4392,253 @@ function ProductModal({
     setShowCompositionSuggestions(true)
   }
 
+  function updatePackagingLevel(
+    index,
+    patch,
+  ) {
+    setPackagingLevels((current) =>
+      current.map((level, i) =>
+        i === index
+          ? { ...level, ...patch }
+          : level,
+      ),
+    )
+  }
+
+  function addPackagingLevel() {
+    setPackagingLevels((current) => {
+      const nextLevel = current.length + 1
+
+      return [
+        ...current,
+        {
+          level_number: nextLevel,
+          unit_name: '',
+          units_per_parent: 1,
+          is_purchase_unit: false,
+          is_sale_unit: false,
+          is_preferred_sale_unit: false,
+          is_stock_unit: true,
+        },
+      ].map((level, index) => ({
+        ...level,
+        level_number: index + 1,
+        is_stock_unit:
+          index === current.length,
+      }))
+    })
+  }
+
+  function removePackagingLevel(index) {
+    if (packagingLevels.length === 1) {
+      return
+    }
+
+    setPackagingLevels((current) =>
+      current
+        .filter((_, i) => i !== index)
+        .map((level, i) => ({
+          ...level,
+          level_number: i + 1,
+          is_stock_unit:
+            i === current.length - 2,
+        })),
+    )
+  }
+
+  function togglePurchaseUnit(index) {
+    setPackagingLevels((current) =>
+      current.map((level, i) => ({
+        ...level,
+        is_purchase_unit:
+          i === index,
+      })),
+    )
+  }
+
+  function toggleSaleUnit(index) {
+    setPackagingLevels((current) =>
+      current.map((level, i) =>
+        i === index
+          ? {
+              ...level,
+              is_sale_unit:
+                !level.is_sale_unit,
+              is_preferred_sale_unit:
+                !level.is_sale_unit
+                  ? level.is_preferred_sale_unit
+                  : false,
+            }
+          : level,
+      ),
+    )
+  }
+
+  function setPreferredSaleUnit(index) {
+    setPackagingLevels((current) =>
+      current.map((level, i) => ({
+        ...level,
+        is_preferred_sale_unit:
+          i === index,
+        is_sale_unit:
+          i === index
+            ? true
+            : level.is_sale_unit,
+      })),
+    )
+  }
+
+  function setStockUnit(index) {
+    setPackagingLevels((current) =>
+      current.map((level, i) => ({
+        ...level,
+        is_stock_unit:
+          i === index,
+      })),
+    )
+  }
+
+  function packagingConversionText(
+    index,
+  ) {
+    const level = packagingLevels[index]
+
+    if (!level?.unit_name) {
+      return ''
+    }
+
+    if (index === packagingLevels.length - 1) {
+      return `1 ${level.unit_name}`
+    }
+
+    const parts = [
+      `1 ${level.unit_name}`,
+    ]
+
+    let multiplier = 1
+
+    for (
+      let i = index + 1;
+      i < packagingLevels.length;
+      i += 1
+    ) {
+      multiplier *= Number(
+        packagingLevels[i]
+          .units_per_parent || 1,
+      )
+
+      if (
+        packagingLevels[i].unit_name
+      ) {
+        parts.push(
+          `${multiplier} ${packagingLevels[i].unit_name}`,
+        )
+      }
+    }
+
+    return parts.join(' = ')
+  }
+
+  function validatePackaging() {
+    if (!packagingLevels.length) {
+      return 'Add at least one packaging level.'
+    }
+
+    const names = packagingLevels.map(
+      (level) =>
+        level.unit_name.trim().toLowerCase(),
+    )
+
+    if (
+      names.some((unit) => !unit)
+    ) {
+      return 'Every packaging level needs a unit name.'
+    }
+
+    if (
+      new Set(names).size !== names.length
+    ) {
+      return 'Packaging unit names must be unique.'
+    }
+
+    const purchaseCount =
+      packagingLevels.filter(
+        (level) =>
+          level.is_purchase_unit,
+      ).length
+
+    if (purchaseCount !== 1) {
+      return 'Select exactly one purchase unit.'
+    }
+
+    const stockCount =
+      packagingLevels.filter(
+        (level) =>
+          level.is_stock_unit,
+      ).length
+
+    if (stockCount !== 1) {
+      return 'Select exactly one stock unit.'
+    }
+
+    const preferredCount =
+      packagingLevels.filter(
+        (level) =>
+          level.is_preferred_sale_unit,
+      ).length
+
+    if (preferredCount > 1) {
+      return 'Only one preferred sale unit can be selected.'
+    }
+
+    for (
+      let i = 0;
+      i < packagingLevels.length;
+      i += 1
+    ) {
+      const level =
+        packagingLevels[i]
+
+      const unitsPerParent =
+        Number(
+          level.units_per_parent,
+        )
+
+      if (
+        !Number.isFinite(
+          unitsPerParent,
+        ) ||
+        unitsPerParent <= 0
+      ) {
+        return `Enter a valid conversion quantity for ${level.unit_name || `level ${i + 1}`}.`
+      }
+
+      if (
+        i === 0 &&
+        unitsPerParent !== 1
+      ) {
+        return 'The first packaging level must have a conversion of 1.'
+      }
+
+      if (
+        i ===
+          packagingLevels.length - 1 &&
+        !level.is_stock_unit
+      ) {
+        return 'The lowest packaging level must be the stock unit.'
+      }
+
+      if (
+        level.is_preferred_sale_unit &&
+        !level.is_sale_unit
+      ) {
+        return 'The preferred sale unit must also be a sale unit.'
+      }
+    }
+
+    return ''
+  }
+
   async function save(event) {
     event.preventDefault()
     setError('')
@@ -4422,6 +4686,14 @@ function ProductModal({
       setError(
         'Select an existing composition or use “+ Add New”.',
       )
+      return
+    }
+
+    const packagingError =
+      validatePackaging()
+
+    if (packagingError) {
+      setError(packagingError)
       return
     }
 
@@ -4474,6 +4746,69 @@ function ProductModal({
       return
     }
 
+    const normalizedPackagingLevels =
+      packagingLevels.map(
+        (level, index) => ({
+          level_number: index + 1,
+          unit_name:
+            level.unit_name.trim(),
+          units_per_parent:
+            index === 0
+              ? 1
+              : Number(
+                  level.units_per_parent,
+                ),
+          is_purchase_unit:
+            Boolean(
+              level.is_purchase_unit,
+            ),
+          is_sale_unit:
+            Boolean(
+              level.is_sale_unit,
+            ),
+          is_preferred_sale_unit:
+            Boolean(
+              level.is_preferred_sale_unit,
+            ),
+          is_stock_unit:
+            Boolean(
+              level.is_stock_unit,
+            ),
+        }),
+      )
+
+    const {
+      data: packagingConfigId,
+      error: packagingError,
+    } = await supabase.rpc(
+      'pharmdesk_save_packaging_config',
+      {
+        p_product_id: productId,
+        p_config_id: null,
+        p_config_name:
+          packagingName.trim() ||
+          'Standard',
+        p_levels:
+          normalizedPackagingLevels,
+      },
+    )
+
+    if (packagingError) {
+      setError(
+        `Product was created, but packaging could not be saved: ${packagingError.message}`,
+      )
+      setBusy(false)
+      return
+    }
+
+    if (!packagingConfigId) {
+      setError(
+        'Product was created, but the packaging configuration was not returned.',
+      )
+      setBusy(false)
+      return
+    }
+
     const {
       data: product,
       error: fetchError,
@@ -4488,6 +4823,22 @@ function ProductModal({
           minimum_stock,
           reorder_level,
           is_active
+        ),
+        product_packaging_configs(
+          id,
+          name,
+          is_default,
+          is_active,
+          product_packaging_levels(
+            id,
+            level_number,
+            unit_name,
+            units_per_parent,
+            is_purchase_unit,
+            is_sale_unit,
+            is_preferred_sale_unit,
+            is_stock_unit
+          )
         )
       `)
       .eq('id', productId)
@@ -4511,7 +4862,8 @@ function ProductModal({
     setCompositions((current) => {
       const exists = current.some(
         (item) =>
-          item.id === newComposition.id,
+          item.id ===
+          newComposition.id,
       )
 
       if (exists) {
@@ -4828,6 +5180,263 @@ function ProductModal({
                 }
               />
             </label>
+          </div>
+
+          <div className="form-stack">
+            <div>
+              <h3>Packaging</h3>
+              <p className="muted">
+                Define how this product is
+                packed. You can purchase and
+                sell at different packaging
+                levels.
+              </p>
+            </div>
+
+            <label>
+              Packaging configuration name
+              <input
+                value={packagingName}
+                onChange={(e) =>
+                  setPackagingName(
+                    e.target.value,
+                  )
+                }
+                placeholder="Standard"
+              />
+            </label>
+
+            <div className="form-stack">
+              {packagingLevels.map(
+                (level, index) => (
+                  <div
+                    className="selected-chip"
+                    key={index}
+                  >
+                    <div className="form-stack">
+                      <strong>
+                        Level {index + 1}
+                      </strong>
+
+                      <div className="form-grid two">
+                        <label>
+                          Unit name
+                          <input
+                            value={
+                              level.unit_name
+                            }
+                            onChange={(e) =>
+                              updatePackagingLevel(
+                                index,
+                                {
+                                  unit_name:
+                                    e.target.value,
+                                },
+                              )
+                            }
+                            placeholder={
+                              index === 0
+                                ? 'Box'
+                                : 'Strip / Tablet / Bottle'
+                            }
+                          />
+                        </label>
+
+                        <label>
+                          Contains
+                          {index === 0 ? (
+                            <>
+                              <input
+                                value="1"
+                                disabled
+                              />
+                              <small>
+                                Outermost
+                                level
+                              </small>
+                            </>
+                          ) : (
+                            <>
+                              <input
+                                type="number"
+                                min="0.000001"
+                                step="any"
+                                value={
+                                  level.units_per_parent
+                                }
+                                onChange={(e) =>
+                                  updatePackagingLevel(
+                                    index,
+                                    {
+                                      units_per_parent:
+                                        e.target.value,
+                                    },
+                                  )
+                                }
+                                placeholder={`How many ${level.unit_name || 'units'} in 1 ${packagingLevels[index - 1]?.unit_name || 'parent'}?`}
+                              />
+
+                              <small>
+                                1{' '}
+                                {packagingLevels[
+                                  index - 1
+                                ]?.unit_name ||
+                                  'parent'}{' '}
+                                ={' '}
+                                {level.units_per_parent ||
+                                  0}{' '}
+                                {level.unit_name ||
+                                  'units'}
+                              </small>
+                            </>
+                          )}
+                        </label>
+                      </div>
+
+                      <div className="form-grid two">
+                        <label>
+                          Purchase unit
+                          <input
+                            type="radio"
+                            name="purchase-unit"
+                            checked={
+                              level.is_purchase_unit
+                            }
+                            onChange={() =>
+                              togglePurchaseUnit(
+                                index,
+                              )
+                            }
+                          />
+                        </label>
+
+                        <label>
+                          Sale unit
+                          <input
+                            type="checkbox"
+                            checked={
+                              level.is_sale_unit
+                            }
+                            onChange={() =>
+                              toggleSaleUnit(
+                                index,
+                              )
+                            }
+                          />
+                        </label>
+
+                        <label>
+                          Stock unit
+                          <input
+                            type="radio"
+                            name="stock-unit"
+                            checked={
+                              level.is_stock_unit
+                            }
+                            onChange={() =>
+                              setStockUnit(
+                                index,
+                              )
+                            }
+                          />
+                        </label>
+
+                        <label>
+                          Preferred sale unit
+                          <input
+                            type="radio"
+                            name="preferred-sale-unit"
+                            checked={
+                              level.is_preferred_sale_unit
+                            }
+                            disabled={
+                              !level.is_sale_unit
+                            }
+                            onChange={() =>
+                              setPreferredSaleUnit(
+                                index,
+                              )
+                            }
+                          />
+                        </label>
+                      </div>
+
+                      {level.unit_name && (
+                        <small>
+                          {packagingConversionText(
+                            index,
+                          )}
+                        </small>
+                      )}
+
+                      {packagingLevels.length >
+                        1 && (
+                        <button
+                          type="button"
+                          className="text-btn"
+                          onClick={() =>
+                            removePackagingLevel(
+                              index,
+                            )
+                          }
+                        >
+                          Remove this level
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ),
+              )}
+            </div>
+
+            <button
+              type="button"
+              className="text-btn"
+              onClick={addPackagingLevel}
+            >
+              + Add packaging level
+            </button>
+
+            {packagingLevels.some(
+              (level) =>
+                level.unit_name.trim(),
+            ) && (
+              <div className="selected-chip">
+                <div>
+                  <strong>
+                    Packaging preview
+                  </strong>
+
+                  <span>
+                    {packagingLevels
+                      .filter((level) =>
+                        level.unit_name.trim(),
+                      )
+                      .map(
+                        (level) =>
+                          level.unit_name.trim(),
+                      )
+                      .join(' → ')}
+                  </span>
+
+                  {packagingLevels
+                    .filter((level) =>
+                      level.unit_name.trim(),
+                    )
+                    .map(
+                      (level, index) => (
+                        <span
+                          key={index}
+                        >
+                          {packagingConversionText(
+                            index,
+                          )}
+                        </span>
+                      ),
+                    )}
+                </div>
+              </div>
+            )}
           </div>
 
           {error && (
