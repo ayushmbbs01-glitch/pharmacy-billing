@@ -37,6 +37,157 @@ const invoke = async (name, body, options = {}) => {
   return data
 }
 
+const pharmdeskDb = {
+  from(table) {
+    let operation = 'select'
+    let selectClause = '*'
+    let filters = []
+    let orderBy = []
+    let limitValue = null
+    let singleMode = null
+    let payload = null
+    let upsertOptions = {}
+
+    const builder = {
+      select(columns = '*') {
+        selectClause = columns
+        operation = 'select'
+        return builder
+      },
+
+      eq(column, value) {
+        filters.push(['eq', column, value])
+        return builder
+      },
+
+      neq(column, value) {
+        filters.push(['neq', column, value])
+        return builder
+      },
+
+      gt(column, value) {
+        filters.push(['gt', column, value])
+        return builder
+      },
+
+      gte(column, value) {
+        filters.push(['gte', column, value])
+        return builder
+      },
+
+      lt(column, value) {
+        filters.push(['lt', column, value])
+        return builder
+      },
+
+      lte(column, value) {
+        filters.push(['lte', column, value])
+        return builder
+      },
+
+      in(column, values) {
+        filters.push(['in', column, values])
+        return builder
+      },
+
+      order(column, options = {}) {
+        orderBy.push([column, options])
+        return builder
+      },
+
+      limit(value) {
+        limitValue = value
+        return builder
+      },
+
+      single() {
+        singleMode = 'single'
+        return builder
+      },
+
+      maybeSingle() {
+        singleMode = 'maybeSingle'
+        return builder
+      },
+
+      insert(values) {
+        operation = 'insert'
+        payload = values
+        return builder
+      },
+
+      upsert(values, options = {}) {
+        operation = 'upsert'
+        payload = values
+        upsertOptions = options
+        return builder
+      },
+
+      update(values) {
+        operation = 'update'
+        payload = values
+        return builder
+      },
+
+      delete() {
+        operation = 'delete'
+        return builder
+      },
+
+      then(resolve, reject) {
+        return execute().then(resolve, reject)
+      },
+    }
+
+    async function execute() {
+      try {
+        let q = supabase.from(table)
+
+        if (operation === 'select') {
+          q = q.select(selectClause)
+        } else if (operation === 'insert') {
+          q = q.insert(payload).select(selectClause)
+        } else if (operation === 'upsert') {
+          q = q.upsert(payload, upsertOptions).select(selectClause)
+        } else if (operation === 'update') {
+          q = q.update(payload).select(selectClause)
+        } else {
+          q = q.delete()
+        }
+
+        for (const [kind, column, value] of filters) {
+          q = q[kind](column, value)
+        }
+
+        for (const [column, options] of orderBy) {
+          q = q.order(column, options)
+        }
+
+        if (limitValue != null) {
+          q = q.limit(limitValue)
+        }
+
+        if (singleMode === 'single') {
+          q = q.single()
+        }
+
+        if (singleMode === 'maybeSingle') {
+          q = q.maybeSingle()
+        }
+
+        return await q
+      } catch (error) {
+        return {
+          data: null,
+          error,
+        }
+      }
+    }
+
+    return builder
+  },
+}
+
 export const PharmDeskAPI = {
   // ---------------------------------------------------------------------------
   // Auth / store
