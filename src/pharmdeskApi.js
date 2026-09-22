@@ -221,8 +221,49 @@ export const PharmDeskAPI = {
   },
 
   userCanAccessStore(storeId) {
-    return call('pharmdesk_user_can_access_store', { p_store_id: storeId })
-  },
+  return call('pharmdesk_user_can_access_store', {
+    p_store_id: storeId,
+  })
+},
+
+async createStoreAccessRequest(storeId, email, role = 'salesperson') {
+  return call('create_store_access_request', {
+    p_store_id: storeId,
+    p_email: email,
+    p_role: role,
+  })
+},
+
+async getStoreAccessRequests(storeId) {
+  return select('store_access_requests', {
+    select: '*',
+    eq: {
+      store_id: storeId,
+    },
+    order: [
+      {
+        column: 'created_at',
+        ascending: false,
+      },
+    ],
+  })
+},
+
+async approveStoreAccessRequest(requestId) {
+  return call('approve_store_access_request', {
+    p_request_id: requestId,
+  })
+},
+
+async rejectStoreAccessRequest(requestId) {
+  return call('reject_store_access_request', {
+    p_request_id: requestId,
+  })
+},
+
+async claimApprovedStoreAccess() {
+  return call('claim_approved_store_access', {})
+},
 
   getStores() {
     return select('stores', {
