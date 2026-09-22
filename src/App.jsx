@@ -2938,13 +2938,13 @@ function StockReconciliation({ store }) {
 
   async function load() {
     const { data } = await supabase
-      .from('batches')
-      .select(`
-        id,
-        batch_number,
-        current_stock_units,
-        products(product_name)
-      `)
+  .from('batches')
+  .select(`
+    id,
+    batch_number,
+    current_stock_units,
+    products(id, product_name)
+  `)
       .eq('store_id', store.id)
       .eq('is_active', true)
       .gt('current_stock_units', 0)
@@ -4781,19 +4781,17 @@ function ProductModal({
   data: packagingConfigId,
   error: packagingSaveError,
 } = await supabase.rpc(
-      'pharmdesk_save_packaging_config',
-      {
-        p_product_id: productId,
-        p_config_id: null,
-        p_config_name:
-          packagingName.trim() ||
-          'Standard',
-        p_levels:
-          normalizedPackagingLevels,
-      },
-    )
+  'pharmdesk_save_packaging_config',
+  {
+    p_product_id: productId,
+    p_config_id: null,
+    p_config_name:
+      packagingName.trim() || 'Standard',
+    p_levels: normalizedPackagingLevels,
+  },
+)
 
-    if (packagingSaveError) {
+if (packagingSaveError) {
   setError(
     `Product was created, but packaging could not be saved: ${packagingSaveError.message}`,
   )
@@ -5547,18 +5545,60 @@ function LoadingInline() {
 
 function Modal({ title, onClose, children }) {
   return (
-    <div className="modal-backdrop">
-      <div className="modal">
-        <div className="modal-header">
+    <div
+      className="modal-backdrop"
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 1000,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '16px',
+        overflowY: 'auto',
+      }}
+    >
+      <div
+        className="modal"
+        style={{
+          width: 'min(760px, 100%)',
+          maxHeight: 'calc(100vh - 32px)',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+        }}
+      >
+        <div
+          className="modal-header"
+          style={{
+            flexShrink: 0,
+          }}
+        >
           <div>
             <h2>{title}</h2>
           </div>
-          <button className="modal-close" onClick={onClose}>
+
+          <button
+            type="button"
+            className="modal-close"
+            onClick={onClose}
+          >
             ×
           </button>
         </div>
 
-        <div className="modal-body">{children}</div>
+        <div
+          className="modal-body"
+          style={{
+            flex: '1 1 auto',
+            minHeight: 0,
+            overflowY: 'auto',
+            WebkitOverflowScrolling: 'touch',
+            paddingBottom: '24px',
+          }}
+        >
+          {children}
+        </div>
       </div>
     </div>
   )
