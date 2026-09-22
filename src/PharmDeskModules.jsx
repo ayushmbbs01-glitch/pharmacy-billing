@@ -218,31 +218,44 @@ export function PharmDeskApp() {
   const [session, setSession] = useState(null)  
   const [loading, setLoading] = useState(true)  
   
-  useEffect(() => {  
-    let mounted = true  
-  
-    const init = async () => {  
-      const { data } = await PharmDeskAPI.getSession()  
-  
-      if (mounted) {  
-        setSession(data.session || null)  
-        setLoading(false)  
-      }  
-    }  
-  
-    init()  
-  
-    const {  
-      data: { subscription },  
-    } = PharmDeskAPI.onAuthStateChange((_event, nextSession) => {  
-      setSession(nextSession || null)  
-    })  
-  
-    return () => {  
-      mounted = false  
-      subscription.unsubscribe()  
-    }  
-  }, [])  
+useEffect(() => {
+  let mounted = true
+
+  const init = async () => {
+    try {
+      const { data } = await PharmDeskAPI.getSession()
+
+      if (mounted) {
+        setSession(data?.session || null)
+      }
+    } catch (error) {
+      console.error('PharmDesk startup authentication error:', error)
+
+      if (mounted) {
+        setSession(null)
+      }
+    } finally {
+      if (mounted) {
+        setLoading(false)
+      }
+    }
+  }
+
+  init()
+
+  const {
+    data: { subscription },
+  } = PharmDeskAPI.onAuthStateChange((_event, nextSession) => {
+    if (mounted) {
+      setSession(nextSession || null)
+    }
+  })
+
+  return () => {
+    mounted = false
+    subscription.unsubscribe()
+  }
+}, []) 
   
   if (loading) return <LoadingScreen />  
   if (!session) return <LoginScreen />  
