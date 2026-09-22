@@ -4300,100 +4300,157 @@ function SupplierDirectory({
    SUPPLIER HISTORY  
 ========================================================= */  
   
-function SupplierInvoices({  
-  store,  
-}) {  
-  const [rows, setRows] =  
-    useState([])  
-  const [selected, setSelected] =  
-    useState(null)  
-  
-  const load = async () => {  
-    const { data } =  
-      await supabase  
-        .from('purchase_invoices')  
-        .select(`  
-          *,  
-          suppliers (  
-            *  
-          )  
-        `)  
-        .eq(  
-          'store_id',  
-          store.id,  
-        )  
-        .order(  
-          'invoice_date',  
-          {  
-            ascending: false,  
-          },  
-        )  
-        .limit(200)  
-  
-    setRows(data || [])  
-  }  
-  
-  useEffect(() => {  
-    if (store?.id) load()  
-  }, [store?.id])  
-  
-  return (  
-    <PanelList title="Supplier Invoices">  
-      <div className="record-list">  
-        {rows.map((row) => (  
-          <button  
-            className="record-row"  
-            key={row.id}  
-            onClick={() =>  
-              setSelected(  
-                row.suppliers,  
-              )  
-            }  
-          >  
-            <div>  
-              <strong>  
-                {  
-                  row.invoice_number  
-                }  
-              </strong>  
-  
-              <span>  
-                {row.suppliers  
-                  ?.supplier_name ||  
-                  'Supplier'}  
-              </span>  
-            </div>  
-  
-            <div className="record-right">  
-              <span>  
-                {dateText(  
-                  row.invoice_date,  
-                )}  
-              </span>  
-  
-              <strong>  
-                {money(  
-                  row.total_amount,  
-                )}  
-              </strong>  
-            </div>  
-          </button>  
-        ))}  
-      </div>  
-  
-      {selected && (  
-        <SupplierHistoryModal  
-          supplier={selected}  
-          store={store}  
-          onClose={() =>  
-            setSelected(null)  
-          }  
-        />  
-      )}  
-    </PanelList>  
-  )  
-}  
-  
+function SupplierInvoices({
+  store,
+}) {
+  const [rows, setRows] = useState([])
+  const [selected, setSelected] = useState(null)
+
+  const load = async () => {
+    const { data } = await supabase
+      .from('purchase_invoices')
+      .select(`*, suppliers (*)`)
+      .eq('store_id', store.id)
+      .order('invoice_date', { ascending: false })
+      .limit(200)
+    setRows(data || [])
+  }
+
+  useEffect(() => {
+    if (store?.id) load()
+  }, [store?.id])
+
+  return (
+    <PanelList title="Purchase Bills">
+      <div className="record-list">
+        {rows.map((row) => (
+          <button className="record-row" key={row.id} onClick={() => setSelected(row)}>
+            <div>
+              <strong>{row.invoice_number}</strong>
+              <span>{row.suppliers?.supplier_name || 'Supplier'}</span>
+            </div>
+            <div className="record-right">
+              <span>{dateText(row.invoice_date)}</span>
+              <strong>{money(row.total_amount)}</strong>
+            </div>
+          </button>
+        ))}
+      </div>
+
+      {selected && (
+        <PurchaseInvoiceModal
+          store={store}
+          invoice={selected}
+          onClose={() => setSelected(null)}
+          onUpdated={() => { setSelected(null); load() }}
+        />
+      )}
+    </PanelList>
+  )
+}
+
+function PurchaseInvoiceModal({ store, invoice, onClose, onUpdated }) {
+  const [details, setDetails] = useState(null)
+  const [suppliers, setSuppliers] = useState([])
+  const [products, setProducts] = useState([])
+  const [editing, setEditing] = useState(false)
+  const [supplierId, setSupplierId] = useState('')
+  const [invoiceNumber, setInvoiceNumber] = useState('')
+  const [invoiceDate, setInvoiceDate] = useState('')
+  const [discount, setDiscount] = useState('0')
+  const [cgst, setCgst] = useState('0')
+  const [sgst, setSgst] = useState('0')
+  const [igst, setIgst] = useState('0')
+  const [otherCharges, setOtherCharges] = useState('0')
+  const [notes, setNotes] = useState('')
+  const [items, setItems] = useState([])
+  const [message, setMessage] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const load = async () => {
+    const [invoiceResult, supplierResult, productResult] = await Promise.all([
+      supabase.from('purchase_invoices').select(`*, suppliers (*), purchase_items (*, products (id, product_name, generic_display_name, gst_rate), batches (id, batch_number, expiry_date, units_per_pack))`).eq('id', invoice.id).eq('store_id', store.id).maybeSingle(),
+      supabase.from('suppliers').select('*').eq('store_id', store.id).eq('is_active', true).order('supplier_name'),
+      supabase.from('store_products').select(`product_id, products (id, product_name, generic_display_name, gst_rate)`).eq('store_id', store.id).eq('is_active', true),
+    ])
+    if (invoiceResult.error) { setMessage(invoiceResult.error.message); return }
+    const d = invoiceResult.data
+    setDetails(d)
+    setSupplierId(d?.supplier_id || '')
+    setInvoiceNumber(d?.invoice_number || '')
+    setInvoiceDate(d?.invoice_date || '')
+    setDiscount(String(d?.discount_amount ?? 0))
+    setCgst(String(d?.cgst_amount ?? 0))
+    setSgst(String(d?.sgst_amount ?? 0))
+    setIgst(String(d?.igst_amount ?? 0))
+    setOtherCharges(String(d?.other_charges ?? 0))
+    setNotes(d?.notes || '')
+    setSuppliers(supplierResult.data || [])
+    setProducts((productResult.data || []).map((x) => x.products).filter(Boolean))
+    setItems((d?.purchase_items || []).map((x) => ({
+      id: x.id, product: x.products, batchNumber: x.batches?.batch_number || '', expiryDate: x.batches?.expiry_date || '',
+      paidPacks: x.paid_packs, freePacks: x.free_packs, looseUnits: x.loose_units,
+      purchaseRatePerPack: x.purchase_rate_per_pack, mrpPerPack: x.mrp_per_pack,
+      supplierDiscountPercent: x.supplier_discount_percent, gstRate: x.gst_rate ?? x.products?.gst_rate ?? 0,
+      unitsPerPack: x.batches?.units_per_pack || 1,
+      purchasePackagingLevelId: x.purchase_packaging_level_id || null, mrpPackagingLevelId: x.mrp_packaging_level_id || null,
+    })))
+  }
+
+  useEffect(() => { load() }, [invoice.id])
+
+  const updateItem = (id, patch) => setItems((current) => current.map((x) => x.id === id ? { ...x, ...patch } : x))
+  const removeItem = (id) => setItems((current) => current.filter((x) => x.id !== id))
+  const addItem = () => setItems((current) => [...current, emptyPurchaseItem()])
+
+  const save = async () => {
+    setBusy(true); setMessage('')
+    const payload = items.map((item) => ({
+      product_id: item.product?.id, batch_number: item.batchNumber, expiry_date: item.expiryDate,
+      units_per_pack: Number(item.unitsPerPack || 1), paid_packs: Number(item.paidPacks || 0), free_packs: Number(item.freePacks || 0),
+      loose_units: Number(item.looseUnits || 0), purchase_rate_per_pack: Number(item.purchaseRatePerPack || 0), mrp_per_pack: Number(item.mrpPerPack || 0),
+      supplier_discount_percent: Number(item.supplierDiscountPercent || 0), gst_rate: Number(item.gstRate || 0),
+      purchase_packaging_level_id: item.purchasePackagingLevelId || null, mrp_packaging_level_id: item.mrpPackagingLevelId || null,
+    }))
+    const { error } = await supabase.rpc('pharmdesk_edit_purchase', {
+      p_store_id: store.id, p_purchase_invoice_id: invoice.id, p_supplier_id: supplierId, p_invoice_number: invoiceNumber,
+      p_invoice_date: invoiceDate, p_items: payload, p_discount_amount: Number(discount || 0), p_cgst_amount: Number(cgst || 0),
+      p_sgst_amount: Number(sgst || 0), p_igst_amount: Number(igst || 0), p_other_charges: Number(otherCharges || 0), p_notes: notes || null,
+    })
+    setBusy(false)
+    if (error) { setMessage(error.message); return }
+    onUpdated()
+  }
+
+  if (!details) return <Modal title="Purchase Bill" onClose={onClose}><LoadingInline />{message && <div className="error-box">{message}</div>}</Modal>
+
+  return (
+    <Modal title={`Purchase Bill ${details.invoice_number}`} onClose={onClose}>
+      {!editing ? (
+        <>
+          <div className="history-header"><div><strong>{details.invoice_number}</strong><span>{dateText(details.invoice_date)}</span><span>Supplier: {details.suppliers?.supplier_name || 'Supplier'}</span></div><button className="secondary-button" onClick={() => setEditing(true)}>Edit Bill</button></div>
+          <div className="record-list">
+            {(details.purchase_items || []).map((item) => <div className="record-row static" key={item.id}><div><strong>{item.products?.product_name || 'Product'}</strong><span>Batch: {item.batches?.batch_number || '—'} • Exp: {dateText(item.batches?.expiry_date)}</span></div><strong>{money(item.purchase_rate_per_pack)}</strong></div>)}
+          </div>
+          <div className="info-box">Total: {money(details.total_amount)}</div>
+        </>
+      ) : (
+        <>
+          <label>Supplier<select value={supplierId} onChange={(e) => setSupplierId(e.target.value)}>{suppliers.map((x) => <option key={x.id} value={x.id}>{x.supplier_name}</option>)}</select></label>
+          <div className="item-grid"><label>Invoice number<input value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} /></label><label>Invoice date<input type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} /></label></div>
+          <h3>Items</h3>
+          {items.map((item) => <div className="transaction-item" key={item.id}><label>Product<select value={item.product?.id || ''} onChange={(e) => updateItem(item.id, { product: products.find((x) => x.id === e.target.value) || null })}><option value="">Select product</option>{products.map((x) => <option key={x.id} value={x.id}>{x.product_name}</option>)}</select></label><PurchaseItemRow item={item} onChange={(patch) => updateItem(item.id, patch)} onRemove={() => removeItem(item.id)} /></div>)}
+          <button type="button" className="secondary-button" onClick={addItem}>+ Add item</button>
+          <div className="item-grid"><label>Discount<input type="number" value={discount} onChange={(e) => setDiscount(e.target.value)} /></label><label>CGST<input type="number" value={cgst} onChange={(e) => setCgst(e.target.value)} /></label><label>SGST<input type="number" value={sgst} onChange={(e) => setSgst(e.target.value)} /></label><label>IGST<input type="number" value={igst} onChange={(e) => setIgst(e.target.value)} /></label><label>Other charges<input type="number" value={otherCharges} onChange={(e) => setOtherCharges(e.target.value)} /></label></div>
+          <label>Notes<textarea value={notes} onChange={(e) => setNotes(e.target.value)} /></label>
+          {message && <div className="error-box">{message}</div>}
+          <div className="modal-actions"><button className="secondary-button" onClick={() => setEditing(false)}>Cancel</button><button className="primary-button" disabled={busy} onClick={save}>{busy ? 'Saving…' : 'Save Changes'}</button></div>
+        </>
+      )}
+    </Modal>
+  )
+}
+
 function SupplierHistoryModal({  
   supplier,  
   store,  
@@ -5158,173 +5215,107 @@ function InventoryModule({
   )  
 }  
   
-function ProductsInventory({  
-  store,  
-}) {  
-  const [rows, setRows] =  
-    useState([])  
-  const [query, setQuery] =  
-    useState('')  
-  const [editing, setEditing] =  
-    useState(null)  
-  
-  const load = async () => {  
-    const { data } =  
-      await supabase  
-        .from(  
-          'store_products',  
-        )  
-        .select(`  
-          *,  
-          products (  
-            *  
-          )  
-        `)  
-        .eq(  
-          'store_id',  
-          store.id,  
-        )  
-        .eq(  
-          'is_active',  
-          true,  
-        )  
-        .order(  
-          'created_at',  
-          {  
-            ascending: false,  
-          },  
-        )  
-  
-    setRows(data || [])  
-  }  
-  
-  useEffect(() => {  
-    if (store?.id) load()  
-  }, [store?.id])  
-  
-  const filtered =  
-    rows.filter((row) =>  
-      matchesSearch(  
-        query,  
-        row.products  
-          ?.product_name,  
-        row.products  
-          ?.generic_display_name,  
-        row.products  
-          ?.manufacturer,  
-        row.products  
-          ?.strength_display,  
-      ),  
-    )  
-  
-  return (  
-    <PanelList title="Products">  
-      <div className="search-row">  
-        <input  
-          placeholder="Search product"  
-          value={query}  
-          onChange={(e) =>  
-            setQuery(  
-              e.target.value,  
-            )  
-          }  
-        />  
-  
-        <button  
-          className="primary-button"  
-          onClick={() =>  
-            setEditing({})  
-          }  
-        >  
-          + Product  
-        </button>  
-      </div>  
-  
-      <div className="record-list">  
-        {filtered.map(  
-          (row) => (  
-            <div  
-              className="record-row static"  
-              key={row.id}  
-            >  
-              <div>  
-                <strong>  
-                  {  
-                    row.products  
-                      ?.product_name  
-                  }  
-                </strong>  
-  
-                <span>  
-                  {row.products  
-                    ?.generic_display_name ||  
-                    row.products  
-                      ?.manufacturer ||  
-                    '—'}  
-                </span>  
-              </div>  
-  
-              <div className="record-right">  
-                <span>  
-                  Discount:{' '}  
-                  {  
-                    row.default_discount_percent ||  
-                    0  
-                  }  
-                  %  
-                </span>  
-  
-                <strong>  
-                  {money(  
-                    row.default_selling_price,  
-                  )}  
-                </strong>  
-  
-                <button  
-                  className="secondary-button"  
-                  onClick={() =>  
-                    setEditing({  
-                      ...row.products,  
-                      default_selling_price:  
-                        row.default_selling_price,  
-                      default_discount_percent:  
-                        row.default_discount_percent,  
-                      minimum_stock:  
-                        row.minimum_stock,  
-                      reorder_level:  
-                        row.reorder_level,  
-                    })  
-                  }  
-                >  
-                  Edit  
-                </button>  
-              </div>  
-            </div>  
-          ),  
-        )}  
-      </div>  
-  
-      {editing !== null && (  
-        <ProductModal  
-          store={store}  
-          product={  
-            editing.id  
-              ? editing  
-              : null  
-          }  
-          onClose={() =>  
-            setEditing(null)  
-          }  
-          onCreated={() => {  
-            setEditing(null)  
-            load()  
-          }}  
-        />  
-      )}  
-    </PanelList>  
-  )  
-}  
-  
+function ProductsInventory({
+  store,
+}) {
+  const [rows, setRows] = useState([])
+  const [query, setQuery] = useState('')
+  const [editing, setEditing] = useState(null)
+  const [message, setMessage] = useState('')
+
+  const load = async () => {
+    const { data } = await supabase
+      .from('store_products')
+      .select(`*, products (*)`)
+      .eq('store_id', store.id)
+      .eq('is_active', true)
+      .order('created_at', { ascending: false })
+    setRows(data || [])
+  }
+
+  useEffect(() => {
+    if (store?.id) load()
+  }, [store?.id])
+
+  const deleteProduct = async (row) => {
+    const name = row.products?.product_name || 'this product'
+    if (!window.confirm(`Delete ${name}? This is allowed only when its current stock is zero. Transaction history is preserved where required.`)) return
+
+    setMessage('')
+    const { error } = await supabase.rpc('pharmdesk_delete_product', {
+      p_store_id: store.id,
+      p_product_id: row.product_id,
+    })
+
+    if (error) {
+      setMessage(error.message)
+      return
+    }
+
+    setMessage(`${name} removed from this store.`)
+    await load()
+  }
+
+  const filtered = rows.filter((row) =>
+    matchesSearch(
+      query,
+      row.products?.product_name,
+      row.products?.generic_display_name,
+      row.products?.manufacturer,
+      row.products?.strength_display,
+    ),
+  )
+
+  return (
+    <PanelList title="Products">
+      <div className="search-row">
+        <input
+          placeholder="Search product"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        <button className="primary-button" onClick={() => setEditing({})}>
+          + Product
+        </button>
+      </div>
+
+      {message && <div className="message-box">{message}</div>}
+
+      <div className="record-list">
+        {filtered.map((row) => (
+          <div className="record-row static" key={row.id}>
+            <div>
+              <strong>{row.products?.product_name}</strong>
+              <span>{row.products?.generic_display_name || row.products?.manufacturer || '—'}</span>
+            </div>
+            <div className="record-right">
+              <span>Discount: {row.default_discount_percent || 0}%</span>
+              <strong>{money(row.default_selling_price)}</strong>
+              <button className="secondary-button" onClick={() => setEditing({
+                ...row.products,
+                default_selling_price: row.default_selling_price,
+                default_discount_percent: row.default_discount_percent,
+                minimum_stock: row.minimum_stock,
+                reorder_level: row.reorder_level,
+              })}>Edit</button>
+              <button className="danger-button" onClick={() => deleteProduct(row)}>Delete</button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {editing !== null && (
+        <ProductModal
+          store={store}
+          product={editing.id ? editing : null}
+          onClose={() => setEditing(null)}
+          onCreated={() => { setEditing(null); load() }}
+        />
+      )}
+    </PanelList>
+  )
+}
+
 function BatchesInventory({  
   store,  
 }) {  
@@ -5711,211 +5702,87 @@ function DeadStockInventory({
   )  
 }  
   
-function StockReconciliation({  
-  store,  
-}) {  
-  const [batches, setBatches] =  
-    useState([])  
-  const [selectedBatch, setSelectedBatch] =  
-    useState('')  
-  const [physical, setPhysical] =  
-    useState('')  
-  const [message, setMessage] =  
-    useState('')  
-  
-  useEffect(() => {  
-    if (!store?.id) return  
-  
-    supabase  
-      .from('batches')  
-      .select(`  
-        *,  
-        products (  
-          product_name  
-        )  
-      `)  
-      .eq(  
-        'store_id',  
-        store.id,  
-      )  
-      .eq(  
-        'is_active',  
-        true,  
-      )  
-      .order(  
-        'created_at',  
-        {  
-          ascending: false,  
-        },  
-      )  
-      .then(({ data }) =>  
-        setBatches(  
-          data || [],  
-        ),  
-      )  
-  }, [store?.id])  
-  
-  const selected =  
-    batches.find(  
-      (x) =>  
-        x.id ===  
-        selectedBatch,  
-    )  
-  
-  const save = async () => {  
-    setMessage('')  
-  
-    if (!selected) {  
-      setMessage(  
-        'Select a batch.',  
-      )  
-      return  
-    }  
-  
-    const physicalNumber =  
-      Number(physical)  
-  
-    if (  
-      !Number.isFinite(  
-        physicalNumber,  
-      ) ||  
-      physicalNumber < 0  
-    ) {  
-      setMessage(  
-        'Enter a valid physical quantity.',  
-      )  
-      return  
-    }  
-  
-    const difference =  
-      physicalNumber -  
-      safeNumber(  
-        selected.current_stock_units,  
-      )  
-  
-    const { error } =  
-      await supabase  
-        .from(  
-          'stock_reconciliations',  
-        )  
-        .insert({  
-          store_id:  
-            store.id,  
-          batch_id:  
-            selected.id,  
-          system_stock_units:  
-            selected.current_stock_units,  
-          physical_stock_units:  
-            physicalNumber,  
-          difference_units:  
-            difference,  
-        })  
-  
-    if (error) {  
-      setMessage(  
-        error.message,  
-      )  
-      return  
-    }  
-  
-    setMessage(  
-      `Reconciliation recorded. Difference: ${difference}`,  
-    )  
-  }  
-  
-  return (  
-    <PanelList title="Stock Reconciliation">  
-      <label>  
-        Batch  
-        <select  
-          value={  
-            selectedBatch  
-          }  
-          onChange={(e) =>  
-            setSelectedBatch(  
-              e.target.value,  
-            )  
-          }  
-        >  
-          <option value="">  
-            Select batch  
-          </option>  
-  
-          {batches.map(  
-            (batch) => (  
-              <option  
-                key={batch.id}  
-                value={batch.id}  
-              >  
-                {  
-                  batch.products  
-                    ?.product_name  
-                }{' '}  
-                •{' '}  
-                {  
-                  batch.batch_number  
-                }{' '}  
-                • Stock{' '}  
-                {  
-                  batch.current_stock_units  
-                }  
-              </option>  
-            ),  
-          )}  
-        </select>  
-      </label>  
-  
-      <label>  
-        Physical stock  
-        <input  
-          type="number"  
-          min="0"  
-          value={physical}  
-          onChange={(e) =>  
-            setPhysical(  
-              e.target.value,  
-            )  
-          }  
-        />  
-      </label>  
-  
-      {selected && (  
-        <div className="info-box">  
-          System stock:{' '}  
-          {  
-            selected.current_stock_units  
-          }  
-        </div>  
-      )}  
-  
-      {message && (  
-        <div className="message-box">  
-          {message}  
-        </div>  
-      )}  
-  
-      <button  
-        className="primary-button"  
-        onClick={save}  
-      >  
-        Record Reconciliation  
-      </button>  
-  
-      <p className="muted">  
-        This records the reconciliation  
-        event. Actual stock adjustment  
-        should be performed through the  
-        dedicated backend stock-adjustment  
-        operation.  
-      </p>  
-    </PanelList>  
-  )  
-}  
-  
-/* =========================================================  
-   CUSTOMERS  
-========================================================= */  
-  
+function StockReconciliation({
+  store,
+}) {
+  const [batches, setBatches] = useState([])
+  const [selectedBatch, setSelectedBatch] = useState('')
+  const [physical, setPhysical] = useState('')
+  const [reason, setReason] = useState('')
+  const [message, setMessage] = useState('')
+
+  const load = async () => {
+    if (!store?.id) return
+    const { data } = await supabase
+      .from('batches')
+      .select(`*, products (product_name)`)
+      .eq('store_id', store.id)
+      .eq('is_active', true)
+      .order('created_at', { ascending: false })
+    setBatches(data || [])
+  }
+
+  useEffect(() => { load() }, [store?.id])
+
+  const selected = batches.find((x) => x.id === selectedBatch)
+
+  const save = async () => {
+    setMessage('')
+    if (!selected) { setMessage('Select a batch.'); return }
+    const physicalNumber = Number(physical)
+    if (!Number.isFinite(physicalNumber) || physicalNumber < 0) {
+      setMessage('Enter a valid physical quantity.')
+      return
+    }
+    const { data: difference, error } = await supabase.rpc(
+      'pharmdesk_adjust_stock',
+      {
+        p_store_id: store.id,
+        p_batch_id: selected.id,
+        p_physical_stock_units: physicalNumber,
+        p_reason: reason.trim() || null,
+      },
+    )
+    if (error) { setMessage(error.message); return }
+    setBatches((current) => current.map((batch) =>
+      batch.id === selected.id
+        ? { ...batch, current_stock_units: physicalNumber }
+        : batch,
+    ))
+    setPhysical('')
+    setReason('')
+    setMessage(`Stock adjusted successfully. Difference: ${difference}`)
+  }
+
+  return (
+    <PanelList title="Physical Stock Adjustment">
+      <label>
+        Batch
+        <select value={selectedBatch} onChange={(e) => setSelectedBatch(e.target.value)}>
+          <option value="">Select batch</option>
+          {batches.map((batch) => (
+            <option key={batch.id} value={batch.id}>
+              {batch.products?.product_name} • {batch.batch_number} • Stock {batch.current_stock_units}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label>
+        Physical stock
+        <input type="number" min="0" value={physical} onChange={(e) => setPhysical(e.target.value)} />
+      </label>
+      {selected && <div className="info-box">System stock: {selected.current_stock_units}</div>}
+      <label>
+        Reason
+        <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. physical count, damage, breakage" />
+      </label>
+      {message && <div className="message-box">{message}</div>}
+      <button className="primary-button" onClick={save}>Apply Stock Adjustment</button>
+      <p className="muted">The physical quantity becomes the new stock. The difference is recorded as an adjustment with an audit trail.</p>
+    </PanelList>
+  )
+}
+
 function CustomersModule({  
   store,  
 }) {  
