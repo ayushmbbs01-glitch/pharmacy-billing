@@ -1,4 +1,3 @@
-import React from 'react'
 import { PharmDeskApp } from './PharmDeskModules'
 
 /*
@@ -22,6 +21,7 @@ import { PharmDeskApp } from './PharmDeskModules'
   The legacy purchase-order destination is no longer part of the active
   navigation; Supplier Orders is the canonical ordering workflow.
 */
+
 export default function App() {
   return <PharmDeskApp />
 }
