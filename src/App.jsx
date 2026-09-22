@@ -3796,407 +3796,233 @@ function SupplierModal({ store, onClose, onCreated }) {
   )
 }
 
-function ProductModal({ store, onClose, onCreated }) {
-  const [categories, setCategories] = useState([])
-  const [compositions, setCompositions] = useState([])
+const STRENGTH_UNITS = ['mg', 'ml', 'mcg', 'g', 'IU', '%']
 
-  const [name, setName] = useState('')
-  const [manufacturer, setManufacturer] = useState('')
+function emptyIngredientRow() {
+  return {
+    ingredient_name: '',
+    strength_value: '',
+    strength_unit: 'mg',
+  }
+}
+
+function CompositionModal({ onClose, onCreated }) {
   const [dosageForm, setDosageForm] = useState('')
-  const [compositionId, setCompositionId] = useState('')
-  const [categoryId, setCategoryId] = useState('')
-  const [hsn, setHsn] = useState('')
-  const [gst, setGst] = useState(0)
-  const [sellingPrice, setSellingPrice] = useState('')
-  const [discount, setDiscount] = useState(0)
-  const [minimumStock, setMinimumStock] = useState(0)
-  const [reorderLevel, setReorderLevel] = useState(0)
-
+  const [ingredients, setIngredients] = useState([
+    emptyIngredientRow(),
+  ])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [showCompositionForm, setShowCompositionForm] =
-    useState(false)
 
-  async function loadMasterData() {
-    const [
-      { data: categoryData, error: categoryError },
-      { data: compositionData, error: compositionError },
-    ] = await Promise.all([
-      supabase
-        .from('product_categories')
-        .select('*')
-        .eq('is_active', true)
-        .order('name'),
-
-      supabase
-        .from('compositions')
-        .select(`
-          id,
-          name,
-          dosage_form,
-          is_verified,
-          composition_ingredients(
-            ingredient_name,
-            strength_value,
-            strength_unit,
-            sequence_number
-          )
-        `)
-        .eq('is_active', true)
-        .order('name'),
-    ])
-
-    if (categoryError) {
-      setError(categoryError.message)
-      return
-    }
-
-    if (compositionError) {
-      setError(compositionError.message)
-      return
-    }
-
-    setCategories(categoryData || [])
-    setCompositions(
-      (compositionData || []).map((composition) => ({
-        ...composition,
-        composition_ingredients: (
-          composition.composition_ingredients || []
-        ).sort(
-          (a, b) =>
-            Number(a.sequence_number || 0) -
-            Number(b.sequence_number || 0),
-        ),
-      })),
+  function updateIngredient(index, patch) {
+    setIngredients((current) =>
+      current.map((row, i) =>
+        i === index ? { ...row, ...patch } : row,
+      ),
     )
   }
 
-  useEffect(() => {
-    loadMasterData()
-  }, [])
+  function addIngredientRow() {
+    setIngredients((current) => [
+      ...current,
+      emptyIngredientRow(),
+    ])
+  }
 
-  const selectedComposition = compositions.find(
-    (composition) => composition.id === compositionId,
-  )
+  function removeIngredientRow(index) {
+    if (ingredients.length === 1) return
+    setIngredients((current) =>
+      current.filter((_, i) => i !== index),
+    )
+  }
+
+  const generatedName = ingredients
+    .filter((row) => row.ingredient_name.trim())
+    .map((row) =>
+      [
+        row.ingredient_name.trim(),
+        row.strength_value
+          ? `${row.strength_value}${row.strength_unit || ''}`
+          : '',
+      ]
+        .filter(Boolean)
+        .join(' '),
+    )
+    .join(' + ')
 
   async function save(event) {
     event.preventDefault()
     setError('')
 
-    if (!name.trim()) {
-      setError('Product name is required.')
+    const validIngredients = ingredients.filter((row) =>
+      row.ingredient_name.trim(),
+    )
+
+    if (validIngredients.length === 0) {
+      setError('Add at least one ingredient.')
       return
     }
 
-    if (Number(gst || 0) < 0 || Number(gst || 0) > 100) {
-      setError('GST must be between 0 and 100%.')
+    if (!generatedName.trim()) {
+      setError('Enter ingredient names to build the composition.')
       return
     }
 
     setBusy(true)
 
-    const { data: productId, error: productError } =
-      await supabase.rpc('pharmdesk_save_product', {
-        p_store_id: store.id,
-        p_product_id: null,
-        p_product_name: name.trim(),
-        p_generic_display_name:
-          selectedComposition?.name || null,
-        p_category_id: categoryId || null,
-        p_composition_id: compositionId || null,
-        p_manufacturer: manufacturer.trim() || null,
-        p_dosage_form:
-          selectedComposition?.dosage_form ||
-          dosageForm.trim() ||
-          null,
-        p_strength_display: null,
-        p_pack_quantity: 1,
-        p_pack_unit: null,
-        p_hsn_code: hsn.trim() || null,
-        p_gst_rate: Number(gst || 0),
-        p_default_selling_price:
-          Number(sellingPrice || 0),
-        p_default_discount_percent:
-          Number(discount || 0),
-        p_minimum_stock:
-          Number(minimumStock || 0),
-        p_reorder_level:
-          Number(reorderLevel || 0),
-        p_is_active: true,
-      })
-
-    if (productError) {
-      setError(productError.message)
-      setBusy(false)
-      return
-    }
-
-    const { data: product, error: fetchError } =
+    const { data: composition, error: compositionError } =
       await supabase
-        .from('products')
+        .from('compositions')
+        .insert({
+          name: generatedName.trim(),
+          dosage_form: dosageForm.trim() || null,
+          is_verified: false,
+          is_active: true,
+        })
         .select('*')
-        .eq('id', productId)
         .single()
 
-    if (fetchError) {
-      setError(fetchError.message)
+    if (compositionError) {
+      setError(compositionError.message)
       setBusy(false)
       return
     }
 
-    onCreated(product)
+    const ingredientRows = validIngredients.map((row, index) => ({
+      composition_id: composition.id,
+      ingredient_name: row.ingredient_name.trim(),
+      strength_value: row.strength_value
+        ? Number(row.strength_value)
+        : null,
+      strength_unit: row.strength_unit || null,
+      sequence_number: index + 1,
+    }))
+
+    const { data: savedIngredients, error: ingredientsError } =
+      await supabase
+        .from('composition_ingredients')
+        .insert(ingredientRows)
+        .select('*')
+
+    if (ingredientsError) {
+      setError(ingredientsError.message)
+      setBusy(false)
+      return
+    }
+
+    onCreated({
+      ...composition,
+      composition_ingredients: savedIngredients || ingredientRows,
+    })
+
     setBusy(false)
   }
 
-  function handleCompositionCreated(newComposition) {
-    setShowCompositionForm(false)
-
-    setCompositions((current) => {
-      const exists = current.some(
-        (item) => item.id === newComposition.id,
-      )
-
-      if (exists) return current
-
-      return [...current, newComposition].sort((a, b) =>
-        a.name.localeCompare(b.name),
-      )
-    })
-
-    setCompositionId(newComposition.id)
-
-    if (newComposition.dosage_form) {
-      setDosageForm(newComposition.dosage_form)
-    }
-  }
-
   return (
-    <>
-      <Modal title="Add new product" onClose={onClose}>
-        <form className="form-stack" onSubmit={save}>
-          <div className="form-grid two">
-            <label>
-              Brand / product name *
-              <input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                autoFocus
-                required
-                placeholder="e.g. Crocin 650"
-              />
-            </label>
-
-            <label>
-              Manufacturer
-              <input
-                value={manufacturer}
-                onChange={(e) =>
-                  setManufacturer(e.target.value)
-                }
-                placeholder="e.g. GlaxoSmithKline"
-              />
-            </label>
-
-            <label>
-              Generic composition
-              <div className="search-with-action">
-                <select
-                  value={compositionId}
-                  onChange={(e) =>
-                    setCompositionId(e.target.value)
-                  }
-                >
-                  <option value="">
-                    Select composition
-                  </option>
-
-                  {compositions.map((composition) => (
-                    <option
-                      key={composition.id}
-                      value={composition.id}
-                    >
-                      {composition.name}
-                    </option>
-                  ))}
-                </select>
-
-                <button
-                  type="button"
-                  className="inline-btn"
-                  onClick={() =>
-                    setShowCompositionForm(true)
-                  }
-                >
-                  + Add New
-                </button>
-              </div>
-
-              {selectedComposition && (
-                <small className="field-hint">
-                  {selectedComposition.is_verified
-                    ? 'Verified composition'
-                    : 'Manual composition'}
-                </small>
-              )}
-            </label>
-
-            <label>
-              Dosage form
-              <input
-                value={dosageForm}
-                onChange={(e) =>
-                  setDosageForm(e.target.value)
-                }
-                placeholder="Tablet / Syrup / Cream"
-                disabled={Boolean(
-                  selectedComposition?.dosage_form,
-                )}
-              />
-            </label>
-
-            <label>
-              Category
-              <select
-                value={categoryId}
-                onChange={(e) =>
-                  setCategoryId(e.target.value)
-                }
-              >
-                <option value="">
-                  Select category
-                </option>
-
-                {categories.map((category) => (
-                  <option
-                    key={category.id}
-                    value={category.id}
-                  >
-                    {category.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label>
-              HSN
-              <input
-                value={hsn}
-                onChange={(e) =>
-                  setHsn(e.target.value)
-                }
-              />
-            </label>
-
-            <label>
-              GST %
-              <input
-                type="number"
-                min="0"
-                max="100"
-                value={gst}
-                onChange={(e) =>
-                  setGst(e.target.value)
-                }
-              />
-            </label>
-
-            <label>
-              Default selling price
-              <input
-                type="number"
-                min="0"
-                value={sellingPrice}
-                onChange={(e) =>
-                  setSellingPrice(e.target.value)
-                }
-                placeholder="₹0.00"
-              />
-            </label>
-
-            <label>
-              Default discount %
-              <input
-                type="number"
-                min="0"
-                max="100"
-                value={discount}
-                onChange={(e) =>
-                  setDiscount(e.target.value)
-                }
-              />
-            </label>
-
-            <label>
-              Minimum stock
-              <input
-                type="number"
-                min="0"
-                value={minimumStock}
-                onChange={(e) =>
-                  setMinimumStock(e.target.value)
-                }
-              />
-            </label>
-
-            <label>
-              Reorder level
-              <input
-                type="number"
-                min="0"
-                value={reorderLevel}
-                onChange={(e) =>
-                  setReorderLevel(e.target.value)
-                }
-              />
-            </label>
-          </div>
-
-          {selectedComposition && (
-            <div className="selected-chip">
-              <div>
-                <strong>
-                  {selectedComposition.name}
-                </strong>
-
-                {selectedComposition.composition_ingredients
-                  ?.length > 0 && (
-                  <span>
-                    {selectedComposition.composition_ingredients
-                      .map(
-                        (ingredient) =>
-                          `${ingredient.ingredient_name} ${ingredient.strength_value} ${ingredient.strength_unit}`,
-                      )
-                      .join(' + ')}
-                  </span>
-                )}
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setCompositionId('')}
-              >
-                ×
-              </button>
-            </div>
-          )}
-
-          {error && <div className="error-box">{error}</div>}
-
-          <ModalActions
-            onClose={onClose}
-            busy={busy}
-            label="Save Product"
+    <Modal title="Add new composition" onClose={onClose}>
+      <form className="form-stack" onSubmit={save}>
+        <label>
+          Dosage form
+          <input
+            value={dosageForm}
+            onChange={(e) => setDosageForm(e.target.value)}
+            placeholder="Tablet / Syrup / Cream"
           />
-        </form>
-      </Modal>
+        </label>
 
-      {showCompositionForm && (
-        <CompositionModal
-          onClose={() => setShowCompositionForm(false)}
-          onCreated={handleCompositionCreated}
+        <div className="form-stack">
+          {ingredients.map((row, index) => (
+            <div className="form-grid three" key={index}>
+              <label>
+                Ingredient *
+                <input
+                  value={row.ingredient_name}
+                  onChange={(e) =>
+                    updateIngredient(index, {
+                      ingredient_name: e.target.value,
+                    })
+                  }
+                  autoFocus={index === 0}
+                  placeholder="e.g. Paracetamol"
+                  required
+                />
+              </label>
+
+              <label>
+                Strength
+                <input
+                  type="number"
+                  min="0"
+                  step="any"
+                  value={row.strength_value}
+                  onChange={(e) =>
+                    updateIngredient(index, {
+                      strength_value: e.target.value,
+                    })
+                  }
+                  placeholder="e.g. 650"
+                />
+              </label>
+
+              <label>
+                Unit
+                <div className="search-with-action">
+                  <select
+                    value={row.strength_unit}
+                    onChange={(e) =>
+                      updateIngredient(index, {
+                        strength_unit: e.target.value,
+                      })
+                    }
+                  >
+                    {STRENGTH_UNITS.map((unit) => (
+                      <option key={unit} value={unit}>
+                        {unit}
+                      </option>
+                    ))}
+                  </select>
+
+                  {ingredients.length > 1 && (
+                    <button
+                      type="button"
+                      className="icon-btn"
+                      onClick={() => removeIngredientRow(index)}
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+              </label>
+            </div>
+          ))}
+        </div>
+
+        <button
+          type="button"
+          className="text-btn"
+          onClick={addIngredientRow}
+        >
+          + Add another ingredient
+        </button>
+
+        {generatedName && (
+          <div className="selected-chip">
+            <div>
+              <strong>{generatedName}</strong>
+              <span>This name will be saved for the composition.</span>
+            </div>
+          </div>
+        )}
+
+        {error && <div className="error-box">{error}</div>}
+
+        <ModalActions
+          onClose={onClose}
+          busy={busy}
+          label="Save Composition"
         />
-      )}
-    </>
+      </form>
+    </Modal>
   )
 }
 
