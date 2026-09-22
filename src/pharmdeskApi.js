@@ -58,10 +58,10 @@ export const PharmDeskAPI = {
   },
 
   async getSession() {
-    const { data, error } = await supabase.auth.getSession()
-    if (error) throw error
-    return data.session
-  },
+  const { data, error } = await supabase.auth.getSession()
+  if (error) throw error
+  return data
+},
 
   async getUser() {
     const { data, error } = await supabase.auth.getUser()
@@ -81,6 +81,29 @@ export const PharmDeskAPI = {
     })
   },
 
+async getStoresForUser(userId) {
+  const { data, error } = await supabase
+    .from('store_memberships')
+    .select('store_id, stores(*)')
+    .eq('user_id', userId)
+    .eq('is_active', true)
+
+  if (error) throw error
+
+  return (data || [])
+    .map((row) => row.stores)
+    .filter(Boolean)
+    .filter((store) => store.is_active !== false)
+},
+
+async getUserProfile(userId) {
+  return select('user_profiles', {
+    select: '*',
+    eq: { id: userId },
+    maybeSingle: true,
+  })
+},
+
   getStoreMembers(storeId) {
     return select('store_memberships', {
       select: '*, user_profiles(id,full_name,phone,is_active)',
@@ -98,6 +121,70 @@ export const PharmDeskAPI = {
       p_date: date || undefined,
     })
   },
+
+async dashboardSnapshot(storeId, startDate, expiryDays = 90) {
+  const start = startDate || new Date().toISOString().slice(0, 10)
+
+  const startDateObj = new Date(`${start}T00:00:00`)
+  const endDateObj = new Date(startDateObj)
+  endDateObj.setDate(
+    endDateObj.getDate() + Number(expiryDays || 90),
+  )
+
+  const end = endDateObj.toISOString().slice(0, 10)
+
+  const [
+    salesResult,
+    purchasesResult,
+    batchesResult,
+    expiryResult,
+  ] = await Promise.all([
+    supabase
+      .from('sales')
+      .select('*')
+      .eq('store_id', storeId)
+      .gte('bill_datetime', `${start}T00:00:00`)
+      .lt('bill_datetime', `${start}T23:59:59.999`),
+
+    supabase
+      .from('purchase_invoices')
+      .select('*')
+      .eq('store_id', storeId)
+      .eq('invoice_date', start),
+
+    supabase
+      .from('batches')
+      .select('*')
+      .eq('store_id', storeId)
+      .eq('is_active', true)
+      .gt('current_stock_units', 0),
+
+    supabase
+      .from('batches')
+      .select('*')
+      .eq('store_id', storeId)
+      .eq('is_active', true)
+      .gt('current_stock_units', 0)
+      .gte('expiry_date', start)
+      .lte('expiry_date', end),
+  ])
+
+  for (const result of [
+    salesResult,
+    purchasesResult,
+    batchesResult,
+    expiryResult,
+  ]) {
+    if (result.error) throw result.error
+  }
+
+  return {
+    sales: salesResult.data || [],
+    purchases: purchasesResult.data || [],
+    batches: batchesResult.data || [],
+    expiry: expiryResult.data || [],
+  }
+},
 
   refreshAlerts(storeId) {
     return call('pharmdesk_refresh_stock_alerts', {
