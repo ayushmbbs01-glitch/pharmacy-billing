@@ -43,14 +43,19 @@ html,
 body,
 #app {
   margin: 0;
-  min-height: 100%;
   width: 100%;
+  min-height: 100%;
+}
+
+html {
+  overflow-x: hidden;
 }
 
 body {
   min-height: 100vh;
   background: var(--background);
   color: var(--text);
+  overflow-x: hidden;
 }
 
 button,
@@ -288,21 +293,29 @@ label {
 ============================================================ */
 
 .app-shell {
+  position: relative;
+  width: 100%;
   min-height: 100vh;
-  display: flex;
   background: var(--background);
 }
 
+/*
+  IMPORTANT:
+  The sidebar is fixed and therefore removed from normal flow.
+  The main shell is therefore NOT a flex item.
+*/
 .sidebar {
   position: fixed;
   inset: 0 auto 0 0;
   z-index: 50;
   width: 245px;
+  height: 100vh;
   background: var(--navy);
   color: #fff;
   display: flex;
   flex-direction: column;
   padding: 18px 14px;
+  overflow-y: auto;
 }
 
 .sidebar-brand {
@@ -450,16 +463,23 @@ label {
   color: #fff;
 }
 
+/*
+  FIX:
+  width:auto allows the block to occupy every pixel remaining
+  after the sidebar margin.
+*/
 .main-shell {
-  width: calc(100% - 245px);
-  margin-left: 245px;
+  width: auto;
+  min-width: 0;
   min-height: 100vh;
+  margin-left: 245px;
 }
 
 .topbar {
   position: sticky;
   top: 0;
   z-index: 30;
+  width: 100%;
   min-height: 76px;
   display: flex;
   align-items: center;
@@ -489,6 +509,12 @@ label {
   letter-spacing: -0.02em;
 }
 
+.topbar-right {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
 .store-chip {
   display: flex;
   align-items: center;
@@ -505,6 +531,7 @@ label {
 .status-dot {
   width: 7px;
   height: 7px;
+  flex: 0 0 auto;
   border-radius: 50%;
   background: #2a9d65;
 }
@@ -522,6 +549,7 @@ label {
   max-width: 1600px;
   margin: 0 auto;
   padding: 30px;
+  min-width: 0;
 }
 
 /* ============================================================
@@ -580,6 +608,7 @@ label {
 }
 
 .stat-card {
+  min-width: 0;
   min-height: 112px;
   display: flex;
   align-items: center;
@@ -619,11 +648,12 @@ label {
 
 .dashboard-grid {
   display: grid;
-  grid-template-columns: 1.1fr 1fr;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
   gap: 18px;
 }
 
 .panel {
+  min-width: 0;
   background: #fff;
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -709,6 +739,7 @@ label {
 ============================================================ */
 
 .module {
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 18px;
@@ -752,12 +783,10 @@ label {
   grid-template-columns: minmax(0, 1.6fr) minmax(310px, 0.65fr);
   gap: 18px;
   align-items: start;
-}
-
-.workspace-main {
   min-width: 0;
 }
 
+.workspace-main,
 .workspace-side {
   min-width: 0;
 }
@@ -1150,6 +1179,7 @@ label {
 ============================================================ */
 
 .data-table-wrap {
+  width: 100%;
   overflow-x: auto;
 }
 
@@ -1388,7 +1418,7 @@ label {
 
 .settings-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 18px;
 }
 
@@ -1579,7 +1609,6 @@ label {
   }
 
   .main-shell {
-    width: calc(100% - 220px);
     margin-left: 220px;
   }
 
@@ -1619,6 +1648,7 @@ label {
   }
 }
 
+/* FIXED: proper media-query syntax */
 @media (max-width: 800px) {
   .sidebar {
     transform: translateX(-100%);
