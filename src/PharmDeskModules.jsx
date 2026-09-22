@@ -222,14 +222,28 @@ export function PharmDeskApp() {
   useEffect(() => {  
     let mounted = true  
   
-    const init = async () => {  
-      const { data } = await PharmDeskAPI.getSession()  
-  
-      if (mounted) {  
-        setSession(data.session || null)  
-        setLoading(false)  
-      }  
-    }  
+  const init = async () => {
+  try {
+    const result = await PharmDeskAPI.getSession()
+
+    const currentSession =
+      result?.session ??
+      result?.data?.session ??
+      null
+
+    if (mounted) {
+      setSession(currentSession)
+      setLoading(false)
+    }
+  } catch (error) {
+    console.error('PharmDesk session initialization failed:', error)
+
+    if (mounted) {
+      setSession(null)
+      setLoading(false)
+    }
+  }
+}
   
     init()  
   
