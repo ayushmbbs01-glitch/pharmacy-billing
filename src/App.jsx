@@ -4778,9 +4778,9 @@ function ProductModal({
       )
 
     const {
-      data: packagingConfigId,
-      error: packagingError,
-    } = await supabase.rpc(
+  data: packagingConfigId,
+  error: packagingSaveError,
+} = await supabase.rpc(
       'pharmdesk_save_packaging_config',
       {
         p_product_id: productId,
@@ -4793,13 +4793,13 @@ function ProductModal({
       },
     )
 
-    if (packagingError) {
-      setError(
-        `Product was created, but packaging could not be saved: ${packagingError.message}`,
-      )
-      setBusy(false)
-      return
-    }
+    if (packagingSaveError) {
+  setError(
+    `Product was created, but packaging could not be saved: ${packagingSaveError.message}`,
+  )
+  setBusy(false)
+  return
+}
 
     if (!packagingConfigId) {
       setError(
