@@ -5555,13 +5555,15 @@ function Modal({ title, onClose, children }) {
         alignItems: 'center',
         justifyContent: 'center',
         padding: '16px',
-        overflowY: 'auto',
+        overflow: 'hidden',
+        background: 'rgba(0, 0, 0, 0.45)',
       }}
     >
       <div
         className="modal"
         style={{
           width: 'min(760px, 100%)',
+          height: 'calc(100vh - 32px)',
           maxHeight: 'calc(100vh - 32px)',
           display: 'flex',
           flexDirection: 'column',
@@ -5571,7 +5573,7 @@ function Modal({ title, onClose, children }) {
         <div
           className="modal-header"
           style={{
-            flexShrink: 0,
+            flex: '0 0 auto',
           }}
         >
           <div>
@@ -5590,11 +5592,12 @@ function Modal({ title, onClose, children }) {
         <div
           className="modal-body"
           style={{
-            flex: '1 1 auto',
+            flex: '1 1 0',
             minHeight: 0,
             overflowY: 'auto',
+            overflowX: 'hidden',
             WebkitOverflowScrolling: 'touch',
-            paddingBottom: '24px',
+            paddingBottom: '32px',
           }}
         >
           {children}
