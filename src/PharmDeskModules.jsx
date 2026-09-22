@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import PharmDeskAPI, { pharmdeskDb } from './pharmdeskApi'
+import { supabase } from './supabaseClient'
 
 /* =========================================================  
    CONSTANTS  
@@ -218,44 +219,31 @@ export function PharmDeskApp() {
   const [session, setSession] = useState(null)  
   const [loading, setLoading] = useState(true)  
   
-useEffect(() => {
-  let mounted = true
-
-  const init = async () => {
-    try {
-      const { data } = await PharmDeskAPI.getSession()
-
-      if (mounted) {
-        setSession(data?.session || null)
-      }
-    } catch (error) {
-      console.error('PharmDesk startup authentication error:', error)
-
-      if (mounted) {
-        setSession(null)
-      }
-    } finally {
-      if (mounted) {
-        setLoading(false)
-      }
-    }
-  }
-
-  init()
-
-  const {
-    data: { subscription },
-  } = PharmDeskAPI.onAuthStateChange((_event, nextSession) => {
-    if (mounted) {
-      setSession(nextSession || null)
-    }
-  })
-
-  return () => {
-    mounted = false
-    subscription.unsubscribe()
-  }
-}, []) 
+  useEffect(() => {  
+    let mounted = true  
+  
+    const init = async () => {  
+      const { data } = await PharmDeskAPI.getSession()  
+  
+      if (mounted) {  
+        setSession(data.session || null)  
+        setLoading(false)  
+      }  
+    }  
+  
+    init()  
+  
+    const {  
+      data: { subscription },  
+    } = PharmDeskAPI.onAuthStateChange((_event, nextSession) => {  
+      setSession(nextSession || null)  
+    })  
+  
+    return () => {  
+      mounted = false  
+      subscription.unsubscribe()  
+    }  
+  }, [])  
   
   if (loading) return <LoadingScreen />  
   if (!session) return <LoginScreen />  
@@ -693,6 +681,4723 @@ function AIRecommendations({
     </PanelList>
   )
 }
+
+
+
+/* =========================================================
+   SALES + PURCHASES RESTORED
+========================================================= */
+
+function SalesModule({ store, session }) {  
+  const [tab, setTab] = useState('New Sale')  
+  
+  return (  
+    <div>  
+      <ModuleHeader  
+        title="Sales"  
+        subtitle="Billing, customers, returns and credit"  
+      />  
+  
+      <TabBar  
+        tabs={SALES_TABS}  
+        active={tab}  
+        onChange={setTab}  
+      />  
+  
+      {tab === 'New Sale' && (  
+        <NewSale store={store} session={session} />  
+      )}  
+  
+      {tab === 'Draft Bills' && (  
+        <DraftBills store={store} />  
+      )}  
+  
+      {tab === 'Completed Bills' && (  
+        <CompletedBills store={store} />  
+      )}  
+  
+      {tab === 'Returns' && (  
+        <SalesReturns store={store} />  
+      )}  
+  
+      {tab === 'Customers' && (  
+        <CustomerHistoryList store={store} />  
+      )}  
+  
+      {tab === 'Credit' && (  
+        <CustomerCredit store={store} />  
+      )}  
+    </div>  
+  )  
+}  
+  
+function NewSale({ store }) {  
+  const [customers, setCustomers] = useState([])  
+  const [products, setProducts] = useState([])  
+  const [customerQuery, setCustomerQuery] = useState('')  
+  const [productQuery, setProductQuery] = useState('')  
+  const [selectedCustomer, setSelectedCustomer] =  
+    useState(null)  
+  const [items, setItems] = useState([emptySaleItem()])  
+  const [payments, setPayments] = useState([  
+    { method: 'cash', amount: 0 },  
+  ])  
+  const [billDiscount, setBillDiscount] = useState(0)  
+  const [billDate, setBillDate] = useState(todayISO())  
+  const [customerModal, setCustomerModal] =  
+    useState(false)  
+  const [productModal, setProductModal] =  
+    useState(false)  
+  const [busy, setBusy] = useState(false)  
+  const [message, setMessage] = useState('')  
+  const [alternatives, setAlternatives] = useState([])  
+  
+  useEffect(() => {  
+    if (!store?.id) return  
+    loadCustomers()  
+    loadProducts()  
+  }, [store?.id])  
+  
+  const loadCustomers = async () => {  
+    const { data } = await supabase  
+      .from('customers')  
+      .select('*')  
+      .eq('store_id', store.id)  
+      .eq('is_active', true)  
+      .order('name')  
+  
+    setCustomers(data || [])  
+  }  
+  
+  const loadProducts = async () => {  
+    const { data } = await supabase  
+      .from('store_products')  
+      .select(`  
+        *,  
+        products (  
+          id,  
+          product_name,  
+          generic_display_name,  
+          composition_id,  
+          manufacturer,  
+          dosage_form,  
+          gst_rate,  
+          is_active  
+        )  
+      `)  
+      .eq('store_id', store.id)  
+      .eq('is_active', true)  
+  
+    setProducts(  
+      (data || [])  
+        .filter((x) => x.products?.is_active !== false)  
+        .map((x) => ({  
+          ...x.products,  
+          storeProductId: x.id,  
+          default_selling_price:  
+            x.default_selling_price,  
+          default_discount_percent:  
+            x.default_discount_percent,  
+          minimum_stock: x.minimum_stock,  
+          reorder_level: x.reorder_level,  
+        })),  
+    )  
+  }  
+  
+  const filteredCustomers = useMemo(  
+    () =>  
+      customers  
+        .filter((c) =>  
+          matchesSearch(  
+            customerQuery,  
+            c.name,  
+            c.phone,  
+            c.address,  
+          ),  
+        )  
+        .slice(0, 10),  
+    [customers, customerQuery],  
+  )  
+  
+  const filteredProducts = useMemo(  
+    () =>  
+      products  
+        .map((p) => ({  
+          p,  
+          score: fuzzyScore(  
+            productQuery,  
+            `${p.product_name} ${  
+              p.generic_display_name || ''  
+            } ${p.manufacturer || ''}`,  
+          ),  
+        }))  
+        .filter(  
+          (x) => !productQuery || x.score > 0,  
+        )  
+        .sort((a, b) => b.score - a.score)  
+        .slice(0, 12)  
+        .map((x) => x.p),  
+    [products, productQuery],  
+  )  
+  
+  const chooseProduct = async (product) => {  
+    setProductQuery('')  
+  
+    const { data: batches } = await supabase  
+      .from('batches')  
+      .select('*')  
+      .eq('store_id', store.id)  
+      .eq('product_id', product.id)  
+      .eq('is_active', true)  
+      .gt('current_stock_units', 0)  
+      .order('expiry_date', { ascending: true })  
+  
+    const available = batches || []  
+    const batch = available[0] || null  
+  
+    const newItem = {  
+      ...emptySaleItem(),  
+      product,  
+      batches: available,  
+      batch,  
+      unitsPerPack: batch?.units_per_pack || 1,  
+      sellingPricePerPack: Number(  
+        product.default_selling_price ||  
+          batch?.mrp_per_pack ||  
+          0,  
+      ),  
+      mrpPerPack: Number(batch?.mrp_per_pack || 0),  
+      discountPercent: Number(  
+        product.default_discount_percent || 0,  
+      ),  
+      gstRate: Number(product.gst_rate || 0),  
+    }  
+  
+    setItems((current) => {  
+      if (  
+        current.length === 1 &&  
+        !current[0].product  
+      ) {  
+        return [newItem]  
+      }  
+  
+      return [...current, newItem]  
+    })  
+  
+    if (product.composition_id) {  
+      const { data } = await supabase  
+        .from('store_products')  
+        .select(`  
+          id,  
+          default_selling_price,  
+          products (  
+            id,  
+            product_name,  
+            generic_display_name,  
+            composition_id,  
+            manufacturer,  
+            dosage_form  
+          )  
+        `)  
+        .eq('store_id', store.id)  
+        .eq('is_active', true)  
+  
+      setAlternatives(  
+        (data || [])  
+          .map((x) => x.products)  
+          .filter(  
+            (x) =>  
+              x?.composition_id ===  
+                product.composition_id &&  
+              x.id !== product.id,  
+          ),  
+      )  
+    } else {  
+      setAlternatives([])  
+    }  
+  }  
+  
+  const updateItem = (id, patch) => {  
+    setItems((current) =>  
+      current.map((item) =>  
+        item.id === id  
+          ? { ...item, ...patch }  
+          : item,  
+      ),  
+    )  
+  }  
+  
+  const removeItem = (id) => {  
+    setItems((current) => {  
+      const next = current.filter(  
+        (x) => x.id !== id,  
+      )  
+  
+      return next.length  
+        ? next  
+        : [emptySaleItem()]  
+    })  
+  }  
+  
+  const subtotal = sum(  
+    items  
+      .filter((x) => x.product)  
+      .map(  
+        (x) =>  
+          safeNumber(x.quantity) *  
+          safeNumber(x.sellingPricePerPack),  
+      ),  
+  )  
+  
+  const itemDiscount = sum(  
+    items  
+      .filter((x) => x.product)  
+      .map(  
+        (x) =>  
+          safeNumber(x.quantity) *  
+          safeNumber(x.sellingPricePerPack) *  
+          (safeNumber(x.discountPercent) / 100),  
+      ),  
+  )  
+  
+  const taxableBeforeBillDiscount = Math.max(  
+    0,  
+    subtotal - itemDiscount,  
+  )  
+  
+  const finalTaxable = Math.max(  
+    0,  
+    taxableBeforeBillDiscount -  
+      safeNumber(billDiscount),  
+  )  
+  
+  const gst = sum(  
+    items  
+      .filter((x) => x.product)  
+      .map((x) => {  
+        const line =  
+          safeNumber(x.quantity) *  
+          safeNumber(x.sellingPricePerPack) *  
+          (1 -  
+            safeNumber(x.discountPercent) / 100)  
+  
+        const share =  
+          taxableBeforeBillDiscount > 0  
+            ? line / taxableBeforeBillDiscount  
+            : 0  
+  
+        return (  
+          finalTaxable *  
+          share *  
+          (safeNumber(x.gstRate) / 100)  
+        )  
+      }),  
+  )  
+  
+  const grandTotal = finalTaxable + gst  
+  const paidAmount = sum(  
+    payments.map((x) => x.amount),  
+  )  
+  const dueAmount = Math.max(  
+    0,  
+    grandTotal - paidAmount,  
+  )  
+  
+  const saveSale = async (e) => {  
+    e.preventDefault()  
+    setBusy(true)  
+    setMessage('')  
+  
+    try {  
+      const validItems = items.filter(  
+        (x) => x.product,  
+      )  
+  
+      if (!validItems.length) {  
+        throw new Error(  
+          'Add at least one product.',  
+        )  
+      }  
+  
+      for (const item of validItems) {  
+        if (!item.batch?.id) {  
+          throw new Error(  
+            `Select a batch for ${item.product.product_name}.`,  
+          )  
+        }  
+  
+        if (safeNumber(item.quantity) <= 0) {  
+          throw new Error(  
+            `Quantity must be greater than zero for ${item.product.product_name}.`,  
+          )  
+        }  
+      }  
+  
+      const saleItems = validItems.map(  
+        (item) => ({  
+          product_id: item.product.id,  
+          batch_id: item.batch.id,  
+          sale_unit_type: item.unitType,  
+          quantity_entered:  
+            safeNumber(item.quantity),  
+          units_per_pack:  
+            safeNumber(item.unitsPerPack) || 1,  
+          mrp_per_pack:  
+            safeNumber(item.mrpPerPack),  
+          selling_price_per_pack:  
+            safeNumber(item.sellingPricePerPack),  
+          discount_percent:  
+            safeNumber(item.discountPercent),  
+          gst_rate: safeNumber(item.gstRate),  
+        }),  
+      )  
+  
+      const paymentRows = payments  
+        .filter(  
+          (p) => safeNumber(p.amount) > 0,  
+        )  
+        .map((p) => ({  
+          payment_method: p.method,  
+          amount: safeNumber(p.amount),  
+        }))  
+  
+      const { data, error } =  
+        await supabase.rpc(  
+          'pharmdesk_complete_sale',  
+          {  
+            p_store_id: store.id,  
+            p_customer_id:  
+              selectedCustomer?.id || null,  
+            p_bill_datetime: `${billDate}T${new Date()  
+              .toTimeString()  
+              .slice(0, 8)}`,  
+            p_bill_discount_amount:  
+              safeNumber(billDiscount),  
+            p_notes: null,  
+            p_items: saleItems,  
+            p_payments: paymentRows,  
+          },  
+        )  
+  
+      if (error) throw error  
+  
+      setMessage(  
+        `Sale completed successfully: ${data}`,  
+      )  
+  
+      setSelectedCustomer(null)  
+      setItems([emptySaleItem()])  
+      setPayments([  
+        { method: 'cash', amount: 0 },  
+      ])  
+      setBillDiscount(0)  
+      setAlternatives([])  
+    } catch (error) {  
+      setMessage(  
+        error.message ||  
+          'Unable to complete sale.',  
+      )  
+    } finally {  
+      setBusy(false)  
+    }  
+  }  
+  
+  return (  
+    <form onSubmit={saveSale}>  
+      <div className="two-column">  
+        <div>  
+          <PanelList title="Customer">  
+            <div className="search-row">  
+              <input  
+                value={  
+                  selectedCustomer  
+                    ? `${selectedCustomer.name} • ${  
+                        selectedCustomer.phone || ''  
+                      }`  
+                    : customerQuery  
+                }  
+                placeholder="Search customer by name or phone"  
+                onChange={(e) => {  
+                  setSelectedCustomer(null)  
+                  setCustomerQuery(  
+                    e.target.value,  
+                  )  
+                }}  
+              />  
+  
+              <button  
+                type="button"  
+                className="secondary-button"  
+                onClick={() =>  
+                  setCustomerModal(true)  
+                }  
+              >  
+                + Add Customer  
+              </button>  
+            </div>  
+  
+            {!selectedCustomer &&  
+              customerQuery && (  
+                <div className="suggestion-list">  
+                  {filteredCustomers.map(  
+                    (customer) => (  
+                      <button  
+                        type="button"  
+                        className="suggestion"  
+                        key={customer.id}  
+                        onClick={() => {  
+                          setSelectedCustomer(  
+                            customer,  
+                          )  
+                          setCustomerQuery('')  
+                        }}  
+                      >  
+                        <strong>  
+                          {customer.name}  
+                        </strong>  
+                        <span>  
+                          {customer.phone ||  
+                            'No phone'}  
+                        </span>  
+                      </button>  
+                    ),  
+                  )}  
+                </div>  
+              )}  
+  
+            {selectedCustomer && (  
+              <div className="selected-record">  
+                <strong>  
+                  {selectedCustomer.name}  
+                </strong>  
+                <span>  
+                  {selectedCustomer.phone ||  
+                    'No phone'}  
+                </span>  
+              </div>  
+            )}  
+  
+            {!selectedCustomer &&  
+              !customerQuery && (  
+                <div className="muted">  
+                  Walk-in customer. A named  
+                  customer can be selected above.  
+                </div>  
+              )}  
+          </PanelList>  
+  
+          <PanelList title="Products">  
+            <div className="search-row">  
+              <input  
+                value={productQuery}  
+                placeholder="Search medicine, composition, manufacturer…"  
+                onChange={(e) =>  
+                  setProductQuery(e.target.value)  
+                }  
+              />  
+  
+              <button  
+                type="button"  
+                className="secondary-button"  
+                onClick={() =>  
+                  setProductModal(true)  
+                }  
+              >  
+                + Add New Product  
+              </button>  
+            </div>  
+  
+            {productQuery && (  
+              <div className="suggestion-list">  
+                {filteredProducts.map(  
+                  (product) => (  
+                    <button  
+                      type="button"  
+                      className="suggestion"  
+                      key={product.id}  
+                      onClick={() =>  
+                        chooseProduct(product)  
+                      }  
+                    >  
+                      <strong>  
+                        {product.product_name}  
+                      </strong>  
+                      <span>  
+                        {product.generic_display_name ||  
+                          product.manufacturer ||  
+                          product.dosage_form ||  
+                          ''}  
+                      </span>  
+                    </button>  
+                  ),  
+                )}  
+              </div>  
+            )}  
+  
+            {alternatives.length > 0 && (  
+              <div className="alternative-box">  
+                <strong>  
+                  Other brands with the same  
+                  composition  
+                </strong>  
+  
+                <div className="chip-row">  
+                  {alternatives.map((p) => (  
+                    <button  
+                      type="button"  
+                      className="chip"  
+                      key={p.id}  
+                      onClick={() =>  
+                        chooseProduct(p)  
+                      }  
+                    >  
+                      {p.product_name}  
+                    </button>  
+                  ))}  
+                </div>  
+              </div>  
+            )}  
+          </PanelList>  
+  
+          <PanelList title="Bill Items">  
+            {items.map((item) => (  
+              <SaleItemRow  
+                key={item.id}  
+                item={item}  
+                onChange={(patch) =>  
+                  updateItem(item.id, patch)  
+                }  
+                onRemove={() =>  
+                  removeItem(item.id)  
+                }  
+              />  
+            ))}  
+          </PanelList>  
+        </div>  
+  
+        <div>  
+          <PanelList title="Bill Details">  
+            <label>  
+              Bill date  
+              <input  
+                type="date"  
+                value={billDate}  
+                onChange={(e) =>  
+                  setBillDate(e.target.value)  
+                }  
+              />  
+            </label>  
+  
+            <label>  
+              Bill discount  
+              <input  
+                type="number"  
+                min="0"  
+                step="0.01"  
+                value={billDiscount}  
+                onChange={(e) =>  
+                  setBillDiscount(  
+                    e.target.value,  
+                  )  
+                }  
+              />  
+            </label>  
+  
+            <div className="totals">  
+              <div>  
+                <span>Subtotal</span>  
+                <strong>  
+                  {money(subtotal)}  
+                </strong>  
+              </div>  
+  
+              <div>  
+                <span>Item discounts</span>  
+                <strong>  
+                  {money(itemDiscount)}  
+                </strong>  
+              </div>  
+  
+              <div>  
+                <span>Bill discount</span>  
+                <strong>  
+                  {money(billDiscount)}  
+                </strong>  
+              </div>  
+  
+              <div>  
+                <span>GST</span>  
+                <strong>{money(gst)}</strong>  
+              </div>  
+  
+              <div className="grand-total">  
+                <span>Total</span>  
+                <strong>  
+                  {money(grandTotal)}  
+                </strong>  
+              </div>  
+            </div>  
+          </PanelList>  
+  
+          <PanelList title="Payments">  
+            {payments.map(  
+              (payment, index) => (  
+                <div  
+                  className="payment-row"  
+                  key={index}  
+                >  
+                  <select  
+                    value={payment.method}  
+                    onChange={(e) => {  
+                      const next = [  
+                        ...payments,  
+                      ]  
+  
+                      next[index] = {  
+                        ...next[index],  
+                        method: e.target.value,  
+                      }  
+  
+                      setPayments(next)  
+                    }}  
+                  >  
+                    <option value="cash">  
+                      Cash  
+                    </option>  
+                    <option value="upi">  
+                      UPI  
+                    </option>  
+                    <option value="card">  
+                      Card  
+                    </option>  
+                    <option value="credit">  
+                      Credit  
+                    </option>  
+                  </select>  
+  
+                  <input  
+                    type="number"  
+                    min="0"  
+                    step="0.01"  
+                    value={payment.amount}  
+                    onChange={(e) => {  
+                      const next = [  
+                        ...payments,  
+                      ]  
+  
+                      next[index] = {  
+                        ...next[index],  
+                        amount: e.target.value,  
+                      }  
+  
+                      setPayments(next)  
+                    }}  
+                  />  
+  
+                  {payments.length > 1 && (  
+                    <button  
+                      type="button"  
+                      className="danger-button"  
+                      onClick={() =>  
+                        setPayments(  
+                          payments.filter(  
+                            (_, i) =>  
+                              i !== index,  
+                          ),  
+                        )  
+                      }  
+                    >  
+                      ×  
+                    </button>  
+                  )}  
+                </div>  
+              ),  
+            )}  
+  
+            <button  
+              type="button"  
+              className="secondary-button"  
+              onClick={() =>  
+                setPayments([  
+                  ...payments,  
+                  {  
+                    method: 'upi',  
+                    amount: 0,  
+                  },  
+                ])  
+              }  
+            >  
+              + Split Payment  
+            </button>  
+  
+            <div className="payment-summary">  
+              <div>  
+                <span>Paid</span>  
+                <strong>  
+                  {money(paidAmount)}  
+                </strong>  
+              </div>  
+  
+              <div>  
+                <span>Due</span>  
+                <strong>  
+                  {money(dueAmount)}  
+                </strong>  
+              </div>  
+            </div>  
+          </PanelList>  
+  
+          {message && (  
+            <div className="message-box">  
+              {message}  
+            </div>  
+          )}  
+  
+          <button  
+            className="primary-button large"  
+            disabled={busy}  
+            type="submit"  
+          >  
+            {busy  
+              ? 'Completing sale…'  
+              : `Complete Sale • ${money(  
+                  grandTotal,  
+                )}`}  
+          </button>  
+        </div>  
+      </div>  
+  
+      {customerModal && (  
+        <CustomerModal  
+          store={store}  
+          onClose={() =>  
+            setCustomerModal(false)  
+          }  
+          onCreated={(customer) => {  
+            setCustomers((x) => [  
+              customer,  
+              ...x,  
+            ])  
+            setSelectedCustomer(customer)  
+            setCustomerModal(false)  
+          }}  
+        />  
+      )}  
+  
+      {productModal && (  
+        <ProductModal  
+          store={store}  
+          onClose={() =>  
+            setProductModal(false)  
+          }  
+          onCreated={(product) => {  
+            loadProductsAfterCreate(  
+              product,  
+              products,  
+              setProducts,  
+            )  
+            setProductModal(false)  
+          }}  
+        />  
+      )}  
+    </form>  
+  )  
+}  
+  
+async function loadProductsAfterCreate(  
+  product,  
+  current,  
+  setter,  
+) {  
+  const { data } = await supabase  
+    .from('store_products')  
+    .select(`  
+      *,  
+      products (  
+        id,  
+        product_name,  
+        generic_display_name,  
+        composition_id,  
+        manufacturer,  
+        dosage_form,  
+        gst_rate,  
+        is_active  
+      )  
+    `)  
+    .eq('product_id', product.id)  
+    .limit(1)  
+    .maybeSingle()  
+  
+  if (data?.products) {  
+    setter([  
+      {  
+        ...data.products,  
+        storeProductId: data.id,  
+        default_selling_price:  
+          data.default_selling_price,  
+        default_discount_percent:  
+          data.default_discount_percent,  
+        minimum_stock: data.minimum_stock,  
+        reorder_level: data.reorder_level,  
+      },  
+      ...current.filter(  
+        (x) => x.id !== product.id,  
+      ),  
+    ])  
+  }  
+}  
+  
+function SaleItemRow({  
+  item,  
+  onChange,  
+  onRemove,  
+}) {  
+  const lineTotal =  
+    safeNumber(item.quantity) *  
+    safeNumber(item.sellingPricePerPack) *  
+    (1 -  
+      safeNumber(item.discountPercent) / 100)  
+  
+  return (  
+    <div className="transaction-item">  
+      <div className="item-title">  
+        <strong>  
+          {item.product?.product_name ||  
+            'Product not selected'}  
+        </strong>  
+  
+        {item.product  
+          ?.generic_display_name && (  
+          <span>  
+            {item.product.generic_display_name}  
+          </span>  
+        )}  
+      </div>  
+  
+      {item.product && (  
+        <div className="item-grid">  
+          <label>  
+            Batch  
+            <select  
+              value={item.batch?.id || ''}  
+              onChange={(e) => {  
+                const batch =  
+                  item.batches.find(  
+                    (b) =>  
+                      b.id ===  
+                      e.target.value,  
+                  )  
+  
+                onChange({  
+                  batch,  
+                  unitsPerPack:  
+                    batch?.units_per_pack ||  
+                    1,  
+                  mrpPerPack:  
+                    batch?.mrp_per_pack ||  
+                    0,  
+                })  
+              }}  
+            >  
+              <option value="">  
+                Select batch  
+              </option>  
+  
+              {item.batches.map(  
+                (batch) => (  
+                  <option  
+                    key={batch.id}  
+                    value={batch.id}  
+                  >  
+                    {batch.batch_number} • Exp{' '}  
+                    {dateText(  
+                      batch.expiry_date,  
+                    )}{' '}  
+                    • Stock{' '}  
+                    {  
+                      batch.current_stock_units  
+                    }  
+                  </option>  
+                ),  
+              )}  
+            </select>  
+          </label>  
+  
+          <label>  
+            Sale type  
+            <select  
+              value={item.unitType}  
+              onChange={(e) =>  
+                onChange({  
+                  unitType:  
+                    e.target.value,  
+                })  
+              }  
+            >  
+              <option value="pack">  
+                Strip / Pack  
+              </option>  
+              <option value="unit">  
+                Tablet / Unit  
+              </option>  
+            </select>  
+          </label>  
+  
+          <label>  
+            Quantity  
+            <input  
+              type="number"  
+              min="0.01"  
+              value={item.quantity}  
+              onChange={(e) =>  
+                onChange({  
+                  quantity:  
+                    e.target.value,  
+                })  
+              }  
+            />  
+          </label>  
+  
+          <label>  
+            Selling price  
+            <input  
+              type="number"  
+              min="0"  
+              step="0.01"  
+              value={  
+                item.sellingPricePerPack  
+              }  
+              onChange={(e) =>  
+                onChange({  
+                  sellingPricePerPack:  
+                    e.target.value,  
+                })  
+              }  
+            />  
+          </label>  
+  
+          <label>  
+            Discount %  
+            <input  
+              type="number"  
+              min="0"  
+              max="100"  
+              step="0.01"  
+              value={item.discountPercent}  
+              onChange={(e) =>  
+                onChange({  
+                  discountPercent:  
+                    e.target.value,  
+                })  
+              }  
+            />  
+          </label>  
+  
+          <label>  
+            GST %  
+            <input  
+              type="number"  
+              min="0"  
+              max="100"  
+              value={item.gstRate}  
+              onChange={(e) =>  
+                onChange({  
+                  gstRate:  
+                    e.target.value,  
+                })  
+              }  
+            />  
+          </label>  
+        </div>  
+      )}  
+  
+      <div className="item-footer">  
+        <strong>{money(lineTotal)}</strong>  
+  
+        <button  
+          type="button"  
+          className="danger-button"  
+          onClick={onRemove}  
+        >  
+          Remove  
+        </button>  
+      </div>  
+    </div>  
+  )  
+}  
+  
+/* =========================================================  
+   CUSTOMER HISTORY  
+========================================================= */  
+  
+function CustomerHistoryList({ store }) {  
+  const [customers, setCustomers] =  
+    useState([])  
+  const [query, setQuery] = useState('')  
+  const [selected, setSelected] =  
+    useState(null)  
+  const [editing, setEditing] =  
+    useState(null)  
+  
+  const load = async () => {  
+    const { data } = await supabase  
+      .from('customers')  
+      .select('*')  
+      .eq('store_id', store.id)  
+      .order('name')  
+  
+    setCustomers(data || [])  
+  }  
+  
+  useEffect(() => {  
+    if (store?.id) load()  
+  }, [store?.id])  
+  
+  const filtered = customers.filter(  
+    (c) =>  
+      matchesSearch(  
+        query,  
+        c.name,  
+        c.phone,  
+      ),  
+  )  
+  
+  return (  
+    <PanelList title="Customers">  
+      <input  
+        placeholder="Search customer"  
+        value={query}  
+        onChange={(e) =>  
+          setQuery(e.target.value)  
+        }  
+      />  
+  
+      <div className="record-list">  
+        {filtered.map((customer) => (  
+          <div  
+            className="record-row static"  
+            key={customer.id}  
+          >  
+            <div>  
+              <strong>  
+                {customer.name ||  
+                  'Walk-in Customer'}  
+              </strong>  
+  
+              <span>  
+                {customer.phone ||  
+                  'No phone'}  
+              </span>  
+            </div>  
+  
+            <div className="record-right">  
+              <button  
+                className="secondary-button"  
+                onClick={() =>  
+                  setEditing(customer)  
+                }  
+              >  
+                Edit  
+              </button>  
+  
+              <button  
+                className="secondary-button"  
+                onClick={() =>  
+                  setSelected(customer)  
+                }  
+              >  
+                History  
+              </button>  
+            </div>  
+          </div>  
+        ))}  
+      </div>  
+  
+      {selected && (  
+        <CustomerHistoryModal  
+          customer={selected}  
+          onClose={() =>  
+            setSelected(null)  
+          }  
+          onEdit={(customer) => {  
+            setSelected(null)  
+            setEditing(customer)  
+          }}  
+        />  
+      )}  
+  
+      {editing && (  
+        <CustomerModal  
+          store={store}  
+          customer={editing}  
+          onClose={() =>  
+            setEditing(null)  
+          }  
+          onCreated={(updated) => {  
+            setCustomers((current) =>  
+              current.map((x) =>  
+                x.id === updated.id  
+                  ? updated  
+                  : x,  
+              ),  
+            )  
+            setEditing(null)  
+          }}  
+        />  
+      )}  
+    </PanelList>  
+  )  
+}  
+  
+function CustomerHistoryModal({  
+  customer,  
+  onClose,  
+  onEdit,  
+}) {  
+  const [sales, setSales] = useState([])  
+  const [items, setItems] = useState([])  
+  const [loading, setLoading] =  
+    useState(true)  
+  
+  useEffect(() => {  
+    loadHistory()  
+  }, [customer.id])  
+  
+  const loadHistory = async () => {  
+    setLoading(true)  
+  
+    const { data: salesData } =  
+      await supabase  
+        .from('sales')  
+        .select(  
+          'id, invoice_number, bill_datetime, grand_total, amount_paid, amount_due, status',  
+        )  
+        .eq('customer_id', customer.id)  
+        .order('bill_datetime', {  
+          ascending: false,  
+        })  
+  
+    const saleRows = salesData || []  
+    setSales(saleRows)  
+  
+    if (saleRows.length) {  
+      const { data: itemRows } =  
+        await supabase  
+          .from('sale_items')  
+          .select(`  
+            *,  
+            products (  
+              id,  
+              product_name,  
+              generic_display_name  
+            ),  
+            batches (  
+              batch_number,  
+              expiry_date  
+            )  
+          `)  
+          .in(  
+            'sale_id',  
+            saleRows.map(  
+              (x) => x.id,  
+            ),  
+          )  
+  
+      setItems(itemRows || [])  
+    } else {  
+      setItems([])  
+    }  
+  
+    setLoading(false)  
+  }  
+  
+  const medicineHistory = useMemo(() => {  
+    const map = new Map()  
+  
+    for (const item of items) {  
+      const product = item.products  
+  
+      if (!product) continue  
+  
+      if (!map.has(product.id)) {  
+        map.set(product.id, {  
+          product,  
+          quantity: 0,  
+          lastDate: null,  
+          lastPrice: 0,  
+          bills: 0,  
+        })  
+      }  
+  
+      const entry = map.get(product.id)  
+  
+      entry.quantity += safeNumber(  
+        item.quantity_entered,  
+      )  
+  
+      entry.lastPrice =  
+        safeNumber(  
+          item.selling_price_per_pack,  
+        )  
+  
+      const sale = sales.find(  
+        (s) => s.id === item.sale_id,  
+      )  
+  
+      if (  
+        sale &&  
+        (!entry.lastDate ||  
+          new Date(  
+            sale.bill_datetime,  
+          ) >  
+            new Date(  
+              entry.lastDate,  
+            ))  
+      ) {  
+        entry.lastDate =  
+          sale.bill_datetime  
+      }  
+  
+      entry.bills += 1  
+    }  
+  
+    return Array.from(  
+      map.values(),  
+    ).sort(  
+      (a, b) =>  
+        new Date(  
+          b.lastDate || 0,  
+        ) -  
+        new Date(  
+          a.lastDate || 0,  
+        ),  
+    )  
+  }, [items, sales])  
+  
+  const totalSpent = sum(  
+    sales  
+      .filter(  
+        (x) => x.status !== 'cancelled',  
+      )  
+      .map((x) => x.grand_total),  
+  )  
+  
+  const totalDue = sum(  
+    sales.map((x) => x.amount_due),  
+  )  
+  
+  return (  
+    <Modal  
+      title={`${customer.name} • Purchase History`}  
+      onClose={onClose}  
+    >  
+      {loading ? (  
+        <LoadingInline />  
+      ) : (  
+        <>  
+          <div className="history-header">  
+            <div>  
+              <strong>  
+                {customer.name}  
+              </strong>  
+              <span>  
+                {customer.phone ||  
+                  'No phone'}  
+              </span>  
+            </div>  
+  
+            {onEdit && (  
+              <button  
+                className="secondary-button"  
+                onClick={() =>  
+                  onEdit(customer)  
+                }  
+              >  
+                Edit Customer  
+              </button>  
+            )}  
+          </div>  
+  
+          <div className="stats-grid">  
+            <StatCard  
+              title="Bills"  
+              value={sales.length}  
+            />  
+  
+            <StatCard  
+              title="Total Purchased"  
+              value={money(totalSpent)}  
+            />  
+  
+            <StatCard  
+              title="Outstanding"  
+              value={money(totalDue)}  
+            />  
+          </div>  
+  
+          <h3>  
+            Products previously purchased  
+          </h3>  
+  
+          <div className="record-list">  
+            {medicineHistory.length ===  
+              0 && (  
+              <EmptyState  
+                text="No previous medicine purchases found."  
+              />  
+            )}  
+  
+            {medicineHistory.map(  
+              (entry) => (  
+                <div  
+                  className="record-row static"  
+                  key={entry.product.id}  
+                >  
+                  <div>  
+                    <strong>  
+                      {  
+                        entry.product  
+                          .product_name  
+                      }  
+                    </strong>  
+  
+                    <span>  
+                      {entry.product  
+                        .generic_display_name ||  
+                        ''}  
+                    </span>  
+                  </div>  
+  
+                  <div className="record-right">  
+                    <span>  
+                      Qty: {entry.quantity}  
+                    </span>  
+  
+                    <span>  
+                      Bills: {entry.bills}  
+                    </span>  
+  
+                    <span>  
+                      Last:{' '}  
+                      {dateText(  
+                        entry.lastDate,  
+                      )}  
+                    </span>  
+  
+                    <strong>  
+                      {money(  
+                        entry.lastPrice,  
+                      )}  
+                    </strong>  
+                  </div>  
+                </div>  
+              ),  
+            )}  
+          </div>  
+  
+          <h3>Previous bills</h3>  
+  
+          <div className="record-list">  
+            {sales.map((sale) => (  
+              <div  
+                className="record-row static"  
+                key={sale.id}  
+              >  
+                <div>  
+                  <strong>  
+                    {sale.invoice_number ||  
+                      'Bill'}  
+                  </strong>  
+  
+                  <span>  
+                    {dateTimeText(  
+                      sale.bill_datetime,  
+                    )}  
+                  </span>  
+                </div>  
+  
+                <div className="record-right">  
+                  <span>  
+                    {sale.status}  
+                  </span>  
+  
+                  <strong>  
+                    {money(  
+                      sale.grand_total,  
+                    )}  
+                  </strong>  
+                </div>  
+              </div>  
+            ))}  
+          </div>  
+        </>  
+      )}  
+    </Modal>  
+  )  
+}  
+  
+/* =========================================================  
+   SALES LISTS  
+========================================================= */  
+  
+function DraftBills({ store }) {  
+  const [rows, setRows] = useState([])  
+  
+  useEffect(() => {  
+    if (!store?.id) return  
+  
+    supabase  
+      .from('sales')  
+      .select('*')  
+      .eq('store_id', store.id)  
+      .eq('status', 'draft')  
+      .order('created_at', {  
+        ascending: false,  
+      })  
+      .then(({ data }) =>  
+        setRows(data || []),  
+      )  
+  }, [store?.id])  
+  
+  return (  
+    <PanelList title="Draft Bills">  
+      {rows.length === 0 ? (  
+        <EmptyState text="No cloud-saved draft bills yet." />  
+      ) : (  
+        <div className="record-list">  
+          {rows.map((row) => (  
+            <div  
+              className="record-row static"  
+              key={row.id}  
+            >  
+              <div>  
+                <strong>  
+                  {row.invoice_number ||  
+                    'Draft'}  
+                </strong>  
+  
+                <span>  
+                  {dateTimeText(  
+                    row.created_at,  
+                  )}  
+                </span>  
+              </div>  
+  
+              <strong>  
+                {money(row.grand_total)}  
+              </strong>  
+            </div>  
+          ))}  
+        </div>  
+      )}  
+    </PanelList>  
+  )  
+}  
+  
+function CompletedBills({ store }) {  
+  const [rows, setRows] = useState([])  
+  const [query, setQuery] = useState('')  
+  const [selected, setSelected] =  
+    useState(null)  
+  
+  const load = async () => {  
+    const { data } = await supabase  
+      .from('sales')  
+      .select('*')  
+      .eq('store_id', store.id)  
+      .in('status', [  
+        'completed',  
+        'returned',  
+      ])  
+      .order('bill_datetime', {  
+        ascending: false,  
+      })  
+      .limit(300)  
+  
+    setRows(data || [])  
+  }  
+  
+  useEffect(() => {  
+    if (store?.id) load()  
+  }, [store?.id])  
+  
+  const filtered = rows.filter((x) =>  
+    matchesSearch(  
+      query,  
+      x.invoice_number,  
+      x.bill_datetime,  
+      x.status,  
+    ),  
+  )  
+  
+  return (  
+    <>  
+      <PanelList title="Completed Bills">  
+        <input  
+          placeholder="Search invoice"  
+          value={query}  
+          onChange={(e) =>  
+            setQuery(e.target.value)  
+          }  
+        />  
+  
+        <div className="record-list">  
+          {filtered.map((row) => (  
+            <button  
+              className="record-row"  
+              key={row.id}  
+              onClick={() =>  
+                setSelected(row)  
+              }  
+            >  
+              <div>  
+                <strong>  
+                  {row.invoice_number ||  
+                    'Bill'}  
+                </strong>  
+  
+                <span>  
+                  {dateTimeText(  
+                    row.bill_datetime,  
+                  )}  
+                </span>  
+              </div>  
+  
+              <div className="record-right">  
+                <span>  
+                  {row.status}  
+                </span>  
+  
+                <strong>  
+                  {money(  
+                    row.grand_total,  
+                  )}  
+                </strong>  
+  
+                <span>View →</span>  
+              </div>  
+            </button>  
+          ))}  
+        </div>  
+      </PanelList>  
+  
+      {selected && (  
+        <SaleBillModal  
+          store={store}  
+          sale={selected}  
+          onClose={() =>  
+            setSelected(null)  
+          }  
+          onUpdated={() => {  
+            setSelected(null)  
+            load()  
+          }}  
+        />  
+      )}  
+    </>  
+  )  
+}  
+  
+function SaleBillModal({  
+  store,  
+  sale,  
+  onClose,  
+  onUpdated,  
+}) {  
+  const [details, setDetails] =  
+    useState(null)  
+  const [loading, setLoading] =  
+    useState(true)  
+  const [editing, setEditing] =  
+    useState(false)  
+  
+  const load = async () => {  
+    setLoading(true)  
+  
+    const { data, error } =  
+      await supabase  
+        .from('sales')  
+        .select(`  
+          *,  
+          customers (  
+            id,  
+            name,  
+            phone,  
+            address  
+          ),  
+          sale_items (  
+            *,  
+            products (  
+              id,  
+              product_name,  
+              generic_display_name,  
+              manufacturer  
+            ),  
+            batches (  
+              id,  
+              batch_number,  
+              expiry_date,  
+              current_stock_units  
+            )  
+          ),  
+          sale_payments (  
+            id,  
+            payment_method,  
+            amount,  
+            payment_reference,  
+            notes  
+          )  
+        `)  
+        .eq('id', sale.id)  
+        .maybeSingle()  
+  
+    if (!error) setDetails(data)  
+    setLoading(false)  
+  }  
+  
+  useEffect(() => {  
+    load()  
+  }, [sale.id])  
+  
+  if (editing && details) {  
+    return (  
+      <SaleEditModal  
+        store={store}  
+        sale={details}  
+        onClose={() =>  
+          setEditing(false)  
+        }  
+        onSaved={() => {  
+          setEditing(false)  
+          onUpdated()  
+        }}  
+      />  
+    )  
+  }  
+  
+  return (  
+    <Modal  
+      title={`Bill ${  
+        sale.invoice_number || ''  
+      }`}  
+      onClose={onClose}  
+    >  
+      {loading ? (  
+        <LoadingInline />  
+      ) : !details ? (  
+        <EmptyState text="Unable to load this bill." />  
+      ) : (  
+        <>  
+          <div className="history-header">  
+            <div>  
+              <strong>  
+                {details.invoice_number ||  
+                  'Bill'}  
+              </strong>  
+  
+              <span>  
+                {dateTimeText(  
+                  details.bill_datetime,  
+                )}  
+              </span>  
+  
+              <span>  
+                Customer:{' '}  
+                {details.customers  
+                  ?.name ||  
+                  'Walk-in Customer'}  
+              </span>  
+            </div>  
+  
+            {details.status ===  
+              'completed' && (  
+              <button  
+                className="secondary-button"  
+                onClick={() =>  
+                  setEditing(true)  
+                }  
+              >  
+                Edit Bill  
+              </button>  
+            )}  
+          </div>  
+  
+          <h3>Products</h3>  
+  
+          <div className="record-list">  
+            {(details.sale_items ||  
+              []).map((item) => (  
+                <div  
+                  className="record-row static"  
+                  key={item.id}  
+                >  
+                  <div>  
+                    <strong>  
+                      {item.products  
+                        ?.product_name ||  
+                        'Product'}  
+                    </strong>  
+  
+                    <span>  
+                      Batch:{' '}  
+                      {item.batches  
+                        ?.batch_number ||  
+                        '—'}  
+                    </span>  
+                  </div>  
+  
+                  <div className="record-right">  
+                    <span>  
+                      {item.quantity_entered}{' '}  
+                      {item.unit_type}  
+                    </span>  
+  
+                    <span>  
+                      Disc:{' '}  
+                      {item.discount_percent ||  
+                        0}  
+                      %  
+                    </span>  
+  
+                    <strong>  
+                      {money(  
+                        item.line_total,  
+                      )}  
+                    </strong>  
+                  </div>  
+                </div>  
+              ))}  
+          </div>  
+  
+          <h3>Payments</h3>  
+  
+          <div className="record-list">  
+            {(details.sale_payments ||  
+              []).map((payment) => (  
+                <div  
+                  className="record-row static"  
+                  key={payment.id}  
+                >  
+                  <span>  
+                    {paymentLabel(  
+                      payment.payment_method,  
+                    )}  
+                  </span>  
+  
+                  <strong>  
+                    {money(  
+                      payment.amount,  
+                    )}  
+                  </strong>  
+                </div>  
+              ))}  
+          </div>  
+  
+          <div className="totals">  
+            <div>  
+              <span>Subtotal</span>  
+              <strong>  
+                {money(  
+                  details.subtotal,  
+                )}  
+              </strong>  
+            </div>  
+  
+            <div>  
+              <span>Item discounts</span>  
+              <strong>  
+                {money(  
+                  details.item_discount_total,  
+                )}  
+              </strong>  
+            </div>  
+  
+            <div>  
+              <span>Bill discount</span>  
+              <strong>  
+                {money(  
+                  details.bill_discount_amount,  
+                )}  
+              </strong>  
+            </div>  
+  
+            <div>  
+              <span>CGST</span>  
+              <strong>  
+                {money(  
+                  details.cgst_amount,  
+                )}  
+              </strong>  
+            </div>  
+  
+            <div>  
+              <span>SGST</span>  
+              <strong>  
+                {money(  
+                  details.sgst_amount,  
+                )}  
+              </strong>  
+            </div>  
+  
+            <div className="grand-total">  
+              <span>Total</span>  
+              <strong>  
+                {money(  
+                  details.grand_total,  
+                )}  
+              </strong>  
+            </div>  
+  
+            <div>  
+              <span>Paid</span>  
+              <strong>  
+                {money(  
+                  details.amount_paid,  
+                )}  
+              </strong>  
+            </div>  
+  
+            <div>  
+              <span>Due</span>  
+              <strong>  
+                {money(  
+                  details.amount_due,  
+                )}  
+              </strong>  
+            </div>  
+          </div>  
+        </>  
+      )}  
+    </Modal>  
+  )  
+}  
+  
+/*  
+ * Full sale editing deliberately goes through the backend  
+ * transaction RPC. It must not directly modify sales,  
+ * sale_items, batches, stock_movements, payments or credit  
+ * transactions from the browser.  
+ *  
+ * Expected backend RPC:  
+ *  
+ * pharmdesk_edit_sale(  
+ *   p_store_id uuid,  
+ *   p_sale_id uuid,  
+ *   p_customer_id uuid,  
+ *   p_bill_datetime timestamptz,  
+ *   p_bill_discount_amount numeric,  
+ *   p_notes text,  
+ *   p_items jsonb,  
+ *   p_payments jsonb  
+ * )  
+ */  
+function SaleEditModal({  
+  store,  
+  sale,  
+  onClose,  
+  onSaved,  
+}) {  
+  const [customerId, setCustomerId] =  
+    useState(  
+      sale.customer_id || '',  
+    )  
+  
+  const [billDate, setBillDate] =  
+    useState(  
+      sale.bill_datetime  
+        ? new Date(  
+            sale.bill_datetime,  
+          )  
+            .toISOString()  
+            .slice(0, 10)  
+        : todayISO(),  
+    )  
+  
+  const [billDiscount, setBillDiscount] =  
+    useState(  
+      sale.bill_discount_amount || 0,  
+    )  
+  
+  const [notes, setNotes] =  
+    useState(sale.notes || '')  
+  
+  const [items, setItems] =  
+    useState([])  
+  
+  const [payments, setPayments] =  
+    useState(  
+      sale.sale_payments || [],  
+    )  
+  
+  const [customers, setCustomers] =  
+    useState([])  
+  
+  const [busy, setBusy] =  
+    useState(false)  
+  
+  const [error, setError] =  
+    useState('')  
+  
+  useEffect(() => {  
+    loadCustomers()  
+    loadItems()  
+  }, [store?.id, sale.id])  
+  
+  const loadCustomers = async () => {  
+    const { data } = await supabase  
+      .from('customers')  
+      .select('*')  
+      .eq('store_id', store.id)  
+      .eq('is_active', true)  
+      .order('name')  
+  
+    setCustomers(data || [])  
+  }  
+  
+  const loadItems = async () => {  
+    const source =  
+      sale.sale_items || []  
+  
+    const next =  
+      await Promise.all(  
+        source.map(async (item) => {  
+          const { data: batches } =  
+            await supabase  
+              .from('batches')  
+              .select('*')  
+              .eq(  
+                'store_id',  
+                store.id,  
+              )  
+              .eq(  
+                'product_id',  
+                item.product_id,  
+              )  
+              .eq(  
+                'is_active',  
+                true,  
+              )  
+              .gt(  
+                'current_stock_units',  
+                0,  
+              )  
+              .order(  
+                'expiry_date',  
+                {  
+                  ascending: true,  
+                },  
+              )  
+  
+          const existingBatch =  
+            (batches || []).find(  
+              (b) =>  
+                b.id ===  
+                item.batch_id,  
+            )  
+  
+          return {  
+            ...item,  
+            batches: [  
+              ...(existingBatch  
+                ? [existingBatch]  
+                : []),  
+              ...(batches || []).filter(  
+                (b) =>  
+                  b.id !==  
+                  item.batch_id,  
+              ),  
+            ],  
+            batch:  
+              existingBatch ||  
+              item.batches ||  
+              null,  
+          }  
+        }),  
+      )  
+  
+    setItems(next)  
+  }  
+  
+  const updateItem = (  
+    id,  
+    patch,  
+  ) => {  
+    setItems((current) =>  
+      current.map((item) =>  
+        item.id === id  
+          ? {  
+              ...item,  
+              ...patch,  
+            }  
+          : item,  
+      ),  
+    )  
+  }  
+  
+  const removeItem = (id) => {  
+    setItems((current) =>  
+      current.filter(  
+        (x) => x.id !== id,  
+      ),  
+    )  
+  }  
+  
+  const save = async (e) => {  
+    e.preventDefault()  
+    setBusy(true)  
+    setError('')  
+  
+    try {  
+      const payloadItems =  
+        items.map((item) => ({  
+          sale_item_id:  
+            item.id,  
+          product_id:  
+            item.product_id,  
+          batch_id:  
+            item.batch?.id ||  
+            item.batch_id ||  
+            null,  
+          sale_unit_type:  
+            item.unit_type,  
+          quantity_entered:  
+            safeNumber(  
+              item.quantity_entered,  
+            ),  
+          units_per_pack:  
+            safeNumber(  
+              item.units_per_pack,  
+            ) || 1,  
+          mrp_per_pack:  
+            safeNumber(  
+              item.mrp_per_pack,  
+            ),  
+          selling_price_per_pack:  
+            safeNumber(  
+              item.selling_price_per_pack,  
+            ),  
+          discount_percent:  
+            safeNumber(  
+              item.discount_percent,  
+            ),  
+          gst_rate:  
+            safeNumber(  
+              item.gst_rate,  
+            ),  
+        }))  
+  
+      const paymentRows =  
+        payments  
+          .filter(  
+            (p) =>  
+              safeNumber(  
+                p.amount,  
+              ) > 0,  
+          )  
+          .map((p) => ({  
+            payment_method:  
+              p.payment_method,  
+            amount:  
+              safeNumber(  
+                p.amount,  
+              ),  
+            payment_reference:  
+              p.payment_reference ||  
+              null,  
+            notes:  
+              p.notes || null,  
+          }))  
+  
+      const { error: rpcError } =  
+        await supabase.rpc(  
+          'pharmdesk_edit_sale',  
+          {  
+            p_store_id: store.id,  
+            p_sale_id: sale.id,  
+            p_customer_id:  
+              customerId || null,  
+            p_bill_datetime: `${billDate}T${new Date()  
+              .toTimeString()  
+              .slice(0, 8)}`,  
+            p_bill_discount_amount:  
+              safeNumber(  
+                billDiscount,  
+              ),  
+            p_notes:  
+              notes.trim() || null,  
+            p_items: payloadItems,  
+            p_payments:  
+              paymentRows,  
+          },  
+        )  
+  
+      if (rpcError) {  
+        throw rpcError  
+      }  
+  
+      onSaved()  
+    } catch (err) {  
+      setError(  
+        err.message ||  
+          'Unable to edit bill.',  
+      )  
+    } finally {  
+      setBusy(false)  
+    }  
+  }  
+  
+  return (  
+    <Modal  
+      title={`Edit ${  
+        sale.invoice_number ||  
+        'Bill'  
+      }`}  
+      onClose={onClose}  
+    >  
+      <form onSubmit={save}>  
+        <div className="form-grid">  
+          <label>  
+            Customer  
+            <select  
+              value={customerId}  
+              onChange={(e) =>  
+                setCustomerId(  
+                  e.target.value,  
+                )  
+              }  
+            >  
+              <option value="">  
+                Walk-in Customer  
+              </option>  
+  
+              {customers.map(  
+                (customer) => (  
+                  <option  
+                    key={customer.id}  
+                    value={  
+                      customer.id  
+                    }  
+                  >  
+                    {customer.name} •{' '}  
+                    {customer.phone ||  
+                      'No phone'}  
+                  </option>  
+                ),  
+              )}  
+            </select>  
+          </label>  
+  
+          <label>  
+            Bill date  
+            <input  
+              type="date"  
+              value={billDate}  
+              onChange={(e) =>  
+                setBillDate(  
+                  e.target.value,  
+                )  
+              }  
+            />  
+          </label>  
+  
+          <label>  
+            Bill discount  
+            <input  
+              type="number"  
+              min="0"  
+              step="0.01"  
+              value={  
+                billDiscount  
+              }  
+              onChange={(e) =>  
+                setBillDiscount(  
+                  e.target.value,  
+                )  
+              }  
+            />  
+          </label>  
+        </div>  
+  
+        <label>  
+          Notes  
+          <textarea  
+            value={notes}  
+            onChange={(e) =>  
+              setNotes(  
+                e.target.value,  
+              )  
+            }  
+          />  
+        </label>  
+  
+        <h3>Items</h3>  
+  
+        {items.map((item) => (  
+          <div  
+            className="transaction-item"  
+            key={item.id}  
+          >  
+            <div className="item-title">  
+              <strong>  
+                {item.products  
+                  ?.product_name ||  
+                  'Product'}  
+              </strong>  
+  
+              <span>  
+                Batch:{' '}  
+                {item.batch  
+                  ?.batch_number ||  
+                  item.batches  
+                    ?.batch_number ||  
+                  '—'}  
+              </span>  
+            </div>  
+  
+            <div className="item-grid">  
+              <label>  
+                Batch  
+                <select  
+                  value={  
+                    item.batch?.id ||  
+                    item.batch_id ||  
+                    ''  
+                  }  
+                  onChange={(e) => {  
+                    const batch =  
+                      item.batches?.find(  
+                        (b) =>  
+                          b.id ===  
+                          e.target.value,  
+                      )  
+  
+                    updateItem(  
+                      item.id,  
+                      {  
+                        batch,  
+                        batch_id:  
+                          batch?.id ||  
+                          null,  
+                        units_per_pack:  
+                          batch?.units_per_pack ||  
+                          item.units_per_pack,  
+                        mrp_per_pack:  
+                          batch?.mrp_per_pack ||  
+                          item.mrp_per_pack,  
+                      },  
+                    )  
+                  }}  
+                >  
+                  <option value="">  
+                    Select batch  
+                  </option>  
+  
+                  {item.batches?.map(  
+                    (batch) => (  
+                      <option  
+                        key={batch.id}  
+                        value={batch.id}  
+                      >  
+                        {batch.batch_number} •  
+                        Exp{' '}  
+                        {dateText(  
+                          batch.expiry_date,  
+                        )}{' '}  
+                        • Stock{' '}  
+                        {  
+                          batch.current_stock_units  
+                        }  
+                      </option>  
+                    ),  
+                  )}  
+                </select>  
+              </label>  
+  
+              <label>  
+                Sale type  
+                <select  
+                  value={  
+                    item.unit_type  
+                  }  
+                  onChange={(e) =>  
+                    updateItem(  
+                      item.id,  
+                      {  
+                        unit_type:  
+                          e.target.value,  
+                      },  
+                    )  
+                  }  
+                >  
+                  <option value="pack">  
+                    Strip / Pack  
+                  </option>  
+                  <option value="unit">  
+                    Tablet / Unit  
+                  </option>  
+                </select>  
+              </label>  
+  
+              <label>  
+                Quantity  
+                <input  
+                  type="number"  
+                  min="0.01"  
+                  value={  
+                    item.quantity_entered  
+                  }  
+                  onChange={(e) =>  
+                    updateItem(  
+                      item.id,  
+                      {  
+                        quantity_entered:  
+                          e.target.value,  
+                      },  
+                    )  
+                  }  
+                />  
+              </label>  
+  
+              <label>  
+                Selling price  
+                <input  
+                  type="number"  
+                  min="0"  
+                  step="0.01"  
+                  value={  
+                    item.selling_price_per_pack  
+                  }  
+                  onChange={(e) =>  
+                    updateItem(  
+                      item.id,  
+                      {  
+                        selling_price_per_pack:  
+                          e.target.value,  
+                      },  
+                    )  
+                  }  
+                />  
+              </label>  
+  
+              <label>  
+                Discount %  
+                <input  
+                  type="number"  
+                  min="0"  
+                  max="100"  
+                  value={  
+                    item.discount_percent  
+                  }  
+                  onChange={(e) =>  
+                    updateItem(  
+                      item.id,  
+                      {  
+                        discount_percent:  
+                          e.target.value,  
+                      },  
+                    )  
+                  }  
+                />  
+              </label>  
+  
+              <label>  
+                GST %  
+                <input  
+                  type="number"  
+                  min="0"  
+                  max="100"  
+                  value={  
+                    item.gst_rate  
+                  }  
+                  onChange={(e) =>  
+                    updateItem(  
+                      item.id,  
+                      {  
+                        gst_rate:  
+                          e.target.value,  
+                      },  
+                    )  
+                  }  
+                />  
+              </label>  
+            </div>  
+  
+            <button  
+              type="button"  
+              className="danger-button"  
+              onClick={() =>  
+                removeItem(  
+                  item.id,  
+                )  
+              }  
+            >  
+              Remove item  
+            </button>  
+          </div>  
+        ))}  
+  
+        <h3>Payments</h3>  
+  
+        {payments.map(  
+          (payment, index) => (  
+            <div  
+              className="payment-row"  
+              key={  
+                payment.id ||  
+                index  
+              }  
+            >  
+              <select  
+                value={  
+                  payment.payment_method  
+                }  
+                onChange={(e) => {  
+                  const next = [  
+                    ...payments,  
+                  ]  
+  
+                  next[index] = {  
+                    ...next[index],  
+                    payment_method:  
+                      e.target.value,  
+                  }  
+  
+                  setPayments(next)  
+                }}  
+              >  
+                <option value="cash">  
+                  Cash  
+                </option>  
+                <option value="upi">  
+                  UPI  
+                </option>  
+                <option value="card">  
+                  Card  
+                </option>  
+                <option value="credit">  
+                  Credit  
+                </option>  
+              </select>  
+  
+              <input  
+                type="number"  
+                min="0"  
+                step="0.01"  
+                value={  
+                  payment.amount  
+                }  
+                onChange={(e) => {  
+                  const next = [  
+                    ...payments,  
+                  ]  
+  
+                  next[index] = {  
+                    ...next[index],  
+                    amount:  
+                      e.target.value,  
+                  }  
+  
+                  setPayments(next)  
+                }}  
+              />  
+  
+              <button  
+                type="button"  
+                className="danger-button"  
+                onClick={() =>  
+                  setPayments(  
+                    payments.filter(  
+                      (_, i) =>  
+                        i !==  
+                        index,  
+                    ),  
+                  )  
+                }  
+              >  
+                ×  
+              </button>  
+            </div>  
+          ),  
+        )}  
+  
+        <button  
+          type="button"  
+          className="secondary-button"  
+          onClick={() =>  
+            setPayments([  
+              ...payments,  
+              {  
+                payment_method:  
+                  'cash',  
+                amount: 0,  
+              },  
+            ])  
+          }  
+        >  
+          + Payment  
+        </button>  
+  
+        {error && (  
+          <div className="error-box">  
+            {error}  
+          </div>  
+        )}  
+  
+        <div className="info-box">  
+          Bill editing is processed as one backend  
+          transaction so stock, payments, credit,  
+          GST and audit records stay synchronized.  
+        </div>  
+  
+        <ModalActions  
+          onClose={onClose}  
+          busy={busy}  
+          label="Save Bill Changes"  
+        />  
+      </form>  
+    </Modal>  
+  )  
+}  
+  
+function SalesReturns({ store }) {  
+  const [rows, setRows] = useState([])  
+  
+  useEffect(() => {  
+    if (!store?.id) return  
+  
+    supabase  
+      .from('sales_returns')  
+      .select('*')  
+      .eq('store_id', store.id)  
+      .order('created_at', {  
+        ascending: false,  
+      })  
+      .limit(100)  
+      .then(({ data }) =>  
+        setRows(data || []),  
+      )  
+  }, [store?.id])  
+  
+  return (  
+    <PanelList title="Sales Returns">  
+      {rows.length === 0 ? (  
+        <EmptyState text="No sales returns recorded." />  
+      ) : (  
+        <div className="record-list">  
+          {rows.map((row) => (  
+            <div  
+              className="record-row static"  
+              key={row.id}  
+            >  
+              <div>  
+                <strong>  
+                  {row.id.slice(0, 8)}  
+                </strong>  
+  
+                <span>  
+                  {dateTimeText(  
+                    row.created_at,  
+                  )}  
+                </span>  
+              </div>  
+  
+              <strong>  
+                {money(  
+                  row.refund_amount,  
+                )}  
+              </strong>  
+            </div>  
+          ))}  
+        </div>  
+      )}  
+    </PanelList>  
+  )  
+}  
+  
+function CustomerCredit({ store }) {  
+  const [rows, setRows] = useState([])  
+  
+  useEffect(() => {  
+    if (!store?.id) return  
+  
+    supabase  
+      .from(  
+        'customer_credit_transactions',  
+      )  
+      .select('*')  
+      .eq('store_id', store.id)  
+      .order('created_at', {  
+        ascending: false,  
+      })  
+      .limit(200)  
+      .then(({ data }) =>  
+        setRows(data || []),  
+      )  
+  }, [store?.id])  
+  
+  return (  
+    <PanelList title="Customer Credit">  
+      {rows.length === 0 ? (  
+        <EmptyState text="No credit transactions." />  
+      ) : (  
+        <div className="record-list">  
+          {rows.map((row) => (  
+            <div  
+              className="record-row static"  
+              key={row.id}  
+            >  
+              <div>  
+                <strong>  
+                  {row.transaction_type}  
+                </strong>  
+  
+                <span>  
+                  {dateTimeText(  
+                    row.created_at,  
+                  )}  
+                </span>  
+              </div>  
+  
+              <strong>  
+                {money(row.amount)}  
+              </strong>  
+            </div>  
+          ))}  
+        </div>  
+      )}  
+    </PanelList>  
+  )  
+}  
+  
+/* =========================================================  
+   PURCHASES  
+========================================================= */  
+  
+function PurchasesModule({ store }) {  
+  const [tab, setTab] =  
+    useState('New Purchase')  
+  
+  return (  
+    <div>  
+      <ModuleHeader  
+        title="Purchases"  
+        subtitle="Supplier invoices, stock intake and purchase planning"  
+      />  
+  
+      <TabBar  
+        tabs={PURCHASE_TABS}  
+        active={tab}  
+        onChange={setTab}  
+      />  
+  
+      {tab === 'New Purchase' && (  
+        <NewPurchase store={store} />  
+      )}  
+  
+      {tab === 'Supplier Invoices' && (  
+        <SupplierInvoices  
+          store={store}  
+        />  
+      )}  
+  
+      {tab === 'Purchase Parties' && (  
+        <SupplierDirectory  
+          store={store}  
+        />  
+      )}  
+  
+      {tab === 'Pending Payments' && (  
+        <PendingSupplierPayments  
+          store={store}  
+        />  
+      )}  
+  
+      {tab === 'Supplier Orders' && (  
+        <PurchaseOrders store={store} />  
+      )}  
+  
+      {tab ===  
+        'AI Recommendations' && (  
+        <AIRecommendations  
+          store={store}  
+        />  
+      )}  
+    </div>  
+  )  
+}  
+  
+function NewPurchase({ store }) {  
+  const [suppliers, setSuppliers] =  
+    useState([])  
+  const [products, setProducts] =  
+    useState([])  
+  const [supplierQuery, setSupplierQuery] =  
+    useState('')  
+  const [productQuery, setProductQuery] =  
+    useState('')  
+  const [selectedSupplier, setSelectedSupplier] =  
+    useState(null)  
+  const [invoiceNumber, setInvoiceNumber] =  
+    useState('')  
+  const [invoiceDate, setInvoiceDate] =  
+    useState(todayISO())  
+  const [items, setItems] =  
+    useState([emptyPurchaseItem()])  
+  const [supplierModal, setSupplierModal] =  
+    useState(false)  
+  const [productModal, setProductModal] =  
+    useState(null)  
+  const [message, setMessage] =  
+    useState('')  
+  const [busy, setBusy] =  
+    useState(false)  
+  const [invoiceImportOpen, setInvoiceImportOpen] =
+    useState(false)
+  const [invoiceCharges, setInvoiceCharges] =
+    useState({
+      discount: 0,
+      cgst: 0,
+      sgst: 0,
+      igst: 0,
+      otherCharges: 0,
+      notes: '',
+    })
+  
+  useEffect(() => {  
+    if (!store?.id) return  
+  
+    loadSuppliers()  
+    loadProducts()  
+  }, [store?.id])  
+  
+  const loadSuppliers = async () => {  
+    const { data } =  
+      await supabase  
+        .from('suppliers')  
+        .select('*')  
+        .eq(  
+          'store_id',  
+          store.id,  
+        )  
+        .eq(  
+          'is_active',  
+          true,  
+        )  
+        .order(  
+          'supplier_name',  
+        )  
+  
+    setSuppliers(data || [])  
+  }  
+  
+  const loadProducts = async () => {  
+    const { data } =  
+      await supabase  
+        .from('store_products')  
+        .select(`  
+          *,  
+          products (  
+            id,  
+            product_name,  
+            generic_display_name,  
+            manufacturer,  
+            composition_id,  
+            gst_rate,  
+            is_active  
+          )  
+        `)  
+        .eq(  
+          'store_id',  
+          store.id,  
+        )  
+        .eq(  
+          'is_active',  
+          true,  
+        )  
+  
+    setProducts(  
+      (data || [])  
+        .filter(  
+          (x) =>  
+            x.products  
+              ?.is_active !== false,  
+        )  
+        .map((x) => ({  
+          ...x.products,  
+          default_selling_price:  
+            x.default_selling_price,  
+          default_discount_percent:  
+            x.default_discount_percent,  
+        })),  
+    )  
+  }  
+  
+  const supplierResults =  
+    suppliers  
+      .filter((x) =>  
+        matchesSearch(  
+          supplierQuery,  
+          x.supplier_name,  
+          x.phone,  
+          x.email,  
+          x.gstin,  
+          supplierLicense(x),  
+        ),  
+      )  
+      .slice(0, 10)  
+  
+  const productResults =  
+    products  
+      .map((p) => ({  
+        p,  
+        score: fuzzyScore(  
+          productQuery,  
+          `${p.product_name} ${  
+            p.generic_display_name ||  
+            ''  
+          } ${  
+            p.manufacturer || ''  
+          }`,  
+        ),  
+      }))  
+      .filter(  
+        (x) =>  
+          !productQuery ||  
+          x.score > 0,  
+      )  
+      .sort(  
+        (a, b) =>  
+          b.score - a.score,  
+      )  
+      .slice(0, 12)  
+      .map((x) => x.p)  
+  
+  const chooseProduct = (  
+    product,  
+  ) => {  
+    setProductQuery('')  
+  
+    setItems((current) => {  
+      const item = {  
+        ...emptyPurchaseItem(),  
+        product,  
+        gstRate:  
+          safeNumber(  
+            product.gst_rate,  
+          ),  
+      }  
+  
+      if (  
+        current.length ===  
+          1 &&  
+        !current[0].product  
+      ) {  
+        return [item]  
+      }  
+  
+      return [  
+        ...current,  
+        item,  
+      ]  
+    })  
+  }  
+  
+  const updateItem = (  
+    id,  
+    patch,  
+  ) => {  
+    setItems((current) =>  
+      current.map((x) =>  
+        x.id === id  
+          ? {  
+              ...x,  
+              ...patch,  
+            }  
+          : x,  
+      ),  
+    )  
+  }  
+  
+  const removeItem = (  
+    id,  
+  ) => {  
+    setItems((current) => {  
+      const next =  
+        current.filter(  
+          (x) => x.id !== id,  
+        )  
+  
+      return next.length  
+        ? next  
+        : [  
+            emptyPurchaseItem(),  
+          ]  
+    })  
+  }  
+  
+  const subtotal = sum(  
+    items.map(  
+      (item) =>  
+        safeNumber(  
+          item.paidPacks,  
+        ) *  
+        safeNumber(  
+          item.purchaseRatePerPack,  
+        ),  
+    ),  
+  )  
+  
+  const completePurchase =  
+    async (e) => {  
+      e.preventDefault()  
+      setBusy(true)  
+      setMessage('')  
+  
+      try {  
+        if (!selectedSupplier) {  
+          throw new Error(  
+            'Select a supplier.',  
+          )  
+        }  
+  
+        if (!invoiceNumber.trim()) {  
+          throw new Error(  
+            'Invoice number is required.',  
+          )  
+        }  
+  
+        const validItems =  
+          items.filter(  
+            (x) => x.product,  
+          )  
+  
+        if (!validItems.length) {  
+          throw new Error(  
+            'Add at least one product.',  
+          )  
+        }  
+  
+        const payload =  
+          validItems.map(  
+            (item) => ({  
+              product_id:  
+                item.product.id,  
+              batch_number:  
+                item.batchNumber,  
+              expiry_date:  
+                item.expiryDate,  
+              paid_packs:  
+                safeNumber(  
+                  item.paidPacks,  
+                ),  
+              free_packs:  
+                safeNumber(  
+                  item.freePacks,  
+                ),  
+              loose_units:  
+                safeNumber(  
+                  item.looseUnits,  
+                ),  
+              purchase_rate_per_pack:  
+                safeNumber(  
+                  item.purchaseRatePerPack,  
+                ),  
+              mrp_per_pack:  
+                safeNumber(  
+                  item.mrpPerPack,  
+                ),  
+              supplier_discount_percent:  
+                safeNumber(  
+                  item.supplierDiscountPercent,  
+                ),  
+              gst_rate:  
+                safeNumber(  
+                  item.gstRate,  
+                ),  
+              units_per_pack:  
+                safeNumber(  
+                  item.unitsPerPack,  
+                ) || 1,  
+            }),  
+          )  
+  
+        const { data, error } =  
+          await supabase.rpc(  
+            'pharmdesk_complete_purchase',  
+            {  
+              p_store_id:  
+                store.id,  
+              p_supplier_id:  
+                selectedSupplier.id,  
+              p_invoice_number:  
+                invoiceNumber.trim(),  
+              p_invoice_date:  
+                invoiceDate,  
+              p_items: payload,  
+              p_discount_amount:
+                safeNumber(invoiceCharges.discount),
+              p_cgst_amount:
+                safeNumber(invoiceCharges.cgst),
+              p_sgst_amount:
+                safeNumber(invoiceCharges.sgst),
+              p_igst_amount:
+                safeNumber(invoiceCharges.igst),
+              p_other_charges:
+                safeNumber(invoiceCharges.otherCharges),
+              p_notes:
+                invoiceCharges.notes || null,
+            },  
+          )  
+  
+        if (error) throw error  
+  
+        setMessage(  
+          `Purchase completed successfully: ${data}`,  
+        )  
+  
+        setInvoiceNumber('')  
+        setInvoiceDate(todayISO())
+        setItems([  
+          emptyPurchaseItem(),  
+        ])  
+        setInvoiceCharges({
+          discount: 0,
+          cgst: 0,
+          sgst: 0,
+          igst: 0,
+          otherCharges: 0,
+          notes: '',
+        })
+      } catch (error) {  
+        setMessage(  
+          error.message ||  
+            'Unable to complete purchase.',  
+        )  
+      } finally {  
+        setBusy(false)  
+      }  
+    }  
+  
+  return (  
+    <form  
+      onSubmit={  
+        completePurchase  
+      }  
+    >  
+<div className="two-column">  
+        <div>  
+          <PanelList title="AI Invoice Import">  
+            <p className="muted">  
+              Upload a supplier invoice photo or PDF. PharmDesk will extract the invoice into this purchase draft for your review. Nothing is added to stock until you complete the purchase.  
+            </p>  
+            <button  
+              type="button"  
+              className="secondary-button"  
+              onClick={() => setInvoiceImportOpen(true)}  
+            >  
+              Upload Invoice Photo / PDF  
+            </button>  
+          </PanelList>  
+          <PanelList title="Purchase Party / Supplier">  
+            <div className="search-row">  
+              <input  
+                value={  
+                  selectedSupplier  
+                    ? selectedSupplier.supplier_name  
+                    : supplierQuery  
+                }  
+                placeholder="Search supplier"  
+                onChange={(e) => {  
+                  setSelectedSupplier(  
+                    null,  
+                  )  
+                  setSupplierQuery(  
+                    e.target.value,  
+                  )  
+                }}  
+              />  
+  
+              <button  
+                type="button"  
+                className="secondary-button"  
+                onClick={() =>  
+                  setSupplierModal(  
+                    true,  
+                  )  
+                }  
+              >  
+                + Add Purchase Party  
+              </button>  
+            </div>  
+  
+            {!selectedSupplier &&  
+              supplierQuery && (  
+                <div className="suggestion-list">  
+                  {supplierResults.map(  
+                    (supplier) => (  
+                      <button  
+                        type="button"  
+                        className="suggestion"  
+                        key={  
+                          supplier.id  
+                        }  
+                        onClick={() => {  
+                          setSelectedSupplier(  
+                            supplier,  
+                          )  
+                          setSupplierQuery(  
+                            '',  
+                          )  
+                        }}  
+                      >  
+                        <strong>  
+                          {  
+                            supplier.supplier_name  
+                          }  
+                        </strong>  
+  
+                        <span>  
+                          {supplier.phone ||  
+                            ''}  
+                        </span>  
+                      </button>  
+                    ),  
+                  )}  
+                </div>  
+              )}  
+  
+            {selectedSupplier && (  
+              <div className="selected-record">  
+                <strong>  
+                  {  
+                    selectedSupplier.supplier_name  
+                  }  
+                </strong>  
+  
+                <span>  
+                  {selectedSupplier.phone ||  
+                    'No phone'}  
+                </span>  
+              </div>  
+            )}  
+          </PanelList>  
+  
+          <PanelList title="Products">  
+            <div className="search-row">  
+              <input  
+                value={productQuery}  
+                placeholder="Search product"  
+                onChange={(e) =>  
+                  setProductQuery(  
+                    e.target.value,  
+                  )  
+                }  
+              />  
+  
+              <button  
+                type="button"  
+                className="secondary-button"  
+                onClick={() =>  
+                  setProductModal({})  
+                }  
+              >  
+                + Add New Product  
+              </button>  
+            </div>  
+  
+            {productQuery && (  
+              <div className="suggestion-list">  
+                {productResults.map(  
+                  (product) => (  
+                    <button  
+                      type="button"  
+                      className="suggestion"  
+                      key={  
+                        product.id  
+                      }  
+                      onClick={() =>  
+                        chooseProduct(  
+                          product,  
+                        )  
+                      }  
+                    >  
+                      <strong>  
+                        {  
+                          product.product_name  
+                        }  
+                      </strong>  
+  
+                      <span>  
+                        {product.generic_display_name ||  
+                          product.manufacturer ||  
+                          ''}  
+                      </span>  
+                    </button>  
+                  ),  
+                )}  
+              </div>  
+            )}  
+          </PanelList>  
+  
+          <PanelList title="Purchase Items">  
+            {items.map(  
+              (item) => (  
+                <PurchaseItemRow  
+                  key={item.id}  
+                  item={item}  
+                  onChange={(  
+                    patch,  
+                  ) =>  
+                    updateItem(  
+                      item.id,  
+                      patch,  
+                    )  
+                  }  
+                  onRemove={() =>  
+                    removeItem(  
+                      item.id,  
+                    )  
+                  }  
+                />  
+              ),  
+            )}  
+          </PanelList>  
+        </div>  
+  
+        <div>  
+          <PanelList title="Invoice">  
+            <label>  
+              Invoice number  
+              <input  
+                value={  
+                  invoiceNumber  
+                }  
+                onChange={(e) =>  
+                  setInvoiceNumber(  
+                    e.target.value,  
+                  )  
+                }  
+                required  
+              />  
+            </label>  
+  
+            <label>  
+              Invoice date  
+              <input  
+                type="date"  
+                value={  
+                  invoiceDate  
+                }  
+                onChange={(e) =>  
+                  setInvoiceDate(  
+                    e.target.value,  
+                  )  
+                }  
+              />  
+            </label>  
+  
+            <div className="totals">  
+              <div>  
+                <span>Subtotal</span>  
+                <strong>{money(subtotal)}</strong>  
+              </div>  
+              {safeNumber(invoiceCharges.discount) > 0 && (  
+                <div>  
+                  <span>Invoice discount</span>  
+                  <strong>−{money(invoiceCharges.discount)}</strong>  
+                </div>  
+              )}  
+              {(safeNumber(invoiceCharges.cgst) + safeNumber(invoiceCharges.sgst) + safeNumber(invoiceCharges.igst)) > 0 && (  
+                <div>  
+                  <span>GST</span>  
+                  <strong>{money(  
+                    safeNumber(invoiceCharges.cgst) + safeNumber(invoiceCharges.sgst) + safeNumber(invoiceCharges.igst),  
+                  )}</strong>  
+                </div>  
+              )}  
+              {safeNumber(invoiceCharges.otherCharges) > 0 && (  
+                <div>  
+                  <span>Other charges</span>  
+                  <strong>{money(invoiceCharges.otherCharges)}</strong>  
+                </div>  
+              )}  
+              <div className="grand-total">  
+                <span>Invoice total</span>  
+                <strong>{money(  
+                  subtotal - safeNumber(invoiceCharges.discount) + safeNumber(invoiceCharges.cgst) + safeNumber(invoiceCharges.sgst) + safeNumber(invoiceCharges.igst) + safeNumber(invoiceCharges.otherCharges),  
+                )}</strong>  
+              </div>  
+            </div>  
+            {invoiceCharges.notes && (  
+              <div className="muted">  
+                AI invoice notes: {invoiceCharges.notes}  
+              </div>  
+            )}  
+          </PanelList>  
+  
+          {message && (  
+            <div className="message-box">  
+              {message}  
+            </div>  
+          )}  
+  
+          <button  
+            className="primary-button large"  
+            type="submit"  
+            disabled={busy}  
+          >  
+            {busy  
+              ? 'Completing purchase…'  
+              : `Complete Purchase • ${money(  
+                  subtotal,  
+                )}`}  
+          </button>  
+        </div>  
+      </div>  
+  
+      {invoiceImportOpen && (  
+        <InvoiceImportModal  
+          store={store}  
+          suppliers={suppliers}  
+          products={products}  
+          onClose={() => setInvoiceImportOpen(false)}  
+          onApply={(result) => {  
+            if (result.supplier) {  
+              setSelectedSupplier(result.supplier)  
+              setSupplierQuery('')  
+            }  
+            if (result.invoiceNumber) setInvoiceNumber(result.invoiceNumber)  
+            if (result.invoiceDate) setInvoiceDate(result.invoiceDate)  
+            setItems(result.items.length ? result.items : [emptyPurchaseItem()])  
+            setInvoiceCharges({  
+              discount: safeNumber(result.discount),  
+              cgst: safeNumber(result.cgst),  
+              sgst: safeNumber(result.sgst),  
+              igst: safeNumber(result.igst),  
+              otherCharges: safeNumber(result.otherCharges),  
+              notes: result.notes || '',  
+            })  
+            setInvoiceImportOpen(false)  
+            setMessage('Invoice imported into the purchase draft. Review every field before completing the purchase.')  
+          }}  
+        />  
+      )}  
+  
+      {supplierModal && (  
+        <SupplierModal  
+          store={store}  
+          onClose={() =>  
+            setSupplierModal(  
+              false,  
+            )  
+          }  
+          onCreated={(  
+            supplier,  
+          ) => {  
+            setSuppliers(  
+              (x) => [  
+                supplier,  
+                ...x,  
+              ],  
+            )  
+            setSelectedSupplier(  
+              supplier,  
+            )  
+            setSupplierModal(  
+              false,  
+            )  
+          }}  
+        />  
+      )}  
+  
+      {productModal && (  
+        <ProductModal  
+          store={store}  
+          product={productModal}  
+          onClose={() =>  
+            setProductModal(null)  
+          }  
+          onCreated={(  
+            product,  
+          ) => {  
+            setProductModal(null)  
+  
+            loadProductsAfterCreate(  
+              product,  
+              products,  
+              setProducts,  
+            )  
+          }}  
+        />  
+      )}  
+    </form>  
+  )  
+}  
+  
+function InvoiceImportModal({
+  store,
+  suppliers,
+  products,
+  onClose,
+  onApply,
+}) {
+  const [file, setFile] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [preview, setPreview] = useState(null)
+  const [productDraft, setProductDraft] = useState(null)
+
+  const chooseFile = (event) => {
+    const selected = event.target.files?.[0] || null
+    setFile(selected)
+    setPreview(null)
+    setError('')
+  }
+
+  const extractInvoice = async () => {
+    if (!file) {
+      setError('Choose a PDF or invoice image first.')
+      return
+    }
+    setBusy(true)
+    setError('')
+    try {
+      const body = new FormData()
+      body.append('store_id', store.id)
+      body.append('file', file)
+      const { data, error: invokeError } = await supabase.functions.invoke(
+        'ai-invoice-extract',
+        { body },
+      )
+      if (invokeError) throw invokeError
+      if (!data?.success) throw new Error(data?.error || 'Unable to read this invoice.')
+      setPreview(data)
+    } catch (err) {
+      setError(err?.message || 'Unable to extract the invoice.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const extracted = preview?.extracted || {}
+  const extractedItems = Array.isArray(extracted.items) ? extracted.items : []
+  const supplierMatch = preview?.supplier_matches?.[0]
+  const strongSupplierMatch = supplierMatch && safeNumber(supplierMatch.match_confidence) >= 0.85
+    ? suppliers.find((x) => x.id === supplierMatch.id) || null
+    : null
+
+  const buildItems = () => extractedItems.map((item) => {
+    const product = products.find((x) => x.id === item.matched_product_id) || findLocalProductMatch(item)?.product || (item.matched_product_id ? {
+      id: item.matched_product_id,
+      product_name: item.product_name || '',
+      generic_display_name: item.generic_name || '',
+      manufacturer: item.manufacturer || null,
+      gst_rate: item.gst_rate ?? 0,
+      pack_quantity: safeNumber(item.units_per_pack) || 1,
+      pack_unit: item.pack_unit || 'pack',
+    } : null)
+    return {
+      ...emptyPurchaseItem(),
+      product,
+      batchNumber: item.batch_number || '',
+      expiryDate: item.expiry_date || '',
+      paidPacks: safeNumber(item.paid_packs),
+      freePacks: safeNumber(item.free_packs),
+      looseUnits: safeNumber(item.loose_units),
+      purchaseRatePerPack: safeNumber(item.purchase_rate_per_pack),
+      mrpPerPack: safeNumber(item.mrp_per_pack),
+      supplierDiscountPercent: safeNumber(item.supplier_discount_percent),
+      gstRate: safeNumber(item.gst_rate ?? product?.gst_rate),
+      unitsPerPack: safeNumber(item.units_per_pack) || safeNumber(product?.pack_quantity) || 1,
+    }
+  })
+
+  const findLocalProductMatch = (item) => {
+    const query = normalize(`${item.product_name || ''} ${item.generic_name || ''}`)
+    if (!query) return null
+    let best = null
+    let bestScore = 0
+    for (const product of products) {
+      const haystack = normalize([product.product_name, product.generic_display_name, product.manufacturer].filter(Boolean).join(' '))
+      if (!haystack) continue
+      const score = fuzzyScore(query, haystack)
+      if (score > bestScore) { bestScore = score; best = product }
+    }
+    return best && bestScore >= 0.45 ? { product: best, confidence: bestScore } : null
+  }
+
+  const prepareProductDraft = async (item) => {
+    let compositionId = item.composition_id || null
+    const ingredients = Array.isArray(item.composition_ingredients) ? item.composition_ingredients.filter((x) => String(x?.ingredient_name || '').trim()) : []
+    if (!compositionId && ingredients.length) {
+      const { data, error } = await supabase.rpc('pharmdesk_save_composition', {
+        p_composition_id: null,
+        p_dosage_form: item.dosage_form || null,
+        p_source: 'ai_invoice_import',
+        p_source_reference: item.product_name || 'Supplier invoice',
+        p_ingredients: ingredients.map((x, index) => ({ ingredient_name: String(x.ingredient_name || '').trim(), strength_value: safeNumber(x.strength_value), strength_unit: String(x.strength_unit || 'mg').trim(), sequence_number: index + 1 })),
+      })
+      if (error) throw error
+      compositionId = data
+    }
+    const units = safeNumber(item.units_per_pack) || 1
+    const unitName = String(item.pack_unit || '').trim() || 'pack'
+    const stockUnit = String(item.stock_unit || '').trim() || 'unit'
+    const packagingLevels = units > 1 ? [
+      { level_number: 1, unit_name: unitName, units_per_parent: units, is_purchase_unit: true, is_sale_unit: true, is_preferred_sale_unit: true, is_stock_unit: false },
+      { level_number: 2, unit_name: stockUnit, units_per_parent: 1, is_purchase_unit: false, is_sale_unit: true, is_preferred_sale_unit: false, is_stock_unit: true },
+    ] : [{ level_number: 1, unit_name: stockUnit, units_per_parent: 1, is_purchase_unit: true, is_sale_unit: true, is_preferred_sale_unit: true, is_stock_unit: true }]
+    return { product_name: item.product_name || '', generic_display_name: item.generic_name || '', composition_id: compositionId, manufacturer: item.manufacturer || '', dosage_form: item.dosage_form || '', strength_display: item.strength_display || '', pack_quantity: units, pack_unit: unitName, gst_rate: safeNumber(item.gst_rate), default_selling_price: 0, default_discount_percent: 0, minimum_stock: 0, reorder_level: 0, packagingLevels }
+  }
+
+  const addDetectedProduct = async (item, index) => {
+    setError('')
+    try {
+      const draft = await prepareProductDraft(item)
+      setProductDraft({ draft, index })
+    } catch (err) {
+      setError(err?.message || 'Could not prepare this product. You can add its composition manually.')
+      setProductDraft({ draft: { ...(await prepareProductDraft({ ...item, composition_ingredients: [] })), composition_id: null }, index })
+    }
+  }
+
+  const apply = () => {
+    if (!extractedItems.length) {
+      setError('No purchase line items were detected. Try a clearer invoice image or PDF.')
+      return
+    }
+    const missingProducts = extractedItems.filter((x) => !x.matched_product_id && !findLocalProductMatch(x)).length
+    if (missingProducts > 0) {
+      setError(`${missingProducts} item(s) could not be matched. They will remain unselected so you can choose/add the correct product before completing the purchase.`)
+    }
+    const normalisedItems = extractedItems.map((item) => {
+      if (item.matched_product_id) return item
+      const local = findLocalProductMatch(item)
+      return local ? { ...item, matched_product_id: local.product.id, matched_product_name: local.product.product_name } : item
+    })
+    setPreview((current) => current ? { ...current, extracted: { ...current.extracted, items: normalisedItems } } : current)
+    onApply({
+      supplier: strongSupplierMatch,
+      invoiceNumber: extracted.invoice_number || '',
+      invoiceDate: /^\d{4}-\d{2}-\d{2}$/.test(extracted.invoice_date || '') ? extracted.invoice_date : '',
+      discount: extracted.discount_amount,
+      cgst: extracted.cgst_amount,
+      sgst: extracted.sgst_amount,
+      igst: extracted.igst_amount,
+      otherCharges: extracted.other_charges,
+      notes: extracted.notes || '',
+      items: buildItems(),
+    })
+  }
+
+  return (
+    <Modal title="Import Supplier Invoice" onClose={onClose}>
+      {!preview && (
+        <>
+          <p className="muted">
+            Upload a clear supplier invoice photo or PDF. PharmDesk will extract the purchase details and match products already in PharmDesk. Nothing is saved or added to stock during extraction.
+          </p>
+          <label>
+            Invoice photo / PDF
+            <input
+              type="file"
+              accept="application/pdf,image/jpeg,image/png,image/webp,image/gif"
+              onChange={chooseFile}
+            />
+          </label>
+          {file && (
+            <div className="selected-record">
+              <strong>{file.name}</strong>
+              <span>{(file.size / 1024 / 1024).toFixed(2)} MB</span>
+            </div>
+          )}
+          {error && <div className="error-box">{error}</div>}
+          <button
+            type="button"
+            className="primary-button"
+            disabled={busy || !file}
+            onClick={extractInvoice}
+          >
+            {busy ? 'Reading invoice…' : 'Extract Invoice'}
+          </button>
+        </>
+      )}
+
+      {preview && (
+        <>
+          <div className="history-header">
+            <strong>{preview.source_filename || 'Invoice'}</strong>
+            <span>Review before applying</span>
+          </div>
+          <PanelList title="Detected Invoice Details">
+            <div className="item-grid">
+              <label>Supplier<input value={extracted.supplier_name || 'Not detected'} readOnly /></label>
+              <label>Invoice number<input value={extracted.invoice_number || 'Not detected'} readOnly /></label>
+              <label>Invoice date<input value={extracted.invoice_date || 'Not detected'} readOnly /></label>
+              <label>Invoice total<input value={money(extracted.total_amount)} readOnly /></label>
+            </div>
+          </PanelList>
+          {supplierMatch && (
+            <div className="selected-record">
+              <strong>Suggested supplier: {supplierMatch.supplier_name}</strong>
+              <span>
+                Match confidence: {Math.round(safeNumber(supplierMatch.match_confidence) * 100)}%
+                {strongSupplierMatch ? ' • will be selected automatically' : ' • review/select manually'}
+              </span>
+            </div>
+          )}
+          <PanelList title={`Detected Items (${extractedItems.length})`}>
+            <div className="record-list">
+              {extractedItems.map((item, index) => (
+                <div className="record-row" key={`${item.product_name}-${index}`}>
+                  <div>
+                    <strong>{item.product_name}</strong>
+                    <span>{item.batch_number || 'Batch not detected'} • {item.expiry_date || 'Expiry not detected'}</span>
+                  </div>
+                  <div className="record-right">
+                    <span>{item.matched_product_name || findLocalProductMatch(item)?.product?.product_name || 'Product not matched'}</span>
+                    <strong>{safeNumber(item.paid_packs)} packs</strong>
+                    {!item.matched_product_id && !findLocalProductMatch(item) && (
+                      <button type="button" className="secondary-button" onClick={() => addDetectedProduct(item, index)}>
+                        + Add Product
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </PanelList>
+          {error && <div className="error-box">{error}</div>}
+          {extracted.notes && <div className="message-box">AI notes: {extracted.notes}</div>}
+          <div className="search-row">
+            <button type="button" className="secondary-button" onClick={() => { setPreview(null); setError('') }}>
+              Choose Another File
+            </button>
+            <button type="button" className="primary-button" onClick={apply}>
+              Use Invoice in Purchase Draft
+            </button>
+          </div>
+        </>
+      )}
+      {productDraft && (
+        <ProductModal
+          store={store}
+          product={productDraft.draft}
+          onClose={() => setProductDraft(null)}
+          onCreated={(created) => {
+            const index = productDraft.index
+            setPreview((current) => {
+              if (!current) return current
+              const nextItems = (current.extracted?.items || []).map((x, i) => i === index ? { ...x, matched_product_id: created.id, matched_product_name: x.product_name } : x)
+              return { ...current, extracted: { ...current.extracted, items: nextItems } }
+            })
+            setProductDraft(null)
+          }}
+        />
+      )}
+    </Modal>
+  )
+}
+
+function PurchaseItemRow({  
+  item,  
+  onChange,  
+  onRemove,  
+}) {  
+  const paid =  
+    safeNumber(  
+      item.paidPacks,  
+    ) *  
+    safeNumber(  
+      item.purchaseRatePerPack,  
+    )  
+  
+  return (  
+    <div className="transaction-item">  
+      <div className="item-title">  
+        <strong>  
+          {item.product  
+            ?.product_name ||  
+            'Product not selected'}  
+        </strong>  
+      </div>  
+  
+      {item.product && (  
+        <div className="item-grid">  
+          <label>  
+            Batch  
+            <input  
+              value={  
+                item.batchNumber  
+              }  
+              onChange={(e) =>  
+                onChange({  
+                  batchNumber:  
+                    e.target.value,  
+                })  
+              }  
+              placeholder="Batch number"  
+            />  
+          </label>  
+  
+          <label>  
+            Expiry  
+            <input  
+              type="date"  
+              value={  
+                item.expiryDate  
+              }  
+              onChange={(e) =>  
+                onChange({  
+                  expiryDate:  
+                    e.target.value,  
+                })  
+              }  
+            />  
+          </label>  
+  
+          <label>  
+            Units / pack  
+            <input  
+              type="number"  
+              min="1"  
+              value={  
+                item.unitsPerPack ||  
+                1  
+              }  
+              onChange={(e) =>  
+                onChange({  
+                  unitsPerPack:  
+                    e.target.value,  
+                })  
+              }  
+            />  
+          </label>  
+  
+          <label>  
+            Paid packs  
+            <input  
+              type="number"  
+              min="0"  
+              value={  
+                item.paidPacks  
+              }  
+              onChange={(e) =>  
+                onChange({  
+                  paidPacks:  
+                    e.target.value,  
+                })  
+              }  
+            />  
+          </label>  
+  
+          <label>  
+            Free packs  
+            <input  
+              type="number"  
+              min="0"  
+              value={  
+                item.freePacks  
+              }  
+              onChange={(e) =>  
+                onChange({  
+                  freePacks:  
+                    e.target.value,  
+                })  
+              }  
+            />  
+          </label>  
+  
+          <label>  
+            Loose units  
+            <input  
+              type="number"  
+              min="0"  
+              value={  
+                item.looseUnits  
+              }  
+              onChange={(e) =>  
+                onChange({  
+                  looseUnits:  
+                    e.target.value,  
+                })  
+              }  
+            />  
+          </label>  
+  
+          <label>  
+            Purchase rate  
+            <input  
+              type="number"  
+              min="0"  
+              step="0.01"  
+              value={  
+                item.purchaseRatePerPack  
+              }  
+              onChange={(e) =>  
+                onChange({  
+                  purchaseRatePerPack:  
+                    e.target.value,  
+                })  
+              }  
+            />  
+          </label>  
+  
+          <label>  
+            MRP / pack  
+            <input  
+              type="number"  
+              min="0"  
+              step="0.01"  
+              value={  
+                item.mrpPerPack  
+              }  
+              onChange={(e) =>  
+                onChange({  
+                  mrpPerPack:  
+                    e.target.value,  
+                })  
+              }  
+            />  
+          </label>  
+  
+          <label>  
+            GST %  
+            <input  
+              type="number"  
+              min="0"  
+              max="100"  
+              value={  
+                item.gstRate  
+              }  
+              onChange={(e) =>  
+                onChange({  
+                  gstRate:  
+                    e.target.value,  
+                })  
+              }  
+            />  
+          </label>  
+        </div>  
+      )}  
+  
+      <div className="item-footer">  
+        <strong>  
+          {money(paid)}  
+        </strong>  
+  
+        <button  
+          type="button"  
+          className="danger-button"  
+          onClick={onRemove}  
+        >  
+          Remove  
+        </button>  
+      </div>  
+    </div>  
+  )  
+}  
+  
+/* =========================================================  
+   SUPPLIER DIRECTORY  
+========================================================= */  
+  
+function SupplierDirectory({  
+  store,  
+}) {  
+  const [rows, setRows] =  
+    useState([])  
+  const [query, setQuery] =  
+    useState('')  
+  const [editing, setEditing] =  
+    useState(null)  
+  const [history, setHistory] =  
+    useState(null)  
+  
+  const load = async () => {  
+    const { data } =  
+      await supabase  
+        .from('suppliers')  
+        .select('*')  
+        .eq(  
+          'store_id',  
+          store.id,  
+        )  
+        .order(  
+          'supplier_name',  
+        )  
+  
+    setRows(data || [])  
+  }  
+  
+  useEffect(() => {  
+    if (store?.id) load()  
+  }, [store?.id])  
+  
+  const filtered =  
+    rows.filter((supplier) =>  
+      matchesSearch(  
+        query,  
+        supplier.supplier_name,  
+        supplier.phone,  
+        supplier.email,  
+        supplier.gstin,  
+        supplierLicense(  
+          supplier,  
+        ),  
+      ),  
+    )  
+  
+  return (  
+    <>  
+      <PanelList title="Purchase Parties / Companies">  
+        <div className="search-row">  
+          <input  
+            placeholder="Search company / purchase party"  
+            value={query}  
+            onChange={(e) =>  
+              setQuery(  
+                e.target.value,  
+              )  
+            }  
+          />  
+  
+          <button  
+            className="primary-button"  
+            onClick={() =>  
+              setEditing({})  
+            }  
+          >  
+            + Purchase Party  
+          </button>  
+        </div>  
+  
+        <div className="record-list">  
+          {filtered.map(  
+            (supplier) => (  
+              <div  
+                className="record-row static"  
+                key={supplier.id}  
+              >  
+                <div>  
+                  <strong>  
+                    {  
+                      supplier.supplier_name  
+                    }  
+                  </strong>  
+  
+                  <span>  
+                    {supplier.phone ||  
+                      'No phone'}{' '}  
+                    •{' '}  
+                    {supplier.gstin ||  
+                      'No GSTIN'}  
+                  </span>  
+                </div>  
+  
+                <div className="record-right">  
+                  <button  
+                    className="secondary-button"  
+                    onClick={() =>  
+                      setEditing(  
+                        supplier,  
+                      )  
+                    }  
+                  >  
+                    Edit  
+                  </button>  
+  
+                  <button  
+                    className="secondary-button"  
+                    onClick={() =>  
+                      setHistory(  
+                        supplier,  
+                      )  
+                    }  
+                  >  
+                    Products & History  
+                  </button>  
+                </div>  
+              </div>  
+            ),  
+          )}  
+        </div>  
+      </PanelList>  
+  
+      {editing && (  
+        <SupplierModal  
+          store={store}  
+          supplier={  
+            editing.id  
+              ? editing  
+              : null  
+          }  
+          onClose={() =>  
+            setEditing(null)  
+          }  
+          onCreated={(updated) => {  
+            if (updated.id) {  
+              setRows(  
+                (current) =>  
+                  current.some(  
+                    (x) =>  
+                      x.id ===  
+                      updated.id,  
+                  )  
+                    ? current.map(  
+                        (x) =>  
+                          x.id ===  
+                          updated.id  
+                            ? updated  
+                            : x,  
+                      )  
+                    : [  
+                        updated,  
+                        ...current,  
+                      ],  
+              )  
+            }  
+  
+            setEditing(null)  
+          }}  
+        />  
+      )}  
+  
+      {history && (  
+        <SupplierHistoryModal  
+          supplier={history}  
+          store={store}  
+          onClose={() =>  
+            setHistory(null)  
+          }  
+          onEdit={(supplier) => {  
+            setHistory(null)  
+            setEditing(  
+              supplier,  
+            )  
+          }}  
+        />  
+      )}  
+    </>  
+  )  
+}  
+  
+/* =========================================================  
+   SUPPLIER HISTORY  
+========================================================= */  
+  
+function SupplierInvoices({  
+  store,  
+}) {  
+  const [rows, setRows] =  
+    useState([])  
+  const [selected, setSelected] =  
+    useState(null)  
+  
+  const load = async () => {  
+    const { data } =  
+      await supabase  
+        .from('purchase_invoices')  
+        .select(`  
+          *,  
+          suppliers (  
+            *  
+          )  
+        `)  
+        .eq(  
+          'store_id',  
+          store.id,  
+        )  
+        .order(  
+          'invoice_date',  
+          {  
+            ascending: false,  
+          },  
+        )  
+        .limit(200)  
+  
+    setRows(data || [])  
+  }  
+  
+  useEffect(() => {  
+    if (store?.id) load()  
+  }, [store?.id])  
+  
+  return (  
+    <PanelList title="Supplier Invoices">  
+      <div className="record-list">  
+        {rows.map((row) => (  
+          <button  
+            className="record-row"  
+            key={row.id}  
+            onClick={() =>  
+              setSelected(  
+                row.suppliers,  
+              )  
+            }  
+          >  
+            <div>  
+              <strong>  
+                {  
+                  row.invoice_number  
+                }  
+              </strong>  
+  
+              <span>  
+                {row.suppliers  
+                  ?.supplier_name ||  
+                  'Supplier'}  
+              </span>  
+            </div>  
+  
+            <div className="record-right">  
+              <span>  
+                {dateText(  
+                  row.invoice_date,  
+                )}  
+              </span>  
+  
+              <strong>  
+                {money(  
+                  row.total_amount,  
+                )}  
+              </strong>  
+            </div>  
+          </button>  
+        ))}  
+      </div>  
+  
+      {selected && (  
+        <SupplierHistoryModal  
+          supplier={selected}  
+          store={store}  
+          onClose={() =>  
+            setSelected(null)  
+          }  
+        />  
+      )}  
+    </PanelList>  
+  )  
+}  
+  
+function SupplierHistoryModal({  
+  supplier,  
+  store,  
+  onClose,  
+  onEdit,  
+}) {  
+  const [invoices, setInvoices] =  
+    useState([])  
+  const [items, setItems] =  
+    useState([])  
+  const [loading, setLoading] =  
+    useState(true)  
+  
+  useEffect(() => {  
+    loadHistory()  
+  }, [supplier?.id])  
+  
+  const loadHistory =  
+    async () => {  
+      if (!supplier?.id) {  
+        setLoading(false)  
+        return  
+      }  
+  
+      setLoading(true)  
+  
+      const {  
+        data: invoiceRows,  
+      } = await supabase  
+        .from(  
+          'purchase_invoices',  
+        )  
+        .select(  
+          'id, invoice_number, invoice_date, total_amount, payment_status',  
+        )  
+        .eq(  
+          'store_id',  
+          store.id,  
+        )  
+        .eq(  
+          'supplier_id',  
+          supplier.id,  
+        )  
+        .order(  
+          'invoice_date',  
+          {  
+            ascending: false,  
+          },  
+        )  
+  
+      setInvoices(  
+        invoiceRows || [],  
+      )  
+  
+      if (  
+        invoiceRows?.length  
+      ) {  
+        const {  
+          data: itemRows,  
+        } = await supabase  
+          .from(  
+            'purchase_items',  
+          )  
+          .select(`  
+            *,  
+            products (  
+              id,  
+              product_name,  
+              generic_display_name  
+            ),  
+            batches (  
+              batch_number,  
+              expiry_date  
+            )  
+          `)  
+          .in(  
+            'purchase_invoice_id',  
+            invoiceRows.map(  
+              (x) => x.id,  
+            ),  
+          )  
+  
+        setItems(  
+          itemRows || [],  
+        )  
+      } else {  
+        setItems([])  
+      }  
+  
+      setLoading(false)  
+    }  
+  
+  const productHistory =  
+    useMemo(() => {  
+      const map = new Map()  
+  
+      for (const item of items) {  
+        if (!item.products)  
+          continue  
+  
+        const key =  
+          item.products.id  
+  
+        if (!map.has(key)) {  
+          map.set(key, {  
+            product:  
+              item.products,  
+            packs: 0,  
+            looseUnits: 0,  
+            lastRate: 0,  
+            lastDate: null,  
+            lastBatch: null,  
+            invoices: 0,  
+          })  
+        }  
+  
+        const entry =  
+          map.get(key)  
+  
+        entry.packs +=  
+          safeNumber(  
+            item.paid_packs,  
+          ) +  
+          safeNumber(  
+            item.free_packs,  
+          )  
+  
+        entry.looseUnits +=  
+          safeNumber(  
+            item.loose_units,  
+          )  
+  
+        entry.lastRate =  
+          safeNumber(  
+            item.purchase_rate_per_pack,  
+          )  
+  
+        entry.lastBatch =  
+          item.batches  
+            ?.batch_number ||  
+          item.batch_number ||  
+          null  
+  
+        const invoice =  
+          invoices.find(  
+            (x) =>  
+              x.id ===  
+              item.purchase_invoice_id,  
+          )  
+  
+        if (  
+          invoice &&  
+          (!entry.lastDate ||  
+            new Date(  
+              invoice.invoice_date,  
+            ) >  
+              new Date(  
+                entry.lastDate,  
+              ))  
+        ) {  
+          entry.lastDate =  
+            invoice.invoice_date  
+        }  
+  
+        entry.invoices += 1  
+      }  
+  
+      return Array.from(  
+        map.values(),  
+      ).sort(  
+        (a, b) =>  
+          new Date(  
+            b.lastDate || 0,  
+          ) -  
+          new Date(  
+            a.lastDate || 0,  
+          ),  
+      )  
+    }, [  
+      items,  
+      invoices,  
+    ])  
+  
+  return (  
+    <Modal  
+      title={`${supplier.supplier_name} • Purchase History`}  
+      onClose={onClose}  
+    >  
+      {loading ? (  
+        <LoadingInline />  
+      ) : (  
+        <>  
+          <div className="history-header">  
+            <div>  
+              <strong>  
+                {  
+                  supplier.supplier_name  
+                }  
+              </strong>  
+  
+              <span>  
+                {supplier.phone ||  
+                  'No phone'}  
+              </span>  
+  
+              <span>  
+                Drug licence:{' '}  
+                {supplierLicense(  
+                  supplier,  
+                ) || '—'}  
+              </span>  
+  
+              <span>  
+                GSTIN:{' '}  
+                {supplier.gstin ||  
+                  '—'}  
+              </span>  
+            </div>  
+  
+            {onEdit && (  
+              <button  
+                className="secondary-button"  
+                onClick={() =>  
+                  onEdit(  
+                    supplier,  
+                  )  
+                }  
+              >  
+                Edit Company  
+              </button>  
+            )}  
+          </div>  
+  
+          <h3>  
+            Products purchased from this party  
+          </h3>  
+  
+          <div className="record-list">  
+            {productHistory.length ===  
+              0 && (  
+              <EmptyState text="No previous purchases found." />  
+            )}  
+  
+            {productHistory.map(  
+              (entry) => (  
+                <div  
+                  className="record-row static"  
+                  key={  
+                    entry.product  
+                      .id  
+                  }  
+                >  
+                  <div>  
+                    <strong>  
+                      {  
+                        entry.product  
+                          .product_name  
+                      }  
+                    </strong>  
+  
+                    <span>  
+                      {entry.product  
+                        .generic_display_name ||  
+                        ''}  
+                    </span>  
+                  </div>  
+  
+                  <div className="record-right">  
+                    <span>  
+                      Packs:{' '}  
+                      {  
+                        entry.packs  
+                      }  
+                    </span>  
+  
+                    <span>  
+                      Loose:{' '}  
+                      {  
+                        entry.looseUnits  
+                      }  
+                    </span>  
+  
+                    <span>  
+                      Invoices:{' '}  
+                      {  
+                        entry.invoices  
+                      }  
+                    </span>  
+  
+                    <span>  
+                      Last:{' '}  
+                      {dateText(  
+                        entry.lastDate,  
+                      )}  
+                    </span>  
+  
+                    <strong>  
+                      {money(  
+                        entry.lastRate,  
+                      )}  
+                    </strong>  
+                  </div>  
+                </div>  
+              ),  
+            )}  
+          </div>  
+  
+          <h3>  
+            Previous invoices  
+          </h3>  
+  
+          <div className="record-list">  
+            {invoices.map(  
+              (invoice) => (  
+                <div  
+                  className="record-row static"  
+                  key={  
+                    invoice.id  
+                  }  
+                >  
+                  <div>  
+                    <strong>  
+                      {  
+                        invoice.invoice_number  
+                      }  
+                    </strong>  
+  
+                    <span>  
+                      {dateText(  
+                        invoice.invoice_date,  
+                      )}  
+                    </span>  
+                  </div>  
+  
+                  <div className="record-right">  
+                    <span>  
+                      {  
+                        invoice.payment_status  
+                      }  
+                    </span>  
+  
+                    <strong>  
+                      {money(  
+                        invoice.total_amount,  
+                      )}  
+                    </strong>  
+                  </div>  
+                </div>  
+              ),  
+            )}  
+          </div>  
+        </>  
+      )}  
+    </Modal>  
+  )  
+}  
+  
+function PendingSupplierPayments({  
+  store,  
+}) {  
+  const [rows, setRows] =  
+    useState([])  
+  
+  useEffect(() => {  
+    if (!store?.id) return  
+  
+    supabase  
+      .from(  
+        'purchase_invoices',  
+      )  
+      .select(`  
+        *,  
+        suppliers (  
+          supplier_name  
+        )  
+      `)  
+      .eq(  
+        'store_id',  
+        store.id,  
+      )  
+      .in(  
+        'payment_status',  
+        [  
+          'pending',  
+          'partial',  
+          'due',  
+        ],  
+      )  
+      .order(  
+        'invoice_date',  
+        {  
+          ascending: true,  
+        },  
+      )  
+      .then(({ data }) =>  
+        setRows(  
+          data || [],  
+        ),  
+      )  
+  }, [store?.id])  
+  
+  return (  
+    <PanelList title="Pending Supplier Payments">  
+      {rows.length ===  
+      0 ? (  
+        <EmptyState text="No pending supplier payments." />  
+      ) : (  
+        <div className="record-list">  
+          {rows.map(  
+            (row) => (  
+              <div  
+                className="record-row static"  
+                key={row.id}  
+              >  
+                <div>  
+                  <strong>  
+                    {  
+                      row.suppliers  
+                        ?.supplier_name ||  
+                      'Supplier'  
+                    }  
+                  </strong>  
+  
+                  <span>  
+                    {  
+                      row.invoice_number  
+                    }  
+                  </span>  
+                </div>  
+  
+                <strong>  
+                  {money(  
+                    row.total_amount,  
+                  )}  
+                </strong>  
+              </div>  
+            ),  
+          )}  
+        </div>  
+      )}  
+    </PanelList>  
+  )  
+}  
+  
+function PurchaseOrders({  
+  store,  
+}) {  
+  const [rows, setRows] =  
+    useState([])  
+  
+  useEffect(() => {  
+    if (!store?.id) return  
+  
+    supabase  
+      .from(  
+        'purchase_orders',  
+      )  
+      .select('*')  
+      .eq(  
+        'store_id',  
+        store.id,  
+      )  
+      .order(  
+        'created_at',  
+        {  
+          ascending: false,  
+        },  
+      )  
+      .limit(100)  
+      .then(({ data }) =>  
+        setRows(  
+          data || [],  
+        ),  
+      )  
+  }, [store?.id])  
+  
+  return (  
+    <PanelList title="Purchase Orders">  
+      {rows.length ===  
+      0 ? (  
+        <EmptyState text="No purchase orders yet." />  
+      ) : (  
+        <div className="record-list">  
+          {rows.map(  
+            (row) => (  
+              <div  
+                className="record-row static"  
+                key={row.id}  
+              >  
+                <div>  
+                  <strong>  
+                    {row.order_number ||  
+                      row.id.slice(  
+                        0,  
+                        8,  
+                      )}  
+                  </strong>  
+  
+                  <span>  
+                    {row.status}  
+                  </span>  
+                </div>  
+  
+                <strong>  
+                  {money(  
+                    row.total_amount,  
+                  )}  
+                </strong>  
+              </div>  
+            ),  
+          )}  
+        </div>  
+      )}  
+    </PanelList>  
+  )  
+}  
+  
+
 
 function InventoryModule({  
   store,  
@@ -1598,6 +6303,11 @@ function CustomersModule({
                     {customer.phone ||  
                       '—'}  
                   </span>  
+                  {customer.referred_doctor_name && (  
+                    <span>  
+                      Dr. {customer.referred_doctor_name}  
+                    </span>  
+                  )}  
                 </div>  
   
                 <div className="record-right">  
@@ -4189,6 +8899,15 @@ function CustomerModal({
     useState(  
       customer?.address || '',  
     )  
+
+  const [doctorName, setDoctorName] =  
+    useState(  
+      customer?.referred_doctor_name || '',  
+    )  
+  const [doctorAddress, setDoctorAddress] =  
+    useState(  
+      customer?.referred_doctor_address || '',  
+    )  
   
   const [busy, setBusy] =  
     useState(false)  
@@ -4222,6 +8941,12 @@ function CustomerModal({
           phone.trim(),  
         address:  
           address.trim() ||  
+          null,  
+        referred_doctor_name:  
+          doctorName.trim() ||  
+          null,  
+        referred_doctor_address:  
+          doctorAddress.trim() ||  
           null,  
         is_active: true,  
       }  
@@ -4323,6 +9048,32 @@ function CustomerModal({
                 e.target.value,  
               )  
             }  
+          />  
+        </label>  
+  
+        <label>  
+          Doctor / Referring Doctor  
+          <input  
+            value={doctorName}  
+            onChange={(e) =>  
+              setDoctorName(  
+                e.target.value,  
+              )  
+            }  
+            placeholder="Doctor name"  
+          />  
+        </label>  
+  
+        <label>  
+          Doctor's Address  
+          <textarea  
+            value={doctorAddress}  
+            onChange={(e) =>  
+              setDoctorAddress(  
+                e.target.value,  
+              )  
+            }  
+            placeholder="Clinic / hospital address"  
           />  
         </label>  
   
