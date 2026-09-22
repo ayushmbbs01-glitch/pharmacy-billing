@@ -1,17 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react'  
-import { createClient } from '@supabase/supabase-js'
+import React, { useEffect, useMemo, useState } from 'react'
+import { supabase } from './supabaseClient'
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
-
-if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error(
-    'Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY environment variables.'
-  )
-}
-
-const supabase = createClient(supabaseUrl, supabaseAnonKey)  
-  
 /* =========================================================  
    CONSTANTS  
 ========================================================= */  
@@ -4922,83 +4911,194 @@ function PurchaseOrders({
   )  
 }  
   
-function AIRecommendations({  
-  store,  
-}) {  
-  const [rows, setRows] =  
-    useState([])  
-  
-  useEffect(() => {  
-    if (!store?.id) return  
-  
-    supabase  
-      .from(  
-        'ai_purchase_recommendations',  
-      )  
-      .select('*')  
-      .eq(  
-        'store_id',  
-        store.id,  
-      )  
-      .order(  
-        'created_at',  
-        {  
-          ascending: false,  
-        },  
-      )  
-      .limit(100)  
-      .then(({ data }) =>  
-        setRows(  
-          data || [],  
-        ),  
-      )  
-  }, [store?.id])  
-  
-  return (  
-    <PanelList title="AI Purchase Recommendations">  
-      {rows.length ===  
-      0 ? (  
-        <EmptyState text="No AI purchase recommendations have been generated yet." />  
-      ) : (  
-        <div className="record-list">  
-          {rows.map(  
-            (row) => (  
-              <div  
-                className="record-row static"  
-                key={row.id}  
-              >  
-                <div>  
-                  <strong>  
-                    {row.product_name ||  
-                      row.product_id ||  
-                      'Product'}  
-                  </strong>  
-  
-                  <span>  
-                    Suggested quantity:{' '}  
-                    {row.recommended_quantity ??  
-                      row.suggested_quantity ??  
-                      '—'}  
-                  </span>  
-                </div>  
-  
-                <span>  
-                  {row.status ||  
-                    'pending'}  
-                </span>  
-              </div>  
-            ),  
-          )}  
-        </div>  
-      )}  
-    </PanelList>  
-  )  
-}  
-  
-/* =========================================================  
-   INVENTORY  
-========================================================= */  
-  
+function AIRecommendations({
+  store,
+}) {
+  const [rows, setRows] = useState([])
+  const [previewRows, setPreviewRows] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [lastGeneratedAt, setLastGeneratedAt] = useState(null)
+
+  const loadSavedRecommendations = async () => {
+    if (!store?.id) return
+
+    const { data, error: loadError } = await supabase
+      .from('ai_purchase_recommendations')
+      .select('*')
+      .eq('store_id', store.id)
+      .order('created_at', { ascending: false })
+      .limit(100)
+
+    if (loadError) {
+      console.error('AI recommendation history error:', loadError)
+      return
+    }
+
+    setRows(data || [])
+  }
+
+  useEffect(() => {
+    loadSavedRecommendations()
+  }, [store?.id])
+
+  const generateRecommendations = async () => {
+    if (!store?.id || loading) return
+
+    setLoading(true)
+    setError('')
+    setPreviewRows([])
+
+    try {
+      const { data, error: functionError } =
+        await supabase.functions.invoke('ai-purchase-recommendation', {
+          body: { store_id: store.id },
+        })
+
+      if (functionError) {
+        throw new Error(
+          functionError.message ||
+            'The AI recommendation function could not be reached.',
+        )
+      }
+
+      if (!data) {
+        throw new Error('The AI recommendation function returned no data.')
+      }
+
+      if (data.error) {
+        throw new Error(String(data.error))
+      }
+
+      const recommendations = Array.isArray(data.recommendations)
+        ? data.recommendations
+        : []
+
+      setPreviewRows(recommendations)
+      setLastGeneratedAt(new Date())
+      await loadSavedRecommendations()
+    } catch (err) {
+      console.error('AI recommendation request failed:', err)
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Unable to generate AI purchase recommendations.',
+      )
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const displayedSavedRows = rows.slice(0, 100)
+
+  return (
+    <PanelList title="AI Purchase Recommendations">
+      <div
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: 12,
+          alignItems: 'center',
+          marginBottom: 16,
+        }}
+      >
+        <button
+          type="button"
+          className="primary-button"
+          onClick={generateRecommendations}
+          disabled={loading || !store?.id}
+        >
+          {loading
+            ? 'Generating recommendations…'
+            : 'Generate AI Recommendations'}
+        </button>
+
+        {lastGeneratedAt && (
+          <span style={{ fontSize: 13, opacity: 0.75 }}>
+            Generated {lastGeneratedAt.toLocaleTimeString('en-IN', {
+              hour: '2-digit',
+              minute: '2-digit',
+            })}
+          </span>
+        )}
+      </div>
+
+      <p className="muted" style={{ marginBottom: 16 }}>
+        AI analyses your store data and returns a purchase recommendation preview.
+        Nothing is ordered or added to stock automatically.
+      </p>
+
+      {error && <div className="error-box">{error}</div>}
+
+      {previewRows.length > 0 && (
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontWeight: 700, marginBottom: 10 }}>
+            Latest AI Preview
+          </div>
+
+          <div className="record-list">
+            {previewRows.map((row, index) => (
+              <div
+                className="record-row static"
+                key={row.product_id || row.store_product_id || index}
+              >
+                <div>
+                  <strong>
+                    {row.product_name || row.product_id || 'Product'}
+                  </strong>
+                  <span>
+                    Suggested quantity:{' '}
+                    {row.recommended_quantity ??
+                      row.suggested_quantity ??
+                      '—'}
+                  </span>
+                  {row.reason && <span>{row.reason}</span>}
+                  {row.urgency && <span>Urgency: {row.urgency}</span>}
+                </div>
+
+                <span>
+                  {row.confidence != null
+                    ? `Confidence: ${Math.round(Number(row.confidence) * 100)}%`
+                    : 'AI suggestion'}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {displayedSavedRows.length === 0 && previewRows.length === 0 ? (
+        <EmptyState text="No saved AI purchase recommendations yet. Generate a preview above." />
+      ) : displayedSavedRows.length > 0 ? (
+        <div>
+          <div style={{ fontWeight: 700, marginBottom: 10 }}>
+            Saved Recommendations
+          </div>
+
+          <div className="record-list">
+            {displayedSavedRows.map((row) => (
+              <div className="record-row static" key={row.id}>
+                <div>
+                  <strong>
+                    {row.product_name || row.product_id || 'Product'}
+                  </strong>
+                  <span>
+                    Suggested quantity:{' '}
+                    {row.recommended_quantity ??
+                      row.suggested_quantity ??
+                      '—'}
+                  </span>
+                </div>
+                <span>{row.status || 'pending'}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </PanelList>
+  )
+}
+
 function InventoryModule({  
   store,  
 }) {  
