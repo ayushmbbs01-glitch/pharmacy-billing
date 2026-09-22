@@ -8491,402 +8491,844 @@ function AlertsModule({
    SETTINGS  
 ========================================================= */  
   
-function SettingsModule({  
-  store,  
-  profile,  
-  onStoreUpdated,  
-}) {  
-  const [storeName, setStoreName] =  
-    useState(store?.name || '')  
-  const [address, setAddress] =  
-    useState(store?.address || '')  
-  const [phone, setPhone] =  
-    useState(store?.phone || '')  
-  const [email, setEmail] =  
-    useState(store?.email || '')  
-  const [gstin, setGstin] =  
-    useState(store?.gstin || '')  
-  const [drugLicense, setDrugLicense] =  
-    useState(  
-      store?.drug_license_number ||  
-        '',  
-    )  
-  
-  const [currency, setCurrency] =  
-    useState('INR')  
-  const [expiryDays, setExpiryDays] =  
-    useState(90)  
-  const [deadStockDays, setDeadStockDays] =  
-    useState(60)  
-  const [allowPastDated, setAllowPastDated] =  
-    useState(true)  
-  const [allowWalkIn, setAllowWalkIn] =  
-    useState(true)  
-  const [  
-    salespersonRequired,  
-    setSalespersonRequired,  
-  ] = useState(false)  
-  
-  const [message, setMessage] =  
-    useState('')  
-  
-  useEffect(() => {  
-    setStoreName(  
-      store?.name || '',  
-    )  
-    setAddress(  
-      store?.address || '',  
-    )  
-    setPhone(  
-      store?.phone || '',  
-    )  
-    setEmail(  
-      store?.email || '',  
-    )  
-    setGstin(  
-      store?.gstin || '',  
-    )  
-    setDrugLicense(  
-      store?.drug_license_number ||  
-        '',  
-    )  
-  }, [store])  
-  
-  useEffect(() => {  
-    if (!store?.id) return  
-  
-    pharmdeskDb  
-      .from(  
-        'store_settings',  
-      )  
-      .select('*')  
-      .eq(  
-        'store_id',  
-        store.id,  
-      )  
-      .maybeSingle()  
-      .then(({ data }) => {  
-        if (!data) return  
-  
-        setCurrency(  
-          data.currency ||  
-            'INR',  
-        )  
-  
-        setExpiryDays(  
-          data.expiry_alert_days ??  
-            90,  
-        )  
-  
-        setDeadStockDays(  
-          data.dead_stock_days ??  
-            60,  
-        )  
-  
-        setAllowPastDated(  
-          data.allow_past_dated_bills ??  
-            true,  
-        )  
-  
-        setAllowWalkIn(  
-          data.allow_walk_in_customers ??  
-            true,  
-        )  
-  
-        setSalespersonRequired(  
-          data.salesperson_required ??  
-            false,  
-        )  
-      })  
-  }, [store?.id])  
-  
-  const save = async () => {  
-    setMessage('')  
-  
-    const { data, error } =  
-      await pharmdeskDb  
-        .from('stores')  
-        .update({  
-          name:  
-            storeName.trim(),  
-          address:  
-            address.trim() ||  
-            null,  
-          phone:  
-            phone.trim() ||  
-            null,  
-          email:  
-            email.trim() ||  
-            null,  
-          gstin:  
-            gstin.trim() ||  
-            null,  
-          drug_license_number:  
-            drugLicense.trim() ||  
-            null,  
-          updated_at:  
-            new Date().toISOString(),  
-        })  
-        .eq(  
-          'id',  
-          store.id,  
-        )  
-        .select()  
-        .maybeSingle()  
-  
-    if (error) {  
-      setMessage(  
-        error.message,  
-      )  
-      return  
-    }  
-  
-    const {  
-      error: settingsError,  
-    } = await pharmdeskDb  
-      .from(  
-        'store_settings',  
-      )  
-      .upsert({  
-        store_id:  
-          store.id,  
-        currency,  
-        expiry_alert_days:  
-          safeNumber(  
-            expiryDays,  
-          ),  
-        dead_stock_days:  
-          safeNumber(  
-            deadStockDays,  
-          ),  
-        allow_past_dated_bills:  
-          allowPastDated,  
-        allow_walk_in_customers:  
-          allowWalkIn,  
-        salesperson_required:  
-          salespersonRequired,  
-        updated_at:  
-          new Date().toISOString(),  
-      })  
-  
-    if (settingsError) {  
-      setMessage(  
-        settingsError.message,  
-      )  
-      return  
-    }  
-  
-    if (data) {  
-      onStoreUpdated?.(  
-        data,  
-      )  
-    }  
-  
-    setMessage(  
-      'Store and settings saved successfully.',  
-    )  
-  }  
-  
-  return (  
-    <div>  
-      <ModuleHeader  
-        title="Settings"  
-        subtitle={  
-          store?.name ||  
-          'Store settings'  
-        }  
-      />  
-  
-      <PanelList title="Store / Company Details">  
-        <div className="form-grid">  
-          <label>  
-            Store / company name  
-            <input  
-              value={  
-                storeName  
-              }  
-              onChange={(e) =>  
-                setStoreName(  
-                  e.target.value,  
-                )  
-              }  
-            />  
-          </label>  
-  
-          <label>  
-            Phone  
-            <input  
-              value={phone}  
-              onChange={(e) =>  
-                setPhone(  
-                  e.target.value,  
-                )  
-              }  
-            />  
-          </label>  
-  
-          <label>  
-            Email  
-            <input  
-              type="email"  
-              value={email}  
-              onChange={(e) =>  
-                setEmail(  
-                  e.target.value,  
-                )  
-              }  
-            />  
-          </label>  
-  
-          <label>  
-            GSTIN  
-            <input  
-              value={gstin}  
-              onChange={(e) =>  
-                setGstin(  
-                  e.target.value,  
-                )  
-              }  
-            />  
-          </label>  
-  
-          <label>  
-            Drug licence number  
-            <input  
-              value={  
-                drugLicense  
-              }  
-              onChange={(e) =>  
-                setDrugLicense(  
-                  e.target.value,  
-                )  
-              }  
-            />  
-          </label>  
-  
-          <label>  
-            Currency  
-            <input  
-              value={  
-                currency  
-              }  
-              onChange={(e) =>  
-                setCurrency(  
-                  e.target.value,  
-                )  
-              }  
-            />  
-          </label>  
-        </div>  
-  
-        <label>  
-          Address  
-          <textarea  
-            value={address}  
-            onChange={(e) =>  
-              setAddress(  
-                e.target.value,  
-              )  
-            }  
-          />  
-        </label>  
-      </PanelList>  
-  
-      <PanelList title="Inventory & Billing Settings">  
-        <div className="form-grid">  
-          <label>  
-            Expiry alert days  
-            <input  
-              type="number"  
-              min="1"  
-              value={  
-                expiryDays  
-              }  
-              onChange={(e) =>  
-                setExpiryDays(  
-                  e.target.value,  
-                )  
-              }  
-            />  
-          </label>  
-  
-          <label>  
-            Dead stock days  
-            <input  
-              type="number"  
-              min="1"  
-              value={  
-                deadStockDays  
-              }  
-              onChange={(e) =>  
-                setDeadStockDays(  
-                  e.target.value,  
-                )  
-              }  
-            />  
-          </label>  
-        </div>  
-  
-        <ToggleRow  
-          label="Allow walk-in customers"  
-          checked={  
-            allowWalkIn  
-          }  
-          onChange={  
-            setAllowWalkIn  
-          }  
-        />  
-  
-        <ToggleRow  
-          label="Allow past-dated bills"  
-          checked={  
-            allowPastDated  
-          }  
-          onChange={  
-            setAllowPastDated  
-          }  
-        />  
-  
-        <ToggleRow  
-          label="Require salesperson"  
-          checked={  
-            salespersonRequired  
-          }  
-          onChange={  
-            setSalespersonRequired  
-          }  
-        />  
-  
-        {message && (  
-          <div className="message-box">  
-            {message}  
-          </div>  
-        )}  
-  
-        <button  
-          className="primary-button"  
-          onClick={save}  
-        >  
-          Save Settings  
-        </button>  
-      </PanelList>  
-  
-      <PanelList title="Signed-in User">  
-        <div className="history-header">  
-          <strong>  
-            {profile?.full_name ||  
-              'User'}  
-          </strong>  
-  
-          <span>  
-            {profile?.phone ||  
-              ''}  
-          </span>  
-        </div>  
-      </PanelList>  
-    </div>  
-  )  
-}  
+function SettingsModule({
+  store,
+  profile,
+  onStoreUpdated,
+}) {
+  const [storeName, setStoreName] =
+    useState(store?.name || '')
+  const [address, setAddress] =
+    useState(store?.address || '')
+  const [phone, setPhone] =
+    useState(store?.phone || '')
+  const [email, setEmail] =
+    useState(store?.email || '')
+  const [gstin, setGstin] =
+    useState(store?.gstin || '')
+  const [drugLicense, setDrugLicense] =
+    useState(
+      store?.drug_license_number ||
+        '',
+    )
+
+  const [currency, setCurrency] =
+    useState('INR')
+  const [expiryDays, setExpiryDays] =
+    useState(90)
+  const [deadStockDays, setDeadStockDays] =
+    useState(60)
+  const [allowPastDated, setAllowPastDated] =
+    useState(true)
+  const [allowWalkIn, setAllowWalkIn] =
+    useState(true)
+  const [
+    salespersonRequired,
+    setSalespersonRequired,
+  ] = useState(false)
+
+  const [message, setMessage] =
+    useState('')
+
+  const [accessEmail, setAccessEmail] =
+    useState('')
+
+  const [
+    accessRequests,
+    setAccessRequests,
+  ] = useState([])
+
+  const [
+    accessLoading,
+    setAccessLoading,
+  ] = useState(false)
+
+  const [
+    accessMessage,
+    setAccessMessage,
+  ] = useState('')
+
+  useEffect(() => {
+    setStoreName(
+      store?.name || '',
+    )
+    setAddress(
+      store?.address || '',
+    )
+    setPhone(
+      store?.phone || '',
+    )
+    setEmail(
+      store?.email || '',
+    )
+    setGstin(
+      store?.gstin || '',
+    )
+    setDrugLicense(
+      store?.drug_license_number ||
+        '',
+    )
+  }, [store])
+
+  useEffect(() => {
+    if (!store?.id) return
+
+    pharmdeskDb
+      .from('store_settings')
+      .select('*')
+      .eq(
+        'store_id',
+        store.id,
+      )
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!data) return
+
+        setCurrency(
+          data.currency ||
+            'INR',
+        )
+
+        setExpiryDays(
+          data.expiry_alert_days ??
+            90,
+        )
+
+        setDeadStockDays(
+          data.dead_stock_days ??
+            60,
+        )
+
+        setAllowPastDated(
+          data.allow_past_dated_bills ??
+            true,
+        )
+
+        setAllowWalkIn(
+          data.allow_walk_in_customers ??
+            true,
+        )
+
+        setSalespersonRequired(
+          data.salesperson_required ??
+            false,
+        )
+      })
+  }, [store?.id])
+
+  useEffect(() => {
+    if (!store?.id) return
+
+    let mounted = true
+
+    const loadAccessRequests =
+      async () => {
+        setAccessLoading(true)
+        setAccessMessage('')
+
+        try {
+          const result =
+            await PharmDeskAPI.getStoreAccessRequests(
+              store.id,
+            )
+
+          if (!mounted) return
+
+          if (result?.error) {
+            setAccessMessage(
+              result.error.message ||
+                'Unable to load access requests.',
+            )
+            setAccessRequests([])
+            return
+          }
+
+          const rows =
+            result?.data ??
+            result ??
+            []
+
+          setAccessRequests(
+            Array.isArray(rows)
+              ? rows
+              : [],
+          )
+        } catch (error) {
+          if (!mounted) return
+
+          console.error(
+            'Failed to load store access requests:',
+            error,
+          )
+
+          setAccessMessage(
+            error?.message ||
+              'Unable to load access requests.',
+          )
+        } finally {
+          if (mounted) {
+            setAccessLoading(false)
+          }
+        }
+      }
+
+    loadAccessRequests()
+
+    return () => {
+      mounted = false
+    }
+  }, [store?.id])
+
+  const refreshAccessRequests =
+    async () => {
+      if (!store?.id) return
+
+      setAccessLoading(true)
+      setAccessMessage('')
+
+      try {
+        const result =
+          await PharmDeskAPI.getStoreAccessRequests(
+            store.id,
+          )
+
+        if (result?.error) {
+          setAccessMessage(
+            result.error.message ||
+              'Unable to load access requests.',
+          )
+          return
+        }
+
+        const rows =
+          result?.data ??
+          result ??
+          []
+
+        setAccessRequests(
+          Array.isArray(rows)
+            ? rows
+            : [],
+        )
+      } catch (error) {
+        console.error(
+          'Failed to refresh access requests:',
+          error,
+        )
+
+        setAccessMessage(
+          error?.message ||
+            'Unable to load access requests.',
+        )
+      } finally {
+        setAccessLoading(false)
+      }
+    }
+
+  const requestStaffAccess =
+    async () => {
+      setAccessMessage('')
+
+      const normalizedEmail =
+        accessEmail
+          .trim()
+          .toLowerCase()
+
+      if (!normalizedEmail) {
+        setAccessMessage(
+          'Enter the staff member email address.',
+        )
+        return
+      }
+
+      if (
+        !normalizedEmail.includes('@')
+      ) {
+        setAccessMessage(
+          'Enter a valid email address.',
+        )
+        return
+      }
+
+      if (!store?.id) {
+        setAccessMessage(
+          'No store is currently selected.',
+        )
+        return
+      }
+
+      setAccessLoading(true)
+
+      try {
+        const result =
+          await PharmDeskAPI.createStoreAccessRequest(
+            store.id,
+            normalizedEmail,
+            'salesperson',
+          )
+
+        if (result?.error) {
+          setAccessMessage(
+            result.error.message ||
+              'Unable to create access request.',
+          )
+          return
+        }
+
+        setAccessEmail('')
+
+        setAccessMessage(
+          'Access request created successfully.',
+        )
+
+        await refreshAccessRequests()
+      } catch (error) {
+        console.error(
+          'Failed to create store access request:',
+          error,
+        )
+
+        setAccessMessage(
+          error?.message ||
+            'Unable to create access request.',
+        )
+      } finally {
+        setAccessLoading(false)
+      }
+    }
+
+  const approveAccessRequest =
+    async (requestId) => {
+      setAccessMessage('')
+      setAccessLoading(true)
+
+      try {
+        const result =
+          await PharmDeskAPI.approveStoreAccessRequest(
+            requestId,
+          )
+
+        if (result?.error) {
+          setAccessMessage(
+            result.error.message ||
+              'Unable to approve access request.',
+          )
+          return
+        }
+
+        setAccessMessage(
+          'Access request approved.',
+        )
+
+        await refreshAccessRequests()
+      } catch (error) {
+        console.error(
+          'Failed to approve store access request:',
+          error,
+        )
+
+        setAccessMessage(
+          error?.message ||
+            'Unable to approve access request.',
+        )
+      } finally {
+        setAccessLoading(false)
+      }
+    }
+
+  const rejectAccessRequest =
+    async (requestId) => {
+      setAccessMessage('')
+      setAccessLoading(true)
+
+      try {
+        const result =
+          await PharmDeskAPI.rejectStoreAccessRequest(
+            requestId,
+          )
+
+        if (result?.error) {
+          setAccessMessage(
+            result.error.message ||
+              'Unable to reject access request.',
+          )
+          return
+        }
+
+        setAccessMessage(
+          'Access request rejected.',
+        )
+
+        await refreshAccessRequests()
+      } catch (error) {
+        console.error(
+          'Failed to reject store access request:',
+          error,
+        )
+
+        setAccessMessage(
+          error?.message ||
+            'Unable to reject access request.',
+        )
+      } finally {
+        setAccessLoading(false)
+      }
+    }
+
+  const save = async () => {
+    setMessage('')
+
+    const { data, error } =
+      await pharmdeskDb
+        .from('stores')
+        .update({
+          name:
+            storeName.trim(),
+          address:
+            address.trim() ||
+            null,
+          phone:
+            phone.trim() ||
+            null,
+          email:
+            email.trim() ||
+            null,
+          gstin:
+            gstin.trim() ||
+            null,
+          drug_license_number:
+            drugLicense.trim() ||
+            null,
+          updated_at:
+            new Date().toISOString(),
+        })
+        .eq(
+          'id',
+          store.id,
+        )
+        .select()
+        .maybeSingle()
+
+    if (error) {
+      setMessage(
+        error.message,
+      )
+      return
+    }
+
+    const {
+      error: settingsError,
+    } = await pharmdeskDb
+      .from(
+        'store_settings',
+      )
+      .upsert({
+        store_id:
+          store.id,
+        currency,
+        expiry_alert_days:
+          safeNumber(
+            expiryDays,
+          ),
+        dead_stock_days:
+          safeNumber(
+            deadStockDays,
+          ),
+        allow_past_dated_bills:
+          allowPastDated,
+        allow_walk_in_customers:
+          allowWalkIn,
+        salesperson_required:
+          salespersonRequired,
+        updated_at:
+          new Date().toISOString(),
+      })
+
+    if (settingsError) {
+      setMessage(
+        settingsError.message,
+      )
+      return
+    }
+
+    if (data) {
+      onStoreUpdated?.(
+        data,
+      )
+    }
+
+    setMessage(
+      'Store and settings saved successfully.',
+    )
+  }
+
+  return (
+    <div>
+      <ModuleHeader
+        title="Settings"
+        subtitle={
+          store?.name ||
+          'Store settings'
+        }
+      />
+
+      <PanelList title="Store / Company Details">
+        <div className="form-grid">
+          <label>
+            Store / company name
+            <input
+              value={
+                storeName
+              }
+              onChange={(e) =>
+                setStoreName(
+                  e.target.value,
+                )
+              }
+            />
+          </label>
+
+          <label>
+            Phone
+            <input
+              value={phone}
+              onChange={(e) =>
+                setPhone(
+                  e.target.value,
+                )
+              }
+            />
+          </label>
+
+          <label>
+            Email
+            <input
+              type="email"
+              value={email}
+              onChange={(e) =>
+                setEmail(
+                  e.target.value,
+                )
+              }
+            />
+          </label>
+
+          <label>
+            GSTIN
+            <input
+              value={gstin}
+              onChange={(e) =>
+                setGstin(
+                  e.target.value,
+                )
+              }
+            />
+          </label>
+
+          <label>
+            Drug licence number
+            <input
+              value={
+                drugLicense
+              }
+              onChange={(e) =>
+                setDrugLicense(
+                  e.target.value,
+                )
+              }
+            />
+          </label>
+
+          <label>
+            Currency
+            <input
+              value={
+                currency
+              }
+              onChange={(e) =>
+                setCurrency(
+                  e.target.value,
+                )
+              }
+            />
+          </label>
+        </div>
+
+        <label>
+          Address
+          <textarea
+            value={address}
+            onChange={(e) =>
+              setAddress(
+                e.target.value,
+              )
+            }
+          />
+        </label>
+      </PanelList>
+
+      <PanelList title="Inventory & Billing Settings">
+        <div className="form-grid">
+          <label>
+            Expiry alert days
+            <input
+              type="number"
+              min="1"
+              value={
+                expiryDays
+              }
+              onChange={(e) =>
+                setExpiryDays(
+                  e.target.value,
+                )
+              }
+            />
+          </label>
+
+          <label>
+            Dead stock days
+            <input
+              type="number"
+              min="1"
+              value={
+                deadStockDays
+              }
+              onChange={(e) =>
+                setDeadStockDays(
+                  e.target.value,
+                )
+              }
+            />
+          </label>
+        </div>
+
+        <ToggleRow
+          label="Allow walk-in customers"
+          checked={
+            allowWalkIn
+          }
+          onChange={
+            setAllowWalkIn
+          }
+        />
+
+        <ToggleRow
+          label="Allow past-dated bills"
+          checked={
+            allowPastDated
+          }
+          onChange={
+            setAllowPastDated
+          }
+        />
+
+        <ToggleRow
+          label="Require salesperson"
+          checked={
+            salespersonRequired
+          }
+          onChange={
+            setSalespersonRequired
+          }
+        />
+
+        {message && (
+          <div className="message-box">
+            {message}
+          </div>
+        )}
+
+        <button
+          className="primary-button"
+          onClick={save}
+        >
+          Save Settings
+        </button>
+      </PanelList>
+
+      <PanelList title="Staff Access Requests">
+        <div className="form-grid">
+          <label>
+            Staff email address
+            <input
+              type="email"
+              placeholder="staff@example.com"
+              value={accessEmail}
+              onChange={(e) =>
+                setAccessEmail(
+                  e.target.value,
+                )
+              }
+            />
+          </label>
+        </div>
+
+        <button
+          className="primary-button"
+          onClick={requestStaffAccess}
+          disabled={accessLoading}
+        >
+          {accessLoading
+            ? 'Processing...'
+            : 'Request Staff Access'}
+        </button>
+
+        {accessMessage && (
+          <div className="message-box">
+            {accessMessage}
+          </div>
+        )}
+
+        <div
+          style={{
+            marginTop: '16px',
+          }}
+        >
+          <div
+            className="history-header"
+            style={{
+              marginBottom: '10px',
+            }}
+          >
+            <strong>
+              Pending and Previous Requests
+            </strong>
+
+            <button
+              className="secondary-button"
+              onClick={
+                refreshAccessRequests
+              }
+              disabled={accessLoading}
+            >
+              Refresh
+            </button>
+          </div>
+
+          {accessLoading &&
+          accessRequests.length === 0 ? (
+            <div>
+              Loading access requests...
+            </div>
+          ) : accessRequests.length ===
+            0 ? (
+            <div>
+              No access requests found.
+            </div>
+          ) : (
+            <div>
+              {accessRequests.map(
+                (request) => (
+                  <div
+                    key={request.id}
+                    style={{
+                      padding:
+                        '12px 0',
+                      borderBottom:
+                        '1px solid #e5e7eb',
+                    }}
+                  >
+                    <div
+                      style={{
+                        display:
+                          'flex',
+                        justifyContent:
+                          'space-between',
+                        alignItems:
+                          'center',
+                        gap: '12px',
+                        flexWrap:
+                          'wrap',
+                      }}
+                    >
+                      <div>
+                        <strong>
+                          {request.email}
+                        </strong>
+
+                        <div
+                          style={{
+                            marginTop:
+                              '4px',
+                            fontSize:
+                              '13px',
+                            opacity:
+                              0.7,
+                          }}
+                        >
+                          Role:{' '}
+                          {request.role ||
+                            'salesperson'}
+                          {' · '}
+                          Status:{' '}
+                          {request.status}
+                        </div>
+                      </div>
+
+                      {request.status ===
+                        'pending' && (
+                        <div
+                          style={{
+                            display:
+                              'flex',
+                            gap:
+                              '8px',
+                          }}
+                        >
+                          <button
+                            className="primary-button"
+                            onClick={() =>
+                              approveAccessRequest(
+                                request.id,
+                              )
+                            }
+                            disabled={
+                              accessLoading
+                            }
+                          >
+                            Approve
+                          </button>
+
+                          <button
+                            className="secondary-button"
+                            onClick={() =>
+                              rejectAccessRequest(
+                                request.id,
+                              )
+                            }
+                            disabled={
+                              accessLoading
+                            }
+                          >
+                            Reject
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ),
+              )}
+            </div>
+          )}
+        </div>
+      </PanelList>
+
+      <PanelList title="Signed-in User">
+        <div className="history-header">
+          <strong>
+            {profile?.full_name ||
+              'User'}
+          </strong>
+
+          <span>
+            {profile?.phone ||
+              ''}
+          </span>
+        </div>
+      </PanelList>
+    </div>
+  )
+}
   
 /* =========================================================  
    CUSTOMER MODAL  
