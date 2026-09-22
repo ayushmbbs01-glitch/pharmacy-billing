@@ -1786,3 +1786,156 @@ label {
     display: none !important;
   }
 }
+
+/* =========================================================
+   PHARMDESK MOBILE / IPAD MODAL FIX
+========================================================= */
+
+.modal-backdrop {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+.modal {
+  max-width: 760px;
+}
+
+.modal-body {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+/* Prevent iOS Safari from zooming inputs */
+input,
+select,
+textarea,
+button {
+  font-size: 16px;
+}
+
+/* Better touch targets on iPad/iPhone */
+button,
+select {
+  min-height: 42px;
+}
+
+input,
+textarea,
+select {
+  min-height: 42px;
+}
+
+/* Packaging section */
+.packaging-section {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.packaging-card {
+  margin-top: 14px;
+  padding: 16px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #fafafa;
+}
+
+.packaging-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.toggle-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.ingredient-row {
+  display: grid;
+  grid-template-columns: 1fr 120px 100px auto;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.alternative-box {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 10px;
+  background: #f5f8ff;
+  border: 1px solid #dbe5ff;
+}
+
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.chip {
+  border: 1px solid #d0d7de;
+  background: white;
+  border-radius: 999px;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+.history-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 0 20px;
+}
+
+.record-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.record-row.static {
+  cursor: default;
+}
+
+@media (max-width: 700px) {
+  .two-column {
+    grid-template-columns: 1fr;
+  }
+
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .item-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ingredient-row {
+    grid-template-columns: 1fr;
+  }
+
+  .toggle-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .record-right {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .modal-backdrop {
+    padding: 8px;
+    align-items: flex-start;
+  }
+
+  .modal {
+    width: 100%;
+    margin: 0;
+  }
+}
