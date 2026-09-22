@@ -3597,6 +3597,8 @@ function CustomerModal({ store, onClose, onCreated }) {
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
   const [address, setAddress] = useState('')
+  const [doctorName, setDoctorName] = useState('')
+  const [doctorAddress, setDoctorAddress] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
@@ -3619,6 +3621,10 @@ function CustomerModal({ store, onClose, onCreated }) {
         name: name.trim(),
         phone: phone.trim(),
         address: address.trim() || null,
+        referred_doctor_name:
+          doctorName.trim() || null,
+        referred_doctor_address:
+          doctorAddress.trim() || null,
         is_active: true,
       })
       .select('*')
@@ -3644,6 +3650,7 @@ function CustomerModal({ store, onClose, onCreated }) {
             onChange={(e) => setName(e.target.value)}
             autoFocus
             required
+            placeholder="Enter customer name"
           />
         </label>
 
@@ -3653,6 +3660,8 @@ function CustomerModal({ store, onClose, onCreated }) {
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
             required
+            placeholder="Enter phone number"
+            inputMode="tel"
           />
         </label>
 
@@ -3662,8 +3671,33 @@ function CustomerModal({ store, onClose, onCreated }) {
             value={address}
             onChange={(e) => setAddress(e.target.value)}
             rows="3"
+            placeholder="Customer address"
           />
         </label>
+
+        <div className="form-grid two">
+          <label>
+            Referred doctor name
+            <input
+              value={doctorName}
+              onChange={(e) =>
+                setDoctorName(e.target.value)
+              }
+              placeholder="Doctor name"
+            />
+          </label>
+
+          <label>
+            Referred doctor address
+            <input
+              value={doctorAddress}
+              onChange={(e) =>
+                setDoctorAddress(e.target.value)
+              }
+              placeholder="Clinic / hospital address"
+            />
+          </label>
+        </div>
 
         {error && <div className="error-box">{error}</div>}
 
@@ -3679,10 +3713,11 @@ function CustomerModal({ store, onClose, onCreated }) {
 
 function SupplierModal({ store, onClose, onCreated }) {
   const [supplierName, setSupplierName] = useState('')
-  const [contactPerson, setContactPerson] = useState('')
   const [phone, setPhone] = useState('')
   const [email, setEmail] = useState('')
   const [gstin, setGstin] = useState('')
+  const [drugLicenseNumber, setDrugLicenseNumber] =
+    useState('')
   const [address, setAddress] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -3692,7 +3727,7 @@ function SupplierModal({ store, onClose, onCreated }) {
     setError('')
 
     if (!supplierName.trim()) {
-      setError('Supplier name is required.')
+      setError('Purchase party name is required.')
       return
     }
 
@@ -3703,10 +3738,11 @@ function SupplierModal({ store, onClose, onCreated }) {
       .insert({
         store_id: store.id,
         supplier_name: supplierName.trim(),
-        contact_person: contactPerson.trim() || null,
         phone: phone.trim() || null,
         email: email.trim() || null,
         gstin: gstin.trim() || null,
+        drug_license_number:
+          drugLicenseNumber.trim() || null,
         address: address.trim() || null,
         is_active: true,
       })
@@ -3735,25 +3771,18 @@ function SupplierModal({ store, onClose, onCreated }) {
             }
             autoFocus
             required
+            placeholder="e.g. ABC Pharma Distributors"
           />
         </label>
 
         <div className="form-grid two">
           <label>
-            Contact person
-            <input
-              value={contactPerson}
-              onChange={(e) =>
-                setContactPerson(e.target.value)
-              }
-            />
-          </label>
-
-          <label>
             Phone
             <input
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
+              placeholder="Phone number"
+              inputMode="tel"
             />
           </label>
 
@@ -3763,6 +3792,7 @@ function SupplierModal({ store, onClose, onCreated }) {
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              placeholder="Email address"
             />
           </label>
 
@@ -3771,6 +3801,18 @@ function SupplierModal({ store, onClose, onCreated }) {
             <input
               value={gstin}
               onChange={(e) => setGstin(e.target.value)}
+              placeholder="GSTIN"
+            />
+          </label>
+
+          <label>
+            Drug licence number
+            <input
+              value={drugLicenseNumber}
+              onChange={(e) =>
+                setDrugLicenseNumber(e.target.value)
+              }
+              placeholder="Drug licence number"
             />
           </label>
         </div>
@@ -3781,6 +3823,7 @@ function SupplierModal({ store, onClose, onCreated }) {
             value={address}
             onChange={(e) => setAddress(e.target.value)}
             rows="3"
+            placeholder="Supplier address"
           />
         </label>
 
@@ -3796,7 +3839,14 @@ function SupplierModal({ store, onClose, onCreated }) {
   )
 }
 
-const STRENGTH_UNITS = ['mg', 'ml', 'mcg', 'g', 'IU', '%']
+const STRENGTH_UNITS = [
+  'mg',
+  'ml',
+  'mcg',
+  'g',
+  'IU',
+  '%',
+]
 
 function emptyIngredientRow() {
   return {
@@ -3808,16 +3858,23 @@ function emptyIngredientRow() {
 
 function CompositionModal({ onClose, onCreated }) {
   const [dosageForm, setDosageForm] = useState('')
+  const [source, setSource] = useState('Manual')
+  const [sourceReference, setSourceReference] =
+    useState('')
+
   const [ingredients, setIngredients] = useState([
     emptyIngredientRow(),
   ])
+
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
   function updateIngredient(index, patch) {
     setIngredients((current) =>
       current.map((row, i) =>
-        i === index ? { ...row, ...patch } : row,
+        i === index
+          ? { ...row, ...patch }
+          : row,
       ),
     )
   }
@@ -3831,6 +3888,7 @@ function CompositionModal({ onClose, onCreated }) {
 
   function removeIngredientRow(index) {
     if (ingredients.length === 1) return
+
     setIngredients((current) =>
       current.filter((_, i) => i !== index),
     )
@@ -3854,33 +3912,65 @@ function CompositionModal({ onClose, onCreated }) {
     event.preventDefault()
     setError('')
 
-    const validIngredients = ingredients.filter((row) =>
-      row.ingredient_name.trim(),
-    )
+    const validIngredients = ingredients
+      .filter((row) => row.ingredient_name.trim())
+      .map((row, index) => ({
+        ingredient_name:
+          row.ingredient_name.trim(),
+        strength_value:
+          row.strength_value === ''
+            ? null
+            : Number(row.strength_value),
+        strength_unit:
+          row.strength_unit || null,
+        sequence_number: index + 1,
+      }))
 
     if (validIngredients.length === 0) {
       setError('Add at least one ingredient.')
       return
     }
 
-    if (!generatedName.trim()) {
-      setError('Enter ingredient names to build the composition.')
-      return
+    for (const ingredient of validIngredients) {
+      if (
+        ingredient.strength_value !== null &&
+        (!Number.isFinite(
+          ingredient.strength_value,
+        ) ||
+          ingredient.strength_value <= 0)
+      ) {
+        setError(
+          'Strength must be a positive number when entered.',
+        )
+        return
+      }
+
+      if (
+        ingredient.strength_value !== null &&
+        !ingredient.strength_unit
+      ) {
+        setError(
+          'Select a strength unit for every strength.',
+        )
+        return
+      }
     }
 
     setBusy(true)
 
-    const { data: composition, error: compositionError } =
-      await supabase
-        .from('compositions')
-        .insert({
-          name: generatedName.trim(),
-          dosage_form: dosageForm.trim() || null,
-          is_verified: false,
-          is_active: true,
-        })
-        .select('*')
-        .single()
+    const { data: compositionId, error: compositionError } =
+      await supabase.rpc(
+        'pharmdesk_save_composition',
+        {
+          p_composition_id: null,
+          p_dosage_form:
+            dosageForm.trim() || null,
+          p_source: source.trim() || 'Manual',
+          p_source_reference:
+            sourceReference.trim() || null,
+          p_ingredients: validIngredients,
+        },
+      )
 
     if (compositionError) {
       setError(compositionError.message)
@@ -3888,58 +3978,79 @@ function CompositionModal({ onClose, onCreated }) {
       return
     }
 
-    const ingredientRows = validIngredients.map((row, index) => ({
-      composition_id: composition.id,
-      ingredient_name: row.ingredient_name.trim(),
-      strength_value: row.strength_value
-        ? Number(row.strength_value)
-        : null,
-      strength_unit: row.strength_unit || null,
-      sequence_number: index + 1,
-    }))
-
-    const { data: savedIngredients, error: ingredientsError } =
+    const { data: composition, error: fetchError } =
       await supabase
-        .from('composition_ingredients')
-        .insert(ingredientRows)
-        .select('*')
+        .from('compositions')
+        .select(`
+          id,
+          name,
+          dosage_form,
+          source,
+          source_reference,
+          is_verified,
+          is_active,
+          composition_ingredients(
+            ingredient_name,
+            strength_value,
+            strength_unit,
+            sequence_number
+          )
+        `)
+        .eq('id', compositionId)
+        .single()
 
-    if (ingredientsError) {
-      setError(ingredientsError.message)
+    if (fetchError) {
+      setError(fetchError.message)
       setBusy(false)
       return
     }
 
-    onCreated({
+    const normalizedComposition = {
       ...composition,
-      composition_ingredients: savedIngredients || ingredientRows,
-    })
+      composition_ingredients: (
+        composition.composition_ingredients || []
+      ).sort(
+        (a, b) =>
+          Number(a.sequence_number || 0) -
+          Number(b.sequence_number || 0),
+      ),
+    }
 
+    onCreated(normalizedComposition)
     setBusy(false)
   }
 
   return (
-    <Modal title="Add new composition" onClose={onClose}>
+    <Modal
+      title="Add new composition"
+      onClose={onClose}
+    >
       <form className="form-stack" onSubmit={save}>
         <label>
           Dosage form
           <input
             value={dosageForm}
-            onChange={(e) => setDosageForm(e.target.value)}
+            onChange={(e) =>
+              setDosageForm(e.target.value)
+            }
             placeholder="Tablet / Syrup / Cream"
           />
         </label>
 
         <div className="form-stack">
           {ingredients.map((row, index) => (
-            <div className="form-grid three" key={index}>
+            <div
+              className="form-grid three"
+              key={index}
+            >
               <label>
                 Ingredient *
                 <input
                   value={row.ingredient_name}
                   onChange={(e) =>
                     updateIngredient(index, {
-                      ingredient_name: e.target.value,
+                      ingredient_name:
+                        e.target.value,
                     })
                   }
                   autoFocus={index === 0}
@@ -3957,7 +4068,8 @@ function CompositionModal({ onClose, onCreated }) {
                   value={row.strength_value}
                   onChange={(e) =>
                     updateIngredient(index, {
-                      strength_value: e.target.value,
+                      strength_value:
+                        e.target.value,
                     })
                   }
                   placeholder="e.g. 650"
@@ -3971,22 +4083,32 @@ function CompositionModal({ onClose, onCreated }) {
                     value={row.strength_unit}
                     onChange={(e) =>
                       updateIngredient(index, {
-                        strength_unit: e.target.value,
+                        strength_unit:
+                          e.target.value,
                       })
                     }
                   >
-                    {STRENGTH_UNITS.map((unit) => (
-                      <option key={unit} value={unit}>
-                        {unit}
-                      </option>
-                    ))}
+                    {STRENGTH_UNITS.map(
+                      (unit) => (
+                        <option
+                          key={unit}
+                          value={unit}
+                        >
+                          {unit}
+                        </option>
+                      ),
+                    )}
                   </select>
 
                   {ingredients.length > 1 && (
                     <button
                       type="button"
                       className="icon-btn"
-                      onClick={() => removeIngredientRow(index)}
+                      onClick={() =>
+                        removeIngredientRow(
+                          index,
+                        )
+                      }
                     >
                       ×
                     </button>
@@ -4005,16 +4127,51 @@ function CompositionModal({ onClose, onCreated }) {
           + Add another ingredient
         </button>
 
+        <div className="form-grid two">
+          <label>
+            Source
+            <input
+              value={source}
+              onChange={(e) =>
+                setSource(e.target.value)
+              }
+              placeholder="Manual / verified source"
+            />
+          </label>
+
+          <label>
+            Source reference
+            <input
+              value={sourceReference}
+              onChange={(e) =>
+                setSourceReference(
+                  e.target.value,
+                )
+              }
+              placeholder="Optional reference"
+            />
+          </label>
+        </div>
+
         {generatedName && (
           <div className="selected-chip">
             <div>
-              <strong>{generatedName}</strong>
-              <span>This name will be saved for the composition.</span>
+              <strong>
+                {generatedName}
+              </strong>
+              <span>
+                This canonical name will be
+                generated by the database.
+              </span>
             </div>
           </div>
         )}
 
-        {error && <div className="error-box">{error}</div>}
+        {error && (
+          <div className="error-box">
+            {error}
+          </div>
+        )}
 
         <ModalActions
           onClose={onClose}
@@ -4026,35 +4183,60 @@ function CompositionModal({ onClose, onCreated }) {
   )
 }
 
-function ProductModal({ store, onClose, onCreated }) {
+function ProductModal({
+  store,
+  onClose,
+  onCreated,
+}) {
   const [categories, setCategories] = useState([])
-  const [compositions, setCompositions] = useState([])
+  const [compositions, setCompositions] =
+    useState([])
 
   const [name, setName] = useState('')
-  const [manufacturer, setManufacturer] = useState('')
-  const [dosageForm, setDosageForm] = useState('')
-  const [compositionId, setCompositionId] = useState('')
-  const [compositionSearch, setCompositionSearch] = useState('')
-  const [showCompositionSuggestions, setShowCompositionSuggestions] =
-    useState(false)
+  const [manufacturer, setManufacturer] =
+    useState('')
+  const [dosageForm, setDosageForm] =
+    useState('')
 
-  const [categoryId, setCategoryId] = useState('')
+  const [compositionId, setCompositionId] =
+    useState('')
+  const [compositionSearch, setCompositionSearch] =
+    useState('')
+  const [
+    showCompositionSuggestions,
+    setShowCompositionSuggestions,
+  ] = useState(false)
+
+  const [categoryId, setCategoryId] =
+    useState('')
   const [hsn, setHsn] = useState('')
   const [gst, setGst] = useState(0)
-  const [sellingPrice, setSellingPrice] = useState('')
-  const [discount, setDiscount] = useState(0)
-  const [minimumStock, setMinimumStock] = useState(0)
-  const [reorderLevel, setReorderLevel] = useState(0)
+  const [sellingPrice, setSellingPrice] =
+    useState('')
+  const [discount, setDiscount] =
+    useState(0)
+  const [minimumStock, setMinimumStock] =
+    useState(0)
+  const [reorderLevel, setReorderLevel] =
+    useState(0)
 
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [showCompositionForm, setShowCompositionForm] =
-    useState(false)
+  const [
+    showCompositionForm,
+    setShowCompositionForm,
+  ] = useState(false)
 
   async function loadMasterData() {
     const [
-      { data: categoryData, error: categoryError },
-      { data: compositionData, error: compositionError },
+      {
+        data: categoryData,
+        error: categoryError,
+      },
+      {
+        data: compositionData,
+        error: compositionError,
+      },
     ] = await Promise.all([
       supabase
         .from('product_categories')
@@ -4068,6 +4250,8 @@ function ProductModal({ store, onClose, onCreated }) {
           id,
           name,
           dosage_form,
+          source,
+          source_reference,
           is_verified,
           composition_ingredients(
             ingredient_name,
@@ -4093,16 +4277,23 @@ function ProductModal({ store, onClose, onCreated }) {
     setCategories(categoryData || [])
 
     setCompositions(
-      (compositionData || []).map((composition) => ({
-        ...composition,
-        composition_ingredients: (
-          composition.composition_ingredients || []
-        ).sort(
-          (a, b) =>
-            Number(a.sequence_number || 0) -
-            Number(b.sequence_number || 0),
-        ),
-      })),
+      (compositionData || []).map(
+        (composition) => ({
+          ...composition,
+          composition_ingredients: (
+            composition.composition_ingredients ||
+            []
+          ).sort(
+            (a, b) =>
+              Number(
+                a.sequence_number || 0,
+              ) -
+              Number(
+                b.sequence_number || 0,
+              ),
+          ),
+        }),
+      ),
     )
   }
 
@@ -4110,9 +4301,11 @@ function ProductModal({ store, onClose, onCreated }) {
     loadMasterData()
   }, [])
 
-  const selectedComposition = compositions.find(
-    (composition) => composition.id === compositionId,
-  )
+  const selectedComposition =
+    compositions.find(
+      (composition) =>
+        composition.id === compositionId,
+    )
 
   const filteredCompositions = useMemo(() => {
     const query = compositionSearch
@@ -4123,10 +4316,15 @@ function ProductModal({ store, onClose, onCreated }) {
       return compositions.slice(0, 10)
     }
 
+    const queryTokens = query
+      .split(/\s+/)
+      .filter(Boolean)
+
     return compositions
       .filter((composition) => {
         const ingredientText = (
-          composition.composition_ingredients || []
+          composition.composition_ingredients ||
+          []
         )
           .map((ingredient) =>
             [
@@ -4148,18 +4346,26 @@ function ProductModal({ store, onClose, onCreated }) {
           .join(' ')
           .toLowerCase()
 
-        return searchableText.includes(query)
+        return queryTokens.every((token) =>
+          searchableText.includes(token),
+        )
       })
       .slice(0, 10)
   }, [compositions, compositionSearch])
 
-  function chooseComposition(composition) {
+  function chooseComposition(
+    composition,
+  ) {
     setCompositionId(composition.id)
-    setCompositionSearch(composition.name)
+    setCompositionSearch(
+      composition.name,
+    )
     setShowCompositionSuggestions(false)
 
     if (composition.dosage_form) {
-      setDosageForm(composition.dosage_form)
+      setDosageForm(
+        composition.dosage_form,
+      )
     }
   }
 
@@ -4178,23 +4384,67 @@ function ProductModal({ store, onClose, onCreated }) {
       return
     }
 
-    if (Number(gst || 0) < 0 || Number(gst || 0) > 100) {
-      setError('GST must be between 0 and 100%.')
+    if (
+      Number(gst || 0) < 0 ||
+      Number(gst || 0) > 100
+    ) {
+      setError(
+        'GST must be between 0 and 100%.',
+      )
+      return
+    }
+
+    if (
+      Number(discount || 0) < 0 ||
+      Number(discount || 0) > 100
+    ) {
+      setError(
+        'Default discount must be between 0 and 100%.',
+      )
+      return
+    }
+
+    if (
+      Number(sellingPrice || 0) < 0 ||
+      Number(minimumStock || 0) < 0 ||
+      Number(reorderLevel || 0) < 0
+    ) {
+      setError(
+        'Price and stock values cannot be negative.',
+      )
+      return
+    }
+
+    if (
+      !compositionId &&
+      compositionSearch.trim()
+    ) {
+      setError(
+        'Select an existing composition or use “+ Add New”.',
+      )
       return
     }
 
     setBusy(true)
 
-    const { data: productId, error: productError } =
-      await supabase.rpc('pharmdesk_save_product', {
+    const {
+      data: productId,
+      error: productError,
+    } = await supabase.rpc(
+      'pharmdesk_save_product',
+      {
         p_store_id: store.id,
         p_product_id: null,
         p_product_name: name.trim(),
         p_generic_display_name:
-          selectedComposition?.name || null,
-        p_category_id: categoryId || null,
-        p_composition_id: compositionId || null,
-        p_manufacturer: manufacturer.trim() || null,
+          selectedComposition?.name ||
+          null,
+        p_category_id:
+          categoryId || null,
+        p_composition_id:
+          compositionId || null,
+        p_manufacturer:
+          manufacturer.trim() || null,
         p_dosage_form:
           selectedComposition?.dosage_form ||
           dosageForm.trim() ||
@@ -4202,8 +4452,10 @@ function ProductModal({ store, onClose, onCreated }) {
         p_strength_display: null,
         p_pack_quantity: 1,
         p_pack_unit: null,
-        p_hsn_code: hsn.trim() || null,
-        p_gst_rate: Number(gst || 0),
+        p_hsn_code:
+          hsn.trim() || null,
+        p_gst_rate:
+          Number(gst || 0),
         p_default_selling_price:
           Number(sellingPrice || 0),
         p_default_discount_percent:
@@ -4213,7 +4465,8 @@ function ProductModal({ store, onClose, onCreated }) {
         p_reorder_level:
           Number(reorderLevel || 0),
         p_is_active: true,
-      })
+      },
+    )
 
     if (productError) {
       setError(productError.message)
@@ -4221,12 +4474,24 @@ function ProductModal({ store, onClose, onCreated }) {
       return
     }
 
-    const { data: product, error: fetchError } =
-      await supabase
-        .from('products')
-        .select('*')
-        .eq('id', productId)
-        .single()
+    const {
+      data: product,
+      error: fetchError,
+    } = await supabase
+      .from('products')
+      .select(`
+        *,
+        store_products(
+          store_id,
+          default_selling_price,
+          default_discount_percent,
+          minimum_stock,
+          reorder_level,
+          is_active
+        )
+      `)
+      .eq('id', productId)
+      .single()
 
     if (fetchError) {
       setError(fetchError.message)
@@ -4238,40 +4503,62 @@ function ProductModal({ store, onClose, onCreated }) {
     setBusy(false)
   }
 
-  function handleCompositionCreated(newComposition) {
+  function handleCompositionCreated(
+    newComposition,
+  ) {
     setShowCompositionForm(false)
 
     setCompositions((current) => {
       const exists = current.some(
-        (item) => item.id === newComposition.id,
+        (item) =>
+          item.id === newComposition.id,
       )
 
-      if (exists) return current
+      if (exists) {
+        return current
+      }
 
-      return [...current, newComposition].sort((a, b) =>
+      return [
+        ...current,
+        newComposition,
+      ].sort((a, b) =>
         a.name.localeCompare(b.name),
       )
     })
 
-    setCompositionId(newComposition.id)
-    setCompositionSearch(newComposition.name)
+    setCompositionId(
+      newComposition.id,
+    )
+    setCompositionSearch(
+      newComposition.name,
+    )
     setShowCompositionSuggestions(false)
 
     if (newComposition.dosage_form) {
-      setDosageForm(newComposition.dosage_form)
+      setDosageForm(
+        newComposition.dosage_form,
+      )
     }
   }
 
   return (
     <>
-      <Modal title="Add new product" onClose={onClose}>
-        <form className="form-stack" onSubmit={save}>
+      <Modal
+        title="Add new product"
+        onClose={onClose}
+      >
+        <form
+          className="form-stack"
+          onSubmit={save}
+        >
           <div className="form-grid two">
             <label>
               Brand / product name *
               <input
                 value={name}
-                onChange={(e) => setName(e.target.value)}
+                onChange={(e) =>
+                  setName(e.target.value)
+                }
                 autoFocus
                 required
                 placeholder="e.g. Crocin 650"
@@ -4283,9 +4570,11 @@ function ProductModal({ store, onClose, onCreated }) {
               <input
                 value={manufacturer}
                 onChange={(e) =>
-                  setManufacturer(e.target.value)
+                  setManufacturer(
+                    e.target.value,
+                  )
                 }
-                placeholder="e.g. GlaxoSmithKline"
+                placeholder="e.g. Sun Pharma"
               />
             </label>
 
@@ -4295,12 +4584,18 @@ function ProductModal({ store, onClose, onCreated }) {
                 <input
                   value={compositionSearch}
                   onChange={(e) => {
-                    setCompositionSearch(e.target.value)
+                    setCompositionSearch(
+                      e.target.value,
+                    )
                     setCompositionId('')
-                    setShowCompositionSuggestions(true)
+                    setShowCompositionSuggestions(
+                      true,
+                    )
                   }}
                   onFocus={() =>
-                    setShowCompositionSuggestions(true)
+                    setShowCompositionSuggestions(
+                      true,
+                    )
                   }
                   placeholder="Type composition or ingredient"
                   autoComplete="off"
@@ -4310,7 +4605,9 @@ function ProductModal({ store, onClose, onCreated }) {
                   type="button"
                   className="inline-btn"
                   onClick={() =>
-                    setShowCompositionForm(true)
+                    setShowCompositionForm(
+                      true,
+                    )
                   }
                 >
                   + Add New
@@ -4319,7 +4616,8 @@ function ProductModal({ store, onClose, onCreated }) {
 
               {showCompositionSuggestions && (
                 <div className="suggestion-list">
-                  {filteredCompositions.length > 0 ? (
+                  {filteredCompositions.length >
+                  0 ? (
                     filteredCompositions.map(
                       (composition) => (
                         <button
@@ -4333,7 +4631,9 @@ function ProductModal({ store, onClose, onCreated }) {
                         >
                           <div>
                             <strong>
-                              {composition.name}
+                              {
+                                composition.name
+                              }
                             </strong>
 
                             <span>
@@ -4356,7 +4656,8 @@ function ProductModal({ store, onClose, onCreated }) {
                         No matching composition
                       </strong>
                       <span>
-                        Use “+ Add New” to create it.
+                        Use “+ Add New” to create
+                        it.
                       </span>
                     </div>
                   )}
@@ -4367,17 +4668,20 @@ function ProductModal({ store, onClose, onCreated }) {
                 <div className="selected-chip">
                   <div>
                     <strong>
-                      {selectedComposition.name}
+                      {
+                        selectedComposition.name
+                      }
                     </strong>
 
                     {selectedComposition
                       .composition_ingredients
-                      ?.length > 0 && (
+                      ?.length >
+                      0 && (
                       <span>
                         {selectedComposition.composition_ingredients
                           .map(
                             (ingredient) =>
-                              `${ingredient.ingredient_name} ${ingredient.strength_value} ${ingredient.strength_unit}`,
+                              `${ingredient.ingredient_name} ${ingredient.strength_value ?? ''} ${ingredient.strength_unit ?? ''}`.trim(),
                           )
                           .join(' + ')}
                       </span>
@@ -4386,7 +4690,9 @@ function ProductModal({ store, onClose, onCreated }) {
 
                   <button
                     type="button"
-                    onClick={clearComposition}
+                    onClick={
+                      clearComposition
+                    }
                   >
                     ×
                   </button>
@@ -4399,7 +4705,9 @@ function ProductModal({ store, onClose, onCreated }) {
               <input
                 value={dosageForm}
                 onChange={(e) =>
-                  setDosageForm(e.target.value)
+                  setDosageForm(
+                    e.target.value,
+                  )
                 }
                 placeholder="Tablet / Syrup / Cream"
                 disabled={Boolean(
@@ -4413,21 +4721,25 @@ function ProductModal({ store, onClose, onCreated }) {
               <select
                 value={categoryId}
                 onChange={(e) =>
-                  setCategoryId(e.target.value)
+                  setCategoryId(
+                    e.target.value,
+                  )
                 }
               >
                 <option value="">
                   Select category
                 </option>
 
-                {categories.map((category) => (
-                  <option
-                    key={category.id}
-                    value={category.id}
-                  >
-                    {category.name}
-                  </option>
-                ))}
+                {categories.map(
+                  (category) => (
+                    <option
+                      key={category.id}
+                      value={category.id}
+                    >
+                      {category.name}
+                    </option>
+                  ),
+                )}
               </select>
             </label>
 
@@ -4447,6 +4759,7 @@ function ProductModal({ store, onClose, onCreated }) {
                 type="number"
                 min="0"
                 max="100"
+                step="0.01"
                 value={gst}
                 onChange={(e) =>
                   setGst(e.target.value)
@@ -4459,9 +4772,12 @@ function ProductModal({ store, onClose, onCreated }) {
               <input
                 type="number"
                 min="0"
+                step="0.01"
                 value={sellingPrice}
                 onChange={(e) =>
-                  setSellingPrice(e.target.value)
+                  setSellingPrice(
+                    e.target.value,
+                  )
                 }
                 placeholder="₹0.00"
               />
@@ -4473,9 +4789,12 @@ function ProductModal({ store, onClose, onCreated }) {
                 type="number"
                 min="0"
                 max="100"
+                step="0.01"
                 value={discount}
                 onChange={(e) =>
-                  setDiscount(e.target.value)
+                  setDiscount(
+                    e.target.value,
+                  )
                 }
               />
             </label>
@@ -4485,9 +4804,12 @@ function ProductModal({ store, onClose, onCreated }) {
               <input
                 type="number"
                 min="0"
+                step="any"
                 value={minimumStock}
                 onChange={(e) =>
-                  setMinimumStock(e.target.value)
+                  setMinimumStock(
+                    e.target.value,
+                  )
                 }
               />
             </label>
@@ -4497,15 +4819,22 @@ function ProductModal({ store, onClose, onCreated }) {
               <input
                 type="number"
                 min="0"
+                step="any"
                 value={reorderLevel}
                 onChange={(e) =>
-                  setReorderLevel(e.target.value)
+                  setReorderLevel(
+                    e.target.value,
+                  )
                 }
               />
             </label>
           </div>
 
-          {error && <div className="error-box">{error}</div>}
+          {error && (
+            <div className="error-box">
+              {error}
+            </div>
+          )}
 
           <ModalActions
             onClose={onClose}
@@ -4517,8 +4846,12 @@ function ProductModal({ store, onClose, onCreated }) {
 
       {showCompositionForm && (
         <CompositionModal
-          onClose={() => setShowCompositionForm(false)}
-          onCreated={handleCompositionCreated}
+          onClose={() =>
+            setShowCompositionForm(false)
+          }
+          onCreated={
+            handleCompositionCreated
+          }
         />
       )}
     </>
