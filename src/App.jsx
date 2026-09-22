@@ -1,15 +1,19 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { supabase } from './lib/supabase'
+import { supabase } from './supabaseClient'
+
+/* =========================================================
+   CONSTANTS
+========================================================= */
 
 const NAV_ITEMS = [
-  { id: 'dashboard', label: 'Dashboard', icon: '⌂' },
-  { id: 'sales', label: 'Sales', icon: '▣' },
-  { id: 'purchases', label: 'Purchases', icon: '▤' },
-  { id: 'inventory', label: 'Inventory', icon: '▦' },
-  { id: 'customers', label: 'Customers', icon: '♙' },
-  { id: 'reports', label: 'Reports', icon: '◫' },
-  { id: 'alerts', label: 'Alerts', icon: '!' },
-  { id: 'settings', label: 'Settings', icon: '⚙' },
+  'Dashboard',
+  'Sales',
+  'Purchases',
+  'Inventory',
+  'Customers',
+  'Reports',
+  'Alerts',
+  'Settings',
 ]
 
 const INVENTORY_TABS = [
@@ -38,109 +42,165 @@ const PURCHASE_TABS = [
   'AI Recommendations',
 ]
 
-function money(value) {
-  return `₹${Number(value || 0).toLocaleString('en-IN', {
+/* =========================================================
+   HELPERS
+========================================================= */
+
+const money = (value) =>
+  `₹${Number(value || 0).toLocaleString('en-IN', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`
-}
 
-function dateText(value) {
+const dateText = (value) => {
   if (!value) return '—'
-  return new Date(value).toLocaleDateString('en-IN')
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return value
+  return d.toLocaleDateString('en-IN')
 }
 
-function dateTimeText(value) {
+const dateTimeText = (value) => {
   if (!value) return '—'
-  return new Date(value).toLocaleString('en-IN', {
-    dateStyle: 'short',
-    timeStyle: 'short',
-  })
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return value
+  return d.toLocaleString('en-IN')
 }
 
-function todayISO() {
-  return new Date().toISOString().slice(0, 10)
-}
+const todayISO = () => new Date().toISOString().slice(0, 10)
 
-function emptySaleItem() {
-  return {
-    product_id: '',
-    batch_id: '',
-    product_name: '',
-    batch_number: '',
-    unit_type: 'pack',
-    quantity_entered: 1,
-    units_per_pack: 1,
-    mrp_per_pack: 0,
-    selling_price_per_pack: 0,
-    default_discount_percent: 0,
-    discount_percent: 0,
-    gst_rate: 0,
+const normalize = (value) =>
+  String(value || '')
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[^\w\s.+/-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+const levenshtein = (a, b) => {
+  a = normalize(a)
+  b = normalize(b)
+  if (!a) return b.length
+  if (!b) return a.length
+
+  const prev = Array.from({ length: b.length + 1 }, (_, i) => i)
+
+  for (let i = 1; i <= a.length; i++) {
+    const current = [i]
+
+    for (let j = 1; j <= b.length; j++) {
+      current[j] = Math.min(
+        current[j - 1] + 1,
+        prev[j] + 1,
+        prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1),
+      )
+    }
+
+    for (let j = 0; j <= b.length; j++) prev[j] = current[j]
   }
+
+  return prev[b.length]
 }
 
-function emptyPurchaseItem() {
-  return {
-    product_id: '',
-    product_name: '',
-    batch_number: '',
-    expiry_date: '',
-    units_per_pack: 1,
-    paid_packs: 0,
-    free_packs: 0,
-    loose_units: 0,
-    purchase_rate_per_pack: 0,
-    mrp_per_pack: 0,
-    supplier_discount_percent: 0,
-    gst_rate: 0,
+const fuzzyScore = (query, text) => {
+  const q = normalize(query)
+  const t = normalize(text)
+
+  if (!q) return 0
+  if (!t) return -Infinity
+
+  if (t === q) return 1000
+  if (t.includes(q)) return 800 - t.length / 100
+
+  const qTokens = q.split(/\s+/).filter(Boolean)
+  const tTokens = t.split(/\s+/).filter(Boolean)
+
+  let score = 0
+
+  for (const qt of qTokens) {
+    let best = Infinity
+
+    for (const tt of tTokens) {
+      if (tt.includes(qt) || qt.includes(tt)) {
+        best = Math.min(best, 0)
+      } else {
+        best = Math.min(best, levenshtein(qt, tt))
+      }
+    }
+
+    if (best <= 1) score += 100
+    else if (best <= 2) score += 60
+    else if (best <= 3) score += 25
+    else score -= 30
   }
+
+  return score
 }
 
-function App() {
+const matchesSearch = (query, ...values) => {
+  if (!normalize(query)) return true
+  const joined = values.filter(Boolean).join(' ')
+  return fuzzyScore(query, joined) > 0
+}
+
+const emptySaleItem = () => ({
+  id: crypto.randomUUID(),
+  product: null,
+  batch: null,
+  batches: [],
+  quantity: 1,
+  unitType: 'pack',
+  unitsPerPack: 1,
+  sellingPricePerPack: 0,
+  mrpPerPack: 0,
+  discountPercent: 0,
+  gstRate: 0,
+  packagingLevelId: null,
+  packagingName: 'Pack',
+  stockUnitsPerSaleUnit: 1,
+})
+
+const emptyPurchaseItem = () => ({
+  id: crypto.randomUUID(),
+  product: null,
+  batchNumber: '',
+  expiryDate: '',
+  paidPacks: 0,
+  freePacks: 0,
+  looseUnits: 0,
+  purchaseRatePerPack: 0,
+  mrpPerPack: 0,
+  supplierDiscountPercent: 0,
+  gstRate: 0,
+})
+
+const sum = (arr) => arr.reduce((a, b) => a + Number(b || 0), 0)
+
+/* =========================================================
+   APP
+========================================================= */
+
+export default function App() {
   const [session, setSession] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [store, setStore] = useState(null)
-  const [profile, setProfile] = useState(null)
-  const [error, setError] = useState('')
 
   useEffect(() => {
     let mounted = true
 
-    async function initialize() {
-      setLoading(true)
+    const init = async () => {
+      const { data } = await supabase.auth.getSession()
 
-      const {
-        data: { session: currentSession },
-      } = await supabase.auth.getSession()
-
-      if (!mounted) return
-
-      setSession(currentSession)
-
-      if (currentSession?.user) {
-        await loadUserData(currentSession.user.id)
+      if (mounted) {
+        setSession(data.session || null)
+        setLoading(false)
       }
-
-      if (mounted) setLoading(false)
     }
 
-    initialize()
+    init()
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, nextSession) => {
-      if (!mounted) return
-
-      setSession(nextSession)
-
-      if (nextSession?.user) {
-        await loadUserData(nextSession.user.id)
-      } else {
-        setStore(null)
-        setProfile(null)
-      }
-
-      setLoading(false)
+    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession || null)
     })
 
     return () => {
@@ -149,87 +209,22 @@ function App() {
     }
   }, [])
 
-  async function loadUserData(userId) {
-    setError('')
+  if (loading) return <LoadingScreen />
+  if (!session) return <LoginScreen />
 
-    const [{ data: membership, error: membershipError }, { data: profileData }] =
-      await Promise.all([
-        supabase
-          .from('store_memberships')
-          .select('*, stores(*)')
-          .eq('user_id', userId)
-          .eq('is_active', true)
-          .limit(1)
-          .maybeSingle(),
-        supabase
-          .from('user_profiles')
-          .select('*')
-          .eq('id', userId)
-          .maybeSingle(),
-      ])
-
-    if (membershipError) {
-      setError(membershipError.message)
-      return
-    }
-
-    setProfile(profileData || null)
-    setStore(membership?.stores || null)
-
-    if (!membership?.stores) {
-      setError('No pharmacy store assigned to this account.')
-    }
-  }
-
-  async function signOut() {
-    await supabase.auth.signOut()
-  }
-
-  if (loading) {
-    return <LoadingScreen />
-  }
-
-  if (!session) {
-    return <LoginScreen />
-  }
-
-  if (!store) {
-    return (
-      <div className="auth-page">
-        <div className="auth-card">
-          <div className="brand-mark">P</div>
-          <h1>PharmDesk</h1>
-          <p className="muted">
-            Your account is authenticated, but no active pharmacy store is
-            assigned.
-          </p>
-          {error && <div className="error-box">{error}</div>}
-          <button className="primary-btn full" onClick={signOut}>
-            Sign out
-          </button>
-        </div>
-      </div>
-    )
-  }
-
-  return (
-    <PharmacyApp
-      store={store}
-      profile={profile}
-      session={session}
-      onSignOut={signOut}
-    />
-  )
+  return <PharmacyApp session={session} />
 }
+
+/* =========================================================
+   AUTH
+========================================================= */
 
 function LoadingScreen() {
   return (
-    <div className="auth-page">
+    <div className="loading-screen">
       <div className="loading-card">
-        <div className="brand-mark">P</div>
-        <div className="spinner" />
-        <h2>Loading PharmDesk</h2>
-        <p>Connecting to your pharmacy workspace…</p>
+        <h2>PharmDesk</h2>
+        <p>Loading LABDHI PHARMA…</p>
       </div>
     </div>
   )
@@ -241,548 +236,370 @@ function LoginScreen() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
-  async function login(event) {
-    event.preventDefault()
+  const login = async (e) => {
+    e.preventDefault()
     setBusy(true)
     setError('')
 
-    const { error: loginError } = await supabase.auth.signInWithPassword({
-      email: email.trim(),
+    const { error: authError } = await supabase.auth.signInWithPassword({
+      email,
       password,
     })
 
-    if (loginError) setError(loginError.message)
+    if (authError) setError(authError.message)
     setBusy(false)
   }
 
   return (
-    <div className="auth-page">
-      <div className="auth-card auth-wide">
-        <div className="brand-mark">P</div>
-        <div className="eyebrow">LABDHI PHARMA</div>
+    <div className="auth-screen">
+      <form className="auth-card" onSubmit={login}>
         <h1>PharmDesk</h1>
-        <p className="muted">
-          Pharmacy billing, inventory and business management.
-        </p>
+        <p>LABDHI PHARMA</p>
 
-        <form onSubmit={login} className="form-stack">
-          <label>
-            Email
-            <input
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              type="email"
-              autoComplete="email"
-              required
-              placeholder="admin@example.com"
-            />
-          </label>
+        <input
+          type="email"
+          placeholder="Email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          required
+        />
 
-          <label>
-            Password
-            <input
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              type="password"
-              autoComplete="current-password"
-              required
-              placeholder="••••••••"
-            />
-          </label>
+        <input
+          type="password"
+          placeholder="Password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          required
+        />
 
-          {error && <div className="error-box">{error}</div>}
+        {error && <div className="error-box">{error}</div>}
 
-          <button className="primary-btn full" disabled={busy}>
-            {busy ? 'Signing in…' : 'Sign in'}
-          </button>
-        </form>
-      </div>
+        <button disabled={busy} className="primary-button">
+          {busy ? 'Signing in…' : 'Sign in'}
+        </button>
+      </form>
     </div>
   )
 }
 
-function PharmacyApp({ store, profile, session, onSignOut }) {
-  const [activePage, setActivePage] = useState('dashboard')
-  const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [globalAlerts, setGlobalAlerts] = useState(0)
+/* =========================================================
+   MAIN SHELL
+========================================================= */
+
+function PharmacyApp({ session }) {
+  const [activeNav, setActiveNav] = useState('Dashboard')
+  const [store, setStore] = useState(null)
+  const [profile, setProfile] = useState(null)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    async function loadAlertCount() {
-      const { count } = await supabase
-        .from('alerts')
-        .select('*', { count: 'exact', head: true })
-        .eq('store_id', store.id)
-        .eq('is_read', false)
+    loadStore()
+  }, [session.user.id])
 
-      setGlobalAlerts(count || 0)
+  const loadStore = async () => {
+    setLoading(true)
+
+    const { data: membership } = await supabase
+      .from('store_memberships')
+      .select('store_id, role')
+      .eq('user_id', session.user.id)
+      .eq('is_active', true)
+      .limit(1)
+      .maybeSingle()
+
+    if (membership?.store_id) {
+      const { data } = await supabase
+        .from('stores')
+        .select('*')
+        .eq('id', membership.store_id)
+        .maybeSingle()
+
+      setStore(data || null)
     }
 
-    loadAlertCount()
-  }, [store.id])
+    const { data: userProfile } = await supabase
+      .from('user_profiles')
+      .select('*')
+      .eq('id', session.user.id)
+      .maybeSingle()
 
-  function navigate(page) {
-    setActivePage(page)
-    setSidebarOpen(false)
+    setProfile(userProfile || null)
+    setLoading(false)
   }
 
-  const pageTitle =
-    NAV_ITEMS.find((item) => item.id === activePage)?.label || 'Dashboard'
+  if (loading) return <LoadingScreen />
+
+  const renderPage = () => {
+    switch (activeNav) {
+      case 'Dashboard':
+        return <Dashboard store={store} />
+      case 'Sales':
+        return <SalesModule store={store} session={session} />
+      case 'Purchases':
+        return <PurchasesModule store={store} session={session} />
+      case 'Inventory':
+        return <InventoryModule store={store} session={session} />
+      case 'Customers':
+        return <CustomersModule store={store} />
+      case 'Reports':
+        return <Reports store={store} />
+      case 'Alerts':
+        return <AlertsModule store={store} />
+      case 'Settings':
+        return <SettingsModule store={store} profile={profile} />
+      default:
+        return null
+    }
+  }
 
   return (
     <div className="app-shell">
-      <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
-        <div className="sidebar-brand">
-          <div className="brand-mark small">P</div>
+      <aside className="sidebar">
+        <div className="brand">
+          <div className="brand-mark">P</div>
           <div>
             <strong>PharmDesk</strong>
-            <span>LABDHI PHARMA</span>
+            <span>{store?.name || 'Pharmacy'}</span>
           </div>
         </div>
 
-        <nav className="sidebar-nav">
+        <nav>
           {NAV_ITEMS.map((item) => (
             <button
-              key={item.id}
-              className={`nav-item ${
-                activePage === item.id ? 'active' : ''
-              }`}
-              onClick={() => navigate(item.id)}
+              key={item}
+              className={activeNav === item ? 'nav-item active' : 'nav-item'}
+              onClick={() => setActiveNav(item)}
             >
-              <span className="nav-icon">{item.icon}</span>
-              <span>{item.label}</span>
-
-              {item.id === 'alerts' && globalAlerts > 0 && (
-                <span className="nav-badge">{globalAlerts}</span>
-              )}
+              {item}
             </button>
           ))}
         </nav>
 
-        <div className="sidebar-footer">
-          <div className="user-mini">
-            <div className="avatar">
-              {(profile?.full_name || session.user.email || 'P')
-                .charAt(0)
-                .toUpperCase()}
-            </div>
-            <div>
-              <strong>{profile?.full_name || 'PharmDesk User'}</strong>
-              <span>{session.user.email}</span>
-            </div>
-          </div>
-
-          <button className="logout-btn" onClick={onSignOut}>
-            Sign out
-          </button>
-        </div>
+        <button
+          className="logout-button"
+          onClick={() => supabase.auth.signOut()}
+        >
+          Sign out
+        </button>
       </aside>
 
-      <div
-        className={`sidebar-overlay ${sidebarOpen ? 'visible' : ''}`}
-        onClick={() => setSidebarOpen(false)}
-      />
-
-      <main className="main-shell">
-        <header className="topbar">
-          <button
-            className="mobile-menu-btn"
-            onClick={() => setSidebarOpen(true)}
-          >
-            ☰
-          </button>
-
-          <div className="topbar-title">
-            <span className="breadcrumb">PharmDesk</span>
-            <h1>{pageTitle}</h1>
-          </div>
-
-          <div className="topbar-right">
-            <div className="store-chip">
-              <span className="status-dot" />
-              {store.name}
-            </div>
-          </div>
-        </header>
-
-        <div className="page-content">
-          {activePage === 'dashboard' && (
-            <Dashboard store={store} navigate={navigate} />
-          )}
-
-          {activePage === 'sales' && (
-            <SalesModule store={store} profile={profile} />
-          )}
-
-          {activePage === 'purchases' && (
-            <PurchasesModule store={store} profile={profile} />
-          )}
-
-          {activePage === 'inventory' && <InventoryModule store={store} />}
-
-          {activePage === 'customers' && (
-            <CustomersModule store={store} />
-          )}
-
-          {activePage === 'reports' && <ReportsModule store={store} />}
-
-          {activePage === 'alerts' && <AlertsModule store={store} />}
-
-          {activePage === 'settings' && (
-            <SettingsModule store={store} profile={profile} />
-          )}
-        </div>
-      </main>
+      <main className="main-content">{renderPage()}</main>
     </div>
   )
 }
 
-/* ============================================================
+/* =========================================================
    DASHBOARD
-============================================================ */
+========================================================= */
 
-function Dashboard({ store, navigate }) {
+function Dashboard({ store }) {
   const [stats, setStats] = useState({
     sales: 0,
-    bills: 0,
-    stock: 0,
-    alerts: 0,
+    purchases: 0,
+    lowStock: 0,
+    expiry: 0,
   })
-  const [recentSales, setRecentSales] = useState([])
-  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    loadDashboard()
-  }, [store.id])
+    if (!store?.id) return
 
-  async function loadDashboard() {
-    setLoading(true)
+    const load = async () => {
+      const start = todayISO()
 
-    const start = `${todayISO()}T00:00:00`
-
-    const [
-      { data: sales },
-      { count: bills },
-      { count: stock },
-      { count: alerts },
-    ] = await Promise.all([
-      supabase
+      const { data: sales } = await supabase
         .from('sales')
-        .select('id, invoice_number, grand_total, bill_datetime, customers(name)')
+        .select('grand_total')
         .eq('store_id', store.id)
         .eq('status', 'completed')
-        .gte('bill_datetime', start)
-        .order('bill_datetime', { ascending: false })
-        .limit(8),
+        .gte('bill_datetime', `${start}T00:00:00`)
 
-      supabase
-        .from('sales')
-        .select('*', { count: 'exact', head: true })
+      const { data: purchases } = await supabase
+        .from('purchase_invoices')
+        .select('total_amount')
         .eq('store_id', store.id)
-        .eq('status', 'completed')
-        .gte('bill_datetime', start),
+        .eq('invoice_date', start)
 
-      supabase
+      const { data: lowStock } = await supabase
         .from('batches')
-        .select('*', { count: 'exact', head: true })
+        .select('id')
         .eq('store_id', store.id)
-        .gt('current_stock_units', 0),
+        .gt('current_stock_units', 0)
 
-      supabase
-        .from('alerts')
-        .select('*', { count: 'exact', head: true })
+      const expiryLimit = new Date()
+      expiryLimit.setDate(expiryLimit.getDate() + 90)
+
+      const { data: expiry } = await supabase
+        .from('batches')
+        .select('id')
         .eq('store_id', store.id)
-        .eq('is_resolved', false),
-    ])
+        .gt('current_stock_units', 0)
+        .lte('expiry_date', expiryLimit.toISOString().slice(0, 10))
 
-    const totalSales = (sales || []).reduce(
-      (sum, sale) => sum + Number(sale.grand_total || 0),
-      0,
-    )
+      setStats({
+        sales: sum((sales || []).map((x) => x.grand_total)),
+        purchases: sum((purchases || []).map((x) => x.total_amount)),
+        lowStock: lowStock?.length || 0,
+        expiry: expiry?.length || 0,
+      })
+    }
 
-    setStats({
-      sales: totalSales,
-      bills: bills || 0,
-      stock: stock || 0,
-      alerts: alerts || 0,
-    })
-
-    setRecentSales(sales || [])
-    setLoading(false)
-  }
+    load()
+  }, [store?.id])
 
   return (
-    <div className="dashboard">
-      <section className="welcome-row">
-        <div>
-          <div className="eyebrow">PHARMACY WORKSPACE</div>
-          <h2>Good morning</h2>
-          <p>
-            Here's what is happening at <strong>{store.name}</strong> today.
-          </p>
-        </div>
+    <div>
+      <ModuleHeader
+        title="Dashboard"
+        subtitle={store?.name || 'Pharmacy overview'}
+      />
 
-        <div className="date-card">
-          <span>Today</span>
-          <strong>
-            {new Date().toLocaleDateString('en-IN', {
-              weekday: 'long',
-              day: 'numeric',
-              month: 'long',
-            })}
-          </strong>
-        </div>
-      </section>
+      <div className="stats-grid">
+        <StatCard title="Today's Sales" value={money(stats.sales)} />
+        <StatCard title="Today's Purchases" value={money(stats.purchases)} />
+        <StatCard title="Stock Batches" value={stats.lowStock} />
+        <StatCard title="Near Expiry" value={stats.expiry} />
+      </div>
 
-      <section className="stat-grid">
-        <StatCard
-          label="Today's Sales"
-          value={money(stats.sales)}
-          icon="₹"
-          loading={loading}
-        />
-        <StatCard
-          label="Bills Today"
-          value={stats.bills}
-          icon="▣"
-          loading={loading}
-        />
-        <StatCard
-          label="Active Stock Batches"
-          value={stats.stock}
-          icon="▦"
-          loading={loading}
-        />
-        <StatCard
-          label="Open Alerts"
-          value={stats.alerts}
-          icon="!"
-          loading={loading}
-        />
-      </section>
-
-      <section className="dashboard-grid">
-        <div className="panel">
-          <div className="panel-header">
-            <div>
-              <h3>Quick actions</h3>
-              <p>Jump directly into common pharmacy tasks.</p>
-            </div>
-          </div>
-
-          <div className="quick-actions">
-            <button onClick={() => navigate('sales')}>
-              <span>＋</span>
-              <div>
-                <strong>New Sale</strong>
-                <small>Create a customer bill</small>
-              </div>
-            </button>
-
-            <button onClick={() => navigate('purchases')}>
-              <span>＋</span>
-              <div>
-                <strong>New Purchase</strong>
-                <small>Receive supplier stock</small>
-              </div>
-            </button>
-
-            <button onClick={() => navigate('inventory')}>
-              <span>▦</span>
-              <div>
-                <strong>Inventory</strong>
-                <small>Products and batches</small>
-              </div>
-            </button>
-
-            <button onClick={() => navigate('customers')}>
-              <span>♙</span>
-              <div>
-                <strong>Customers</strong>
-                <small>History and credit</small>
-              </div>
-            </button>
-          </div>
-        </div>
-
-        <div className="panel">
-          <div className="panel-header">
-            <div>
-              <h3>Recent sales</h3>
-              <p>Latest completed bills today.</p>
-            </div>
-          </div>
-
-          {recentSales.length === 0 ? (
-            <EmptyState
-              icon="▣"
-              title="No sales yet today"
-              text="Completed bills will appear here."
-            />
-          ) : (
-            <div className="list-table">
-              {recentSales.map((sale) => (
-                <div className="list-row" key={sale.id}>
-                  <div>
-                    <strong>{sale.invoice_number}</strong>
-                    <span>
-                      {sale.customers?.name || 'Walk-in Customer'} ·{' '}
-                      {dateTimeText(sale.bill_datetime)}
-                    </span>
-                  </div>
-                  <strong>{money(sale.grand_total)}</strong>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </section>
+      <PanelList title="PharmDesk">
+        <p className="muted">
+          Your pharmacy data is stored in Supabase and is not dependent on the
+          browser remaining open.
+        </p>
+      </PanelList>
     </div>
   )
 }
 
-function StatCard({ label, value, icon, loading }) {
+function StatCard({ title, value }) {
   return (
     <div className="stat-card">
-      <div className="stat-icon">{icon}</div>
-      <div>
-        <span>{label}</span>
-        <strong>{loading ? '…' : value}</strong>
-      </div>
+      <span>{title}</span>
+      <strong>{value}</strong>
     </div>
   )
 }
 
-/* ============================================================
+/* =========================================================
    SALES
-============================================================ */
+========================================================= */
 
-function SalesModule({ store, profile }) {
+function SalesModule({ store, session }) {
   const [tab, setTab] = useState('New Sale')
 
   return (
-    <div className="module">
+    <div>
       <ModuleHeader
-        eyebrow="SALES"
-        title="Sales & Billing"
-        description="Create bills, manage drafts, returns and customer credit."
+        title="Sales"
+        subtitle="Billing, customers, returns and credit"
       />
 
       <TabBar tabs={SALES_TABS} active={tab} onChange={setTab} />
 
-      {tab === 'New Sale' && (
-        <NewSale store={store} profile={profile} />
-      )}
-
+      {tab === 'New Sale' && <NewSale store={store} session={session} />}
       {tab === 'Draft Bills' && <DraftBills store={store} />}
-
-      {tab === 'Completed Bills' && (
-        <CompletedBills store={store} />
-      )}
-
+      {tab === 'Completed Bills' && <CompletedBills store={store} />}
       {tab === 'Returns' && <SalesReturns store={store} />}
-
-      {tab === 'Customers' && <CustomersModule store={store} />}
-
+      {tab === 'Customers' && <CustomerHistoryList store={store} />}
       {tab === 'Credit' && <CustomerCredit store={store} />}
     </div>
   )
 }
 
-function NewSale({ store, profile }) {
-  const [customer, setCustomer] = useState(null)
-  const [customerSearch, setCustomerSearch] = useState('')
+function NewSale({ store, session }) {
   const [customers, setCustomers] = useState([])
   const [products, setProducts] = useState([])
-  const [batches, setBatches] = useState([])
-  const [items, setItems] = useState([])
-  const [productSearch, setProductSearch] = useState('')
+  const [customerQuery, setCustomerQuery] = useState('')
+  const [productQuery, setProductQuery] = useState('')
+  const [selectedCustomer, setSelectedCustomer] = useState(null)
+  const [items, setItems] = useState([emptySaleItem()])
+  const [payments, setPayments] = useState([{ method: 'cash', amount: 0 }])
   const [billDiscount, setBillDiscount] = useState(0)
-  const [billDatetime, setBillDatetime] = useState(
-    new Date().toISOString().slice(0, 16),
-  )
-  const [payments, setPayments] = useState([
-    { payment_method: 'cash', amount: '' },
-  ])
-  const [notes, setNotes] = useState('')
+  const [billDate, setBillDate] = useState(todayISO())
+  const [customerModal, setCustomerModal] = useState(false)
+  const [productModal, setProductModal] = useState(false)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
-  const [showCustomerForm, setShowCustomerForm] = useState(false)
-  const [showProductForm, setShowProductForm] = useState(false)
+  const [alternatives, setAlternatives] = useState([])
 
   useEffect(() => {
+    if (!store?.id) return
+    loadCustomers()
     loadProducts()
-  }, [store.id])
+  }, [store?.id])
 
-  async function loadProducts() {
+  const loadCustomers = async () => {
+    const { data } = await supabase
+      .from('customers')
+      .select('*')
+      .eq('store_id', store.id)
+      .eq('is_active', true)
+      .order('name')
+
+    setCustomers(data || [])
+  }
+
+  const loadProducts = async () => {
     const { data } = await supabase
       .from('store_products')
       .select(`
         *,
-        products(
+        products (
           id,
           product_name,
           generic_display_name,
+          composition_id,
           manufacturer,
           dosage_form,
-          strength_display,
-          pack_quantity,
-          pack_unit,
           gst_rate,
           is_active
         )
       `)
       .eq('store_id', store.id)
       .eq('is_active', true)
-      .limit(500)
 
     setProducts(
       (data || [])
-        .filter((row) => row.products?.is_active)
-        .map((row) => ({
-          ...row.products,
-          default_selling_price: row.default_selling_price,
-          default_discount_percent: row.default_discount_percent,
+        .filter((x) => x.products?.is_active !== false)
+        .map((x) => ({
+          ...x.products,
+          storeProductId: x.id,
+          default_selling_price: x.default_selling_price,
+          default_discount_percent: x.default_discount_percent,
+          minimum_stock: x.minimum_stock,
+          reorder_level: x.reorder_level,
         })),
     )
   }
 
-  async function searchCustomers(value) {
-    setCustomerSearch(value)
+  const filteredCustomers = useMemo(() => {
+    return customers
+      .filter((c) =>
+        matchesSearch(customerQuery, c.name, c.phone, c.address),
+      )
+      .slice(0, 10)
+  }, [customers, customerQuery])
 
-    if (!value.trim()) {
-      setCustomers([])
-      return
-    }
+  const filteredProducts = useMemo(() => {
+    return products
+      .map((p) => ({
+        p,
+        score: fuzzyScore(
+          productQuery,
+          `${p.product_name} ${p.generic_display_name || ''} ${
+            p.manufacturer || ''
+          }`,
+        ),
+      }))
+      .filter((x) => !productQuery || x.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 12)
+      .map((x) => x.p)
+  }, [products, productQuery])
 
-    const { data } = await supabase
-      .from('customers')
-      .select('*')
-      .eq('store_id', store.id)
-      .eq('is_active', true)
-      .or(`name.ilike.%${value}%,phone.ilike.%${value}%`)
-      .limit(8)
+  const chooseProduct = async (product) => {
+    setProductQuery('')
 
-    setCustomers(data || [])
-  }
-
-  async function loadBatches(productId) {
-    const { data } = await supabase
-      .from('batches')
-      .select('*')
-      .eq('store_id', store.id)
-      .eq('product_id', productId)
-      .eq('is_active', true)
-      .gt('current_stock_units', 0)
-      .order('expiry_date', { ascending: true })
-
-    setBatches(data || [])
-  }
-
-  async function chooseProduct(product) {
-    setProductSearch('')
-    await loadBatches(product.id)
-
-    const { data } = await supabase
+    const { data: batches } = await supabase
       .from('batches')
       .select('*')
       .eq('store_id', store.id)
@@ -790,408 +607,399 @@ function NewSale({ store, profile }) {
       .eq('is_active', true)
       .gt('current_stock_units', 0)
       .order('expiry_date', { ascending: true })
-      .limit(1)
-      .maybeSingle()
 
-    if (!data) {
-      setMessage('This product has no available stock.')
-      return
+    const available = batches || []
+
+    const batch = available[0] || null
+
+    const newItem = {
+      ...emptySaleItem(),
+      product,
+      batches: available,
+      batch,
+      unitsPerPack: batch?.units_per_pack || 1,
+      sellingPricePerPack:
+        Number(product.default_selling_price || batch?.mrp_per_pack || 0),
+      mrpPerPack: Number(batch?.mrp_per_pack || 0),
+      discountPercent: Number(product.default_discount_percent || 0),
+      gstRate: Number(product.gst_rate || 0),
     }
 
-    setItems((current) => [
-      ...current,
-      {
-        ...emptySaleItem(),
-        product_id: product.id,
-        product_name: product.product_name,
-        batch_id: data.id,
-        batch_number: data.batch_number,
-        units_per_pack: data.units_per_pack,
-        mrp_per_pack: data.mrp_per_pack,
-        selling_price_per_pack:
-          product.default_selling_price || data.mrp_per_pack || 0,
-        default_discount_percent:
-          Number(product.default_discount_percent || 0),
-        discount_percent:
-          Number(product.default_discount_percent || 0),
-        gst_rate: Number(product.gst_rate || 0),
-      },
-    ])
-  }
+    setItems((current) => {
+      const existingEmpty =
+        current.length === 1 && !current[0].product ? 0 : -1
 
-  function updateItem(index, patch) {
-    setItems((current) =>
-      current.map((item, i) =>
-        i === index ? { ...item, ...patch } : item,
-      ),
-    )
-  }
-
-  function removeItem(index) {
-    setItems((current) => current.filter((_, i) => i !== index))
-  }
-
-  const totals = useMemo(() => {
-    let subtotal = 0
-    let itemDiscount = 0
-    let taxable = 0
-    let gst = 0
-
-    items.forEach((item) => {
-      const quantity = Number(item.quantity_entered || 0)
-      const packUnits = Number(item.units_per_pack || 1)
-      const price = Number(item.selling_price_per_pack || 0)
-      const discount = Number(item.discount_percent || 0)
-      const rate = Number(item.gst_rate || 0)
-
-      const gross =
-        item.unit_type === 'pack'
-          ? quantity * price
-          : (quantity / packUnits) * price
-
-      const disc = gross * (discount / 100)
-      const line = gross - disc
-      const lineTaxable =
-        rate > 0 ? line / (1 + rate / 100) : line
-
-      subtotal += gross
-      itemDiscount += disc
-      taxable += lineTaxable
-      gst += line - lineTaxable
+      if (existingEmpty === 0) return [newItem]
+      return [...current, newItem]
     })
 
-    const total = Math.max(
-      0,
-      subtotal - itemDiscount - Number(billDiscount || 0),
-    )
+    if (product.composition_id) {
+      const { data } = await supabase
+        .from('store_products')
+        .select(`
+          id,
+          default_selling_price,
+          products (
+            id,
+            product_name,
+            generic_display_name,
+            composition_id,
+            manufacturer,
+            dosage_form
+          )
+        `)
+        .eq('store_id', store.id)
+        .eq('is_active', true)
 
-    const paid = payments.reduce(
-      (sum, payment) =>
-        sum + Number(payment.amount || 0),
-      0,
-    )
-
-    return {
-      subtotal,
-      itemDiscount,
-      taxable,
-      gst,
-      total,
-      paid,
-      due: Math.max(0, total - paid),
+      setAlternatives(
+        (data || [])
+          .map((x) => x.products)
+          .filter(
+            (x) =>
+              x?.composition_id === product.composition_id &&
+              x.id !== product.id,
+          ),
+      )
+    } else {
+      setAlternatives([])
     }
-  }, [items, billDiscount, payments])
+  }
 
-  function updatePayment(index, patch) {
-    setPayments((current) =>
-      current.map((payment, i) =>
-        i === index ? { ...payment, ...patch } : payment,
-      ),
+  const updateItem = (id, patch) => {
+    setItems((current) =>
+      current.map((item) => (item.id === id ? { ...item, ...patch } : item)),
     )
   }
 
-  function addPayment() {
-    setPayments((current) => [
-      ...current,
-      { payment_method: 'upi', amount: '' },
-    ])
+  const removeItem = (id) => {
+    setItems((current) => {
+      const next = current.filter((x) => x.id !== id)
+      return next.length ? next : [emptySaleItem()]
+    })
   }
 
-  function removePayment(index) {
-    if (payments.length === 1) return
-    setPayments((current) => current.filter((_, i) => i !== index))
-  }
+  const subtotal = sum(
+    items
+      .filter((x) => x.product)
+      .map(
+        (x) =>
+          Number(x.quantity || 0) *
+          Number(x.sellingPricePerPack || 0),
+      ),
+  )
 
-  async function completeSale() {
+  const itemDiscount = sum(
+    items
+      .filter((x) => x.product)
+      .map(
+        (x) =>
+          Number(x.quantity || 0) *
+          Number(x.sellingPricePerPack || 0) *
+          (Number(x.discountPercent || 0) / 100),
+      ),
+  )
+
+  const taxableBeforeBillDiscount = Math.max(
+    0,
+    subtotal - itemDiscount,
+  )
+
+  const finalTaxable = Math.max(
+    0,
+    taxableBeforeBillDiscount - Number(billDiscount || 0),
+  )
+
+  const gst = sum(
+    items
+      .filter((x) => x.product)
+      .map((x) => {
+        const line =
+          Number(x.quantity || 0) *
+          Number(x.sellingPricePerPack || 0) *
+          (1 - Number(x.discountPercent || 0) / 100)
+
+        const share =
+          taxableBeforeBillDiscount > 0
+            ? line / taxableBeforeBillDiscount
+            : 0
+
+        return (
+          Math.max(0, finalTaxable) *
+          share *
+          (Number(x.gstRate || 0) / 100)
+        )
+      }),
+  )
+
+  const grandTotal = finalTaxable + gst
+  const paidAmount = sum(payments.map((x) => x.amount))
+  const dueAmount = Math.max(0, grandTotal - paidAmount)
+
+  const saveSale = async (e) => {
+    e.preventDefault()
+    setBusy(true)
     setMessage('')
 
-    if (items.length === 0) {
-      setMessage('Add at least one product.')
-      return
-    }
+    try {
+      const validItems = items.filter((x) => x.product)
 
-    if (totals.due > 0 && !customer) {
-      setMessage(
-        'A named customer is required when the bill has an outstanding amount.',
-      )
-      return
-    }
+      if (!validItems.length) throw new Error('Add at least one product.')
 
-    const payloadItems = items.map((item) => ({
-      product_id: item.product_id,
-      batch_id: item.batch_id,
-      unit_type: item.unit_type,
-      quantity_entered: Number(item.quantity_entered),
-      units_per_pack: Number(item.units_per_pack),
-      mrp_per_pack: Number(item.mrp_per_pack),
-      selling_price_per_pack: Number(item.selling_price_per_pack),
-      default_discount_percent: Number(
-        item.default_discount_percent || 0,
-      ),
-      discount_percent: Number(item.discount_percent || 0),
-      gst_rate: Number(item.gst_rate || 0),
-    }))
+      for (const item of validItems) {
+        if (!item.batch?.id) {
+          throw new Error(
+            `Select a batch for ${item.product.product_name}.`,
+          )
+        }
 
-    const payloadPayments = payments
-      .filter((payment) => Number(payment.amount || 0) > 0)
-      .map((payment) => ({
-        payment_method: payment.payment_method,
-        amount: Number(payment.amount),
+        if (Number(item.quantity) <= 0) {
+          throw new Error(
+            `Quantity must be greater than zero for ${item.product.product_name}.`,
+          )
+        }
+      }
+
+      const saleItems = validItems.map((item) => ({
+        product_id: item.product.id,
+        batch_id: item.batch.id,
+        sale_unit_type: item.unitType,
+        quantity_entered: Number(item.quantity),
+        units_per_pack: Number(item.unitsPerPack || 1),
+        mrp_per_pack: Number(item.mrpPerPack || 0),
+        selling_price_per_pack: Number(
+          item.sellingPricePerPack || 0,
+        ),
+        discount_percent: Number(item.discountPercent || 0),
+        gst_rate: Number(item.gstRate || 0),
       }))
 
-    if (totals.paid > totals.total) {
-      setMessage('Payment exceeds the bill total.')
-      return
-    }
+      const paymentRows = payments
+        .filter((p) => Number(p.amount) > 0)
+        .map((p) => ({
+          payment_method: p.method,
+          amount: Number(p.amount),
+        }))
 
-    if (
-      totals.due > 0 &&
-      !payloadPayments.some(
-        (payment) => payment.payment_method === 'credit',
+      const { data, error } = await supabase.rpc(
+        'pharmdesk_complete_sale',
+        {
+          p_store_id: store.id,
+          p_customer_id: selectedCustomer?.id || null,
+          p_customer_type: selectedCustomer ? 'named' : 'walk_in',
+          p_bill_datetime: `${billDate}T${new Date()
+            .toTimeString()
+            .slice(0, 8)}`,
+          p_bill_discount_amount: Number(billDiscount || 0),
+          p_items: saleItems,
+          p_payments: paymentRows,
+        },
       )
-    ) {
-      payloadPayments.push({
-        payment_method: 'credit',
-        amount: Number(totals.due.toFixed(2)),
-      })
-    }
 
-    setBusy(true)
+      if (error) throw error
 
-    const { data, error } = await supabase.rpc(
-      'pharmdesk_complete_sale',
-      {
-        p_store_id: store.id,
-        p_customer_id: customer?.id || null,
-        p_bill_datetime: new Date(billDatetime).toISOString(),
-        p_bill_discount_amount: Number(billDiscount || 0),
-        p_notes: notes || null,
-        p_items: payloadItems,
-        p_payments: payloadPayments,
-      },
-    )
-
-    if (error) {
-      setMessage(error.message)
+      setMessage(`Sale completed successfully: ${data}`)
+      setSelectedCustomer(null)
+      setItems([emptySaleItem()])
+      setPayments([{ method: 'cash', amount: 0 }])
+      setBillDiscount(0)
+      setAlternatives([])
+    } catch (error) {
+      setMessage(error.message || 'Unable to complete sale.')
+    } finally {
       setBusy(false)
-      return
     }
-
-    setMessage(`Sale completed successfully. Sale ID: ${data}`)
-    setItems([])
-    setCustomer(null)
-    setCustomerSearch('')
-    setBillDiscount(0)
-    setPayments([{ payment_method: 'cash', amount: '' }])
-    setNotes('')
-    setBusy(false)
   }
 
-  const filteredProducts = products.filter((product) => {
-    const q = productSearch.toLowerCase().trim()
-    if (!q) return false
-
-    return [
-      product.product_name,
-      product.generic_display_name,
-      product.manufacturer,
-      product.strength_display,
-      product.dosage_form,
-    ]
-      .filter(Boolean)
-      .join(' ')
-      .toLowerCase()
-      .includes(q)
-  })
-
   return (
-    <div className="workspace-grid">
-      <div className="workspace-main">
-        <div className="panel">
-          <div className="panel-header">
-            <div>
-              <h3>New sale</h3>
-              <p>Create a bill without leaving the current workflow.</p>
-            </div>
-          </div>
-
-          <div className="form-grid two">
-            <label>
-              Customer
-              <div className="search-with-action">
-                <input
-                  value={customerSearch}
-                  onChange={(e) => searchCustomers(e.target.value)}
-                  placeholder="Search name or phone"
-                />
-                <button
-                  className="inline-btn"
-                  onClick={() => setShowCustomerForm(true)}
-                >
-                  + Add
-                </button>
-              </div>
-
-              {customer && (
-                <div className="selected-chip">
-                  <strong>{customer.name}</strong>
-                  <span>{customer.phone}</span>
-                  <button onClick={() => setCustomer(null)}>×</button>
-                </div>
-              )}
-
-              {!customer &&
-                customerSearch &&
-                customers.length > 0 && (
-                  <div className="suggestion-list">
-                    {customers.map((item) => (
-                      <button
-                        key={item.id}
-                        onClick={() => {
-                          setCustomer(item)
-                          setCustomerSearch(item.name)
-                          setCustomers([])
-                        }}
-                      >
-                        <strong>{item.name}</strong>
-                        <span>{item.phone}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-            </label>
-
-            <label>
-              Bill date & time
+    <form onSubmit={saveSale}>
+      <div className="two-column">
+        <div>
+          <PanelList title="Customer">
+            <div className="search-row">
               <input
-                type="datetime-local"
-                value={billDatetime}
-                onChange={(e) => setBillDatetime(e.target.value)}
+                value={
+                  selectedCustomer
+                    ? `${selectedCustomer.name} • ${selectedCustomer.phone || ''}`
+                    : customerQuery
+                }
+                placeholder="Search customer by name or phone"
+                onChange={(e) => {
+                  setSelectedCustomer(null)
+                  setCustomerQuery(e.target.value)
+                }}
               />
-            </label>
-          </div>
 
-          <div className="product-entry">
-            <label>
-              Add product
-              <div className="search-with-action">
-                <input
-                  value={productSearch}
-                  onChange={(e) => setProductSearch(e.target.value)}
-                  placeholder="Search medicine, brand, generic or manufacturer"
-                />
-                <button
-                  className="inline-btn"
-                  onClick={() => setShowProductForm(true)}
-                >
-                  + New
-                </button>
-              </div>
-            </label>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => setCustomerModal(true)}
+              >
+                + Add Customer
+              </button>
+            </div>
 
-            {filteredProducts.length > 0 && (
-              <div className="suggestion-list product-results">
-                {filteredProducts.slice(0, 8).map((product) => (
+            {!selectedCustomer && customerQuery && (
+              <div className="suggestion-list">
+                {filteredCustomers.map((customer) => (
                   <button
-                    key={product.id}
-                    onClick={() => chooseProduct(product)}
+                    type="button"
+                    className="suggestion"
+                    key={customer.id}
+                    onClick={() => {
+                      setSelectedCustomer(customer)
+                      setCustomerQuery('')
+                    }}
                   >
-                    <div>
-                      <strong>{product.product_name}</strong>
-                      <span>
-                        {product.generic_display_name || 'No generic name'}
-                      </span>
-                    </div>
-                    <small>
-                      {product.strength_display || ''}{' '}
-                      {product.dosage_form || ''}
-                    </small>
+                    <strong>{customer.name}</strong>
+                    <span>{customer.phone || 'No phone'}</span>
                   </button>
                 ))}
               </div>
             )}
-          </div>
 
-          <div className="sale-items">
-            {items.length === 0 ? (
-              <EmptyState
-                icon="▣"
-                title="No products added"
-                text="Search for a product above to begin the bill."
-              />
-            ) : (
-              items.map((item, index) => (
-                <SaleItemRow
-                  key={`${item.product_id}-${index}`}
-                  item={item}
-                  index={index}
-                  batches={batches}
-                  updateItem={updateItem}
-                  removeItem={removeItem}
-                />
-              ))
+            {selectedCustomer && (
+              <div className="selected-record">
+                <strong>{selectedCustomer.name}</strong>
+                <span>{selectedCustomer.phone || 'No phone'}</span>
+              </div>
             )}
-          </div>
 
-          <div className="form-grid two">
+            {!selectedCustomer && !customerQuery && (
+              <div className="muted">
+                Walk-in customer. A named customer can be selected above.
+              </div>
+            )}
+          </PanelList>
+
+          <PanelList title="Products">
+            <div className="search-row">
+              <input
+                value={productQuery}
+                placeholder="Search medicine, composition, manufacturer…"
+                onChange={(e) => setProductQuery(e.target.value)}
+              />
+
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => setProductModal(true)}
+              >
+                + Add New Product
+              </button>
+            </div>
+
+            {productQuery && (
+              <div className="suggestion-list">
+                {filteredProducts.map((product) => (
+                  <button
+                    type="button"
+                    className="suggestion"
+                    key={product.id}
+                    onClick={() => chooseProduct(product)}
+                  >
+                    <strong>{product.product_name}</strong>
+                    <span>
+                      {product.generic_display_name ||
+                        product.manufacturer ||
+                        product.dosage_form ||
+                        ''}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {alternatives.length > 0 && (
+              <div className="alternative-box">
+                <strong>Other brands with the same composition</strong>
+
+                <div className="chip-row">
+                  {alternatives.map((p) => (
+                    <button
+                      type="button"
+                      className="chip"
+                      key={p.id}
+                      onClick={() => chooseProduct(p)}
+                    >
+                      {p.product_name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </PanelList>
+
+          <PanelList title="Bill Items">
+            {items.map((item) => (
+              <SaleItemRow
+                key={item.id}
+                item={item}
+                onChange={(patch) => updateItem(item.id, patch)}
+                onRemove={() => removeItem(item.id)}
+              />
+            ))}
+          </PanelList>
+        </div>
+
+        <div>
+          <PanelList title="Bill Details">
+            <label>
+              Bill date
+              <input
+                type="date"
+                value={billDate}
+                onChange={(e) => setBillDate(e.target.value)}
+              />
+            </label>
+
             <label>
               Bill discount
               <input
                 type="number"
                 min="0"
+                step="0.01"
                 value={billDiscount}
                 onChange={(e) => setBillDiscount(e.target.value)}
               />
             </label>
 
-            <label>
-              Notes
-              <input
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="Optional"
-              />
-            </label>
-          </div>
-
-          {message && (
-            <div
-              className={
-                message.includes('successfully')
-                  ? 'success-box'
-                  : 'error-box'
-              }
-            >
-              {message}
+            <div className="totals">
+              <div>
+                <span>Subtotal</span>
+                <strong>{money(subtotal)}</strong>
+              </div>
+              <div>
+                <span>Item discounts</span>
+                <strong>{money(itemDiscount)}</strong>
+              </div>
+              <div>
+                <span>Bill discount</span>
+                <strong>{money(billDiscount)}</strong>
+              </div>
+              <div>
+                <span>GST</span>
+                <strong>{money(gst)}</strong>
+              </div>
+              <div className="grand-total">
+                <span>Total</span>
+                <strong>{money(grandTotal)}</strong>
+              </div>
             </div>
-          )}
-        </div>
-      </div>
+          </PanelList>
 
-      <aside className="workspace-side">
-        <div className="panel sticky-panel">
-          <div className="panel-header">
-            <div>
-              <h3>Payment</h3>
-              <p>Split payments are supported.</p>
-            </div>
-          </div>
-
-          <div className="bill-total">
-            <span>Grand total</span>
-            <strong>{money(totals.total)}</strong>
-          </div>
-
-          <div className="payment-list">
+          <PanelList title="Payments">
             {payments.map((payment, index) => (
               <div className="payment-row" key={index}>
                 <select
-                  value={payment.payment_method}
-                  onChange={(e) =>
-                    updatePayment(index, {
-                      payment_method: e.target.value,
-                    })
-                  }
+                  value={payment.method}
+                  onChange={(e) => {
+                    const next = [...payments]
+                    next[index] = {
+                      ...next[index],
+                      method: e.target.value,
+                    }
+                    setPayments(next)
+                  }}
                 >
                   <option value="cash">Cash</option>
                   <option value="upi">UPI</option>
@@ -1202,463 +1010,674 @@ function NewSale({ store, profile }) {
                 <input
                   type="number"
                   min="0"
+                  step="0.01"
                   value={payment.amount}
-                  onChange={(e) =>
-                    updatePayment(index, {
+                  onChange={(e) => {
+                    const next = [...payments]
+                    next[index] = {
+                      ...next[index],
                       amount: e.target.value,
-                    })
-                  }
-                  placeholder="Amount"
+                    }
+                    setPayments(next)
+                  }}
                 />
 
                 {payments.length > 1 && (
                   <button
-                    className="icon-btn"
-                    onClick={() => removePayment(index)}
+                    type="button"
+                    className="danger-button"
+                    onClick={() =>
+                      setPayments(
+                        payments.filter((_, i) => i !== index),
+                      )
+                    }
                   >
                     ×
                   </button>
                 )}
               </div>
             ))}
-          </div>
 
-          <button className="text-btn" onClick={addPayment}>
-            + Add payment method
-          </button>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() =>
+                setPayments([
+                  ...payments,
+                  { method: 'upi', amount: 0 },
+                ])
+              }
+            >
+              + Split Payment
+            </button>
 
-          <div className="totals-list">
-            <div>
-              <span>Subtotal</span>
-              <strong>{money(totals.subtotal)}</strong>
+            <div className="payment-summary">
+              <div>
+                <span>Paid</span>
+                <strong>{money(paidAmount)}</strong>
+              </div>
+              <div>
+                <span>Due</span>
+                <strong>{money(dueAmount)}</strong>
+              </div>
             </div>
-            <div>
-              <span>Item discount</span>
-              <strong>-{money(totals.itemDiscount)}</strong>
-            </div>
-            <div>
-              <span>GST included</span>
-              <strong>{money(totals.gst)}</strong>
-            </div>
-            <div>
-              <span>Paid</span>
-              <strong>{money(totals.paid)}</strong>
-            </div>
-            <div className="due">
-              <span>Due</span>
-              <strong>{money(totals.due)}</strong>
-            </div>
-          </div>
+          </PanelList>
+
+          {message && (
+            <div className="message-box">{message}</div>
+          )}
 
           <button
-            className="primary-btn full"
-            disabled={busy || items.length === 0}
-            onClick={completeSale}
+            className="primary-button large"
+            disabled={busy}
+            type="submit"
           >
-            {busy ? 'Completing…' : 'Complete Sale'}
+            {busy ? 'Completing sale…' : `Complete Sale • ${money(grandTotal)}`}
           </button>
         </div>
-      </aside>
+      </div>
 
-      {showCustomerForm && (
+      {customerModal && (
         <CustomerModal
           store={store}
-          onClose={() => setShowCustomerForm(false)}
-          onCreated={(newCustomer) => {
-            setCustomer(newCustomer)
-            setCustomerSearch(newCustomer.name)
-            setShowCustomerForm(false)
+          onClose={() => setCustomerModal(false)}
+          onCreated={(customer) => {
+            setCustomers((x) => [customer, ...x])
+            setSelectedCustomer(customer)
+            setCustomerModal(false)
           }}
         />
       )}
 
-      {showProductForm && (
+      {productModal && (
         <ProductModal
           store={store}
-          onClose={() => setShowProductForm(false)}
-          onCreated={async (product) => {
-            setShowProductForm(false)
-            await loadProducts()
-            await chooseProduct(product)
+          onClose={() => setProductModal(false)}
+          onCreated={(product) => {
+            loadProductsAfterCreate(
+              product,
+              products,
+              setProducts,
+            )
+            setProductModal(false)
           }}
         />
       )}
-    </div>
+    </form>
   )
 }
 
-function SaleItemRow({
-  item,
-  index,
-  updateItem,
-  removeItem,
-}) {
-  const quantity =
-    Number(item.quantity_entered || 0) *
-    (item.unit_type === 'pack'
-      ? Number(item.units_per_pack || 1)
-      : 1)
+async function loadProductsAfterCreate(product, current, setter) {
+  const { data } = await supabase
+    .from('store_products')
+    .select(`
+      *,
+      products (
+        id,
+        product_name,
+        generic_display_name,
+        composition_id,
+        manufacturer,
+        dosage_form,
+        gst_rate,
+        is_active
+      )
+    `)
+    .eq('product_id', product.id)
+    .limit(1)
+    .maybeSingle()
 
-  const gross =
-    item.unit_type === 'pack'
-      ? Number(item.quantity_entered || 0) *
-        Number(item.selling_price_per_pack || 0)
-      : (Number(item.quantity_entered || 0) /
-          Number(item.units_per_pack || 1)) *
-        Number(item.selling_price_per_pack || 0)
+  if (data?.products) {
+    setter([
+      {
+        ...data.products,
+        storeProductId: data.id,
+        default_selling_price: data.default_selling_price,
+        default_discount_percent: data.default_discount_percent,
+        minimum_stock: data.minimum_stock,
+        reorder_level: data.reorder_level,
+      },
+      ...current.filter((x) => x.id !== product.id),
+    ])
+  }
+}
 
-  const discount =
-    gross * (Number(item.discount_percent || 0) / 100)
+function SaleItemRow({ item, onChange, onRemove }) {
+  const lineTotal =
+    Number(item.quantity || 0) *
+    Number(item.sellingPricePerPack || 0) *
+    (1 - Number(item.discountPercent || 0) / 100)
 
   return (
-    <div className="sale-item-card">
-      <div className="sale-item-top">
-        <div>
-          <strong>{item.product_name}</strong>
-          <span>
-            Batch {item.batch_number} · {quantity} units
-          </span>
+    <div className="transaction-item">
+      <div className="item-title">
+        <strong>{item.product?.product_name || 'Product not selected'}</strong>
+
+        {item.product?.generic_display_name && (
+          <span>{item.product.generic_display_name}</span>
+        )}
+      </div>
+
+      {item.product && (
+        <div className="item-grid">
+          <label>
+            Batch
+            <select
+              value={item.batch?.id || ''}
+              onChange={(e) => {
+                const batch = item.batches.find(
+                  (b) => b.id === e.target.value,
+                )
+
+                onChange({
+                  batch,
+                  unitsPerPack: batch?.units_per_pack || 1,
+                  mrpPerPack: batch?.mrp_per_pack || 0,
+                })
+              }}
+            >
+              <option value="">Select batch</option>
+
+              {item.batches.map((batch) => (
+                <option key={batch.id} value={batch.id}>
+                  {batch.batch_number} • Exp {dateText(batch.expiry_date)} •
+                  Stock {batch.current_stock_units}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label>
+            Sale type
+            <select
+              value={item.unitType}
+              onChange={(e) =>
+                onChange({ unitType: e.target.value })
+              }
+            >
+              <option value="pack">Strip / Pack</option>
+              <option value="unit">Tablet / Unit</option>
+            </select>
+          </label>
+
+          <label>
+            Quantity
+            <input
+              type="number"
+              min="0.01"
+              value={item.quantity}
+              onChange={(e) =>
+                onChange({ quantity: e.target.value })
+              }
+            />
+          </label>
+
+          <label>
+            Selling price
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={item.sellingPricePerPack}
+              onChange={(e) =>
+                onChange({
+                  sellingPricePerPack: e.target.value,
+                })
+              }
+            />
+          </label>
+
+          <label>
+            Discount %
+            <input
+              type="number"
+              min="0"
+              max="100"
+              step="0.01"
+              value={item.discountPercent}
+              onChange={(e) =>
+                onChange({
+                  discountPercent: e.target.value,
+                })
+              }
+            />
+          </label>
+
+          <label>
+            GST %
+            <input
+              type="number"
+              min="0"
+              max="100"
+              value={item.gstRate}
+              onChange={(e) =>
+                onChange({ gstRate: e.target.value })
+              }
+            />
+          </label>
         </div>
+      )}
+
+      <div className="item-footer">
+        <strong>{money(lineTotal)}</strong>
 
         <button
-          className="danger-text"
-          onClick={() => removeItem(index)}
+          type="button"
+          className="danger-button"
+          onClick={onRemove}
         >
           Remove
         </button>
       </div>
-
-      <div className="form-grid four">
-        <label>
-          Sell as
-          <select
-            value={item.unit_type}
-            onChange={(e) =>
-              updateItem(index, {
-                unit_type: e.target.value,
-              })
-            }
-          >
-            <option value="pack">Strip / Pack</option>
-            <option value="unit">Tablets / Units</option>
-          </select>
-        </label>
-
-        <label>
-          Quantity
-          <input
-            type="number"
-            min="0.01"
-            value={item.quantity_entered}
-            onChange={(e) =>
-              updateItem(index, {
-                quantity_entered: e.target.value,
-              })
-            }
-          />
-        </label>
-
-        <label>
-          Selling price / pack
-          <input
-            type="number"
-            min="0"
-            value={item.selling_price_per_pack}
-            onChange={(e) =>
-              updateItem(index, {
-                selling_price_per_pack: e.target.value,
-              })
-            }
-          />
-        </label>
-
-        <label>
-          Discount %
-          <input
-            type="number"
-            min="0"
-            max="100"
-            value={item.discount_percent}
-            onChange={(e) =>
-              updateItem(index, {
-                discount_percent: e.target.value,
-              })
-            }
-          />
-        </label>
-      </div>
-
-      <div className="sale-item-footer">
-        <span>MRP {money(item.mrp_per_pack)}</span>
-        <span>GST {item.gst_rate}%</span>
-        <strong>{money(gross - discount)}</strong>
-      </div>
     </div>
   )
 }
 
-function DraftBills({ store }) {
-  const [drafts, setDrafts] = useState([])
+/* =========================================================
+   CUSTOMER HISTORY
+========================================================= */
+
+function CustomerHistoryList({ store }) {
+  const [customers, setCustomers] = useState([])
+  const [query, setQuery] = useState('')
+  const [selected, setSelected] = useState(null)
+
+  useEffect(() => {
+    if (!store?.id) return
+
+    supabase
+      .from('customers')
+      .select('*')
+      .eq('store_id', store.id)
+      .order('name')
+      .then(({ data }) => setCustomers(data || []))
+  }, [store?.id])
+
+  const filtered = customers.filter((c) =>
+    matchesSearch(query, c.name, c.phone),
+  )
+
+  return (
+    <PanelList title="Customers">
+      <input
+        placeholder="Search customer"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+      />
+
+      <div className="record-list">
+        {filtered.map((customer) => (
+          <button
+            className="record-row"
+            key={customer.id}
+            onClick={() => setSelected(customer)}
+          >
+            <div>
+              <strong>{customer.name || 'Walk-in Customer'}</strong>
+              <span>{customer.phone || 'No phone'}</span>
+            </div>
+
+            <span>View history →</span>
+          </button>
+        ))}
+      </div>
+
+      {selected && (
+        <CustomerHistoryModal
+          customer={selected}
+          onClose={() => setSelected(null)}
+        />
+      )}
+    </PanelList>
+  )
+}
+
+function CustomerHistoryModal({ customer, onClose }) {
+  const [sales, setSales] = useState([])
+  const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    loadDrafts()
-  }, [store.id])
+    loadHistory()
+  }, [customer.id])
 
-  async function loadDrafts() {
+  const loadHistory = async () => {
     setLoading(true)
 
-    const { data } = await supabase
+    const { data: salesData } = await supabase
       .from('sales')
-      .select(`
-        *,
-        customers(name, phone)
-      `)
-      .eq('store_id', store.id)
-      .eq('status', 'draft')
-      .order('created_at', { ascending: false })
+      .select(
+        'id, invoice_number, bill_datetime, grand_total, amount_paid, amount_due, status',
+      )
+      .eq('customer_id', customer.id)
+      .order('bill_datetime', { ascending: false })
 
-    setDrafts(data || [])
+    const saleRows = salesData || []
+    setSales(saleRows)
+
+    if (saleRows.length) {
+      const { data: itemRows } = await supabase
+        .from('sale_items')
+        .select(`
+          *,
+          products (
+            id,
+            product_name,
+            generic_display_name
+          ),
+          batches (
+            batch_number,
+            expiry_date
+          )
+        `)
+        .in(
+          'sale_id',
+          saleRows.map((x) => x.id),
+        )
+
+      setItems(itemRows || [])
+    } else {
+      setItems([])
+    }
+
     setLoading(false)
   }
 
+  const medicineHistory = useMemo(() => {
+    const map = new Map()
+
+    for (const item of items) {
+      const product = item.products
+      if (!product) continue
+
+      const key = product.id
+
+      if (!map.has(key)) {
+        map.set(key, {
+          product,
+          quantity: 0,
+          lastDate: null,
+          lastPrice: 0,
+        })
+      }
+
+      const entry = map.get(key)
+      entry.quantity += Number(item.quantity_entered || 0)
+      entry.lastPrice = Number(
+        item.selling_price_per_pack || 0,
+      )
+
+      const sale = sales.find((s) => s.id === item.sale_id)
+
+      if (
+        sale &&
+        (!entry.lastDate ||
+          new Date(sale.bill_datetime) >
+            new Date(entry.lastDate))
+      ) {
+        entry.lastDate = sale.bill_datetime
+      }
+    }
+
+    return Array.from(map.values()).sort(
+      (a, b) =>
+        new Date(b.lastDate || 0) -
+        new Date(a.lastDate || 0),
+    )
+  }, [items, sales])
+
   return (
-    <PanelList
-      title="Draft bills"
-      subtitle="Incomplete bills saved for later."
-      loading={loading}
-      empty="No saved draft bills."
-    >
-      {drafts.map((draft) => (
-        <div className="list-row" key={draft.id}>
-          <div>
-            <strong>{draft.invoice_number}</strong>
-            <span>
-              {draft.customers?.name || 'Walk-in'} ·{' '}
-              {dateTimeText(draft.created_at)}
-            </span>
+    <Modal title={`${customer.name} • Purchase History`} onClose={onClose}>
+      {loading ? (
+        <LoadingInline />
+      ) : (
+        <>
+          <div className="history-header">
+            <strong>{customer.name}</strong>
+            <span>{customer.phone || 'No phone'}</span>
           </div>
-          <span className="status-pill warning">Draft</span>
+
+          <h3>Medicines previously purchased</h3>
+
+          <div className="record-list">
+            {medicineHistory.length === 0 && (
+              <EmptyState text="No previous medicine purchases found." />
+            )}
+
+            {medicineHistory.map((entry) => (
+              <div className="record-row static" key={entry.product.id}>
+                <div>
+                  <strong>{entry.product.product_name}</strong>
+                  <span>
+                    {entry.product.generic_display_name || ''}
+                  </span>
+                </div>
+
+                <div className="record-right">
+                  <span>
+                    Qty: {entry.quantity}
+                  </span>
+                  <span>
+                    Last: {dateText(entry.lastDate)}
+                  </span>
+                  <strong>{money(entry.lastPrice)}</strong>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <h3>Previous bills</h3>
+
+          <div className="record-list">
+            {sales.map((sale) => (
+              <div className="record-row static" key={sale.id}>
+                <div>
+                  <strong>{sale.invoice_number}</strong>
+                  <span>{dateTimeText(sale.bill_datetime)}</span>
+                </div>
+
+                <div className="record-right">
+                  <span>{sale.status}</span>
+                  <strong>{money(sale.grand_total)}</strong>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </Modal>
+  )
+}
+
+/* =========================================================
+   SALES LISTS
+========================================================= */
+
+function DraftBills({ store }) {
+  const [rows, setRows] = useState([])
+
+  useEffect(() => {
+    if (!store?.id) return
+
+    supabase
+      .from('sales')
+      .select('*')
+      .eq('store_id', store.id)
+      .eq('status', 'draft')
+      .order('created_at', { ascending: false })
+      .then(({ data }) => setRows(data || []))
+  }, [store?.id])
+
+  return (
+    <PanelList title="Draft Bills">
+      {rows.length === 0 ? (
+        <EmptyState text="No cloud-saved draft bills yet." />
+      ) : (
+        <div className="record-list">
+          {rows.map((row) => (
+            <div className="record-row static" key={row.id}>
+              <div>
+                <strong>{row.invoice_number || 'Draft'}</strong>
+                <span>{dateTimeText(row.created_at)}</span>
+              </div>
+              <strong>{money(row.grand_total)}</strong>
+            </div>
+          ))}
         </div>
-      ))}
+      )}
     </PanelList>
   )
 }
 
 function CompletedBills({ store }) {
-  const [sales, setSales] = useState([])
-  const [search, setSearch] = useState('')
-  const [loading, setLoading] = useState(true)
+  const [rows, setRows] = useState([])
+  const [query, setQuery] = useState('')
 
   useEffect(() => {
-    loadSales()
-  }, [store.id])
+    if (!store?.id) return
 
-  async function loadSales() {
-    setLoading(true)
-
-    const { data } = await supabase
+    supabase
       .from('sales')
-      .select(`
-        *,
-        customers(name, phone)
-      `)
+      .select('*')
       .eq('store_id', store.id)
-      .eq('status', 'completed')
+      .in('status', ['completed', 'returned'])
       .order('bill_datetime', { ascending: false })
       .limit(200)
+      .then(({ data }) => setRows(data || []))
+  }, [store?.id])
 
-    setSales(data || [])
-    setLoading(false)
-  }
-
-  const filtered = sales.filter((sale) =>
-    [
-      sale.invoice_number,
-      sale.customers?.name,
-      sale.customers?.phone,
-    ]
-      .filter(Boolean)
-      .join(' ')
-      .toLowerCase()
-      .includes(search.toLowerCase()),
+  const filtered = rows.filter((x) =>
+    matchesSearch(
+      query,
+      x.invoice_number,
+      x.bill_datetime,
+      x.status,
+    ),
   )
 
   return (
-    <div className="panel">
-      <div className="panel-header">
-        <div>
-          <h3>Completed bills</h3>
-          <p>Search previous sales.</p>
-        </div>
-        <input
-          className="compact-search"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Invoice / customer / phone"
-        />
-      </div>
+    <PanelList title="Completed Bills">
+      <input
+        placeholder="Search invoice"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+      />
 
-      {loading ? (
-        <LoadingInline />
-      ) : filtered.length === 0 ? (
-        <EmptyState title="No completed bills found." />
-      ) : (
-        <div className="list-table">
-          {filtered.map((sale) => (
-            <div className="list-row" key={sale.id}>
-              <div>
-                <strong>{sale.invoice_number}</strong>
-                <span>
-                  {sale.customers?.name || 'Walk-in Customer'} ·{' '}
-                  {dateTimeText(sale.bill_datetime)}
-                </span>
-              </div>
-              <div className="row-right">
-                <strong>{money(sale.grand_total)}</strong>
-                <span className="status-pill success">
-                  {sale.amount_due > 0 ? 'Credit' : 'Paid'}
-                </span>
-              </div>
+      <div className="record-list">
+        {filtered.map((row) => (
+          <div className="record-row static" key={row.id}>
+            <div>
+              <strong>{row.invoice_number}</strong>
+              <span>{dateTimeText(row.bill_datetime)}</span>
             </div>
-          ))}
-        </div>
-      )}
-    </div>
+
+            <div className="record-right">
+              <span>{row.status}</span>
+              <strong>{money(row.grand_total)}</strong>
+            </div>
+          </div>
+        ))}
+      </div>
+    </PanelList>
   )
 }
 
 function SalesReturns({ store }) {
-  const [sales, setSales] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [rows, setRows] = useState([])
 
   useEffect(() => {
-    loadReturns()
-  }, [store.id])
+    if (!store?.id) return
 
-  async function loadReturns() {
-    setLoading(true)
-
-    const { data } = await supabase
+    supabase
       .from('sales_returns')
-      .select(`
-        *,
-        sales:original_sale_id(invoice_number),
-        customers:customer_id(name)
-      `)
+      .select('*')
       .eq('store_id', store.id)
       .order('created_at', { ascending: false })
       .limit(100)
-
-    setSales(data || [])
-    setLoading(false)
-  }
+      .then(({ data }) => setRows(data || []))
+  }, [store?.id])
 
   return (
-    <PanelList
-      title="Sales returns"
-      subtitle="Return history and refunds."
-      loading={loading}
-      empty="No sales returns recorded."
-    >
-      {sales.map((item) => (
-        <div className="list-row" key={item.id}>
-          <div>
-            <strong>
-              {item.sales?.invoice_number || 'Original bill'}
-            </strong>
-            <span>
-              {item.customers?.name || 'Walk-in'} ·{' '}
-              {dateText(item.created_at)}
-            </span>
-          </div>
-          <strong>{money(item.refund_amount)}</strong>
+    <PanelList title="Sales Returns">
+      {rows.length === 0 ? (
+        <EmptyState text="No sales returns recorded." />
+      ) : (
+        <div className="record-list">
+          {rows.map((row) => (
+            <div className="record-row static" key={row.id}>
+              <div>
+                <strong>{row.id.slice(0, 8)}</strong>
+                <span>{dateTimeText(row.created_at)}</span>
+              </div>
+              <strong>{money(row.refund_amount)}</strong>
+            </div>
+          ))}
         </div>
-      ))}
+      )}
     </PanelList>
   )
 }
 
 function CustomerCredit({ store }) {
-  const [transactions, setTransactions] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [rows, setRows] = useState([])
 
   useEffect(() => {
-    loadCredit()
-  }, [store.id])
+    if (!store?.id) return
 
-  async function loadCredit() {
-    setLoading(true)
-
-    const { data } = await supabase
+    supabase
       .from('customer_credit_transactions')
-      .select(`
-        *,
-        customers:customer_id(name, phone)
-      `)
+      .select('*')
       .eq('store_id', store.id)
       .order('created_at', { ascending: false })
       .limit(200)
-
-    setTransactions(data || [])
-    setLoading(false)
-  }
+      .then(({ data }) => setRows(data || []))
+  }, [store?.id])
 
   return (
-    <PanelList
-      title="Customer credit"
-      subtitle="Udhar and customer credit transactions."
-      loading={loading}
-      empty="No credit transactions found."
-    >
-      {transactions.map((item) => (
-        <div className="list-row" key={item.id}>
-          <div>
-            <strong>{item.customers?.name || 'Customer'}</strong>
-            <span>
-              {item.transaction_type} · {dateTimeText(item.created_at)}
-            </span>
-          </div>
-          <strong>{money(item.amount)}</strong>
+    <PanelList title="Customer Credit">
+      {rows.length === 0 ? (
+        <EmptyState text="No credit transactions." />
+      ) : (
+        <div className="record-list">
+          {rows.map((row) => (
+            <div className="record-row static" key={row.id}>
+              <div>
+                <strong>{row.transaction_type}</strong>
+                <span>{dateTimeText(row.created_at)}</span>
+              </div>
+              <strong>{money(row.amount)}</strong>
+            </div>
+          ))}
         </div>
-      ))}
+      )}
     </PanelList>
   )
 }
 
-/* ============================================================
+/* =========================================================
    PURCHASES
-============================================================ */
+========================================================= */
 
-function PurchasesModule({ store, profile }) {
+function PurchasesModule({ store }) {
   const [tab, setTab] = useState('New Purchase')
 
   return (
-    <div className="module">
+    <div>
       <ModuleHeader
-        eyebrow="PURCHASES"
-        title="Purchases & Suppliers"
-        description="Receive stock, manage supplier invoices and payments."
+        title="Purchases"
+        subtitle="Supplier invoices, stock intake and purchase planning"
       />
 
       <TabBar tabs={PURCHASE_TABS} active={tab} onChange={setTab} />
 
-      {tab === 'New Purchase' && (
-        <NewPurchase store={store} profile={profile} />
-      )}
-
-      {tab === 'Supplier Invoices' && (
-        <SupplierInvoices store={store} />
-      )}
-
+      {tab === 'New Purchase' && <NewPurchase store={store} />}
+      {tab === 'Supplier Invoices' && <SupplierInvoices store={store} />}
       {tab === 'Pending Payments' && (
         <PendingSupplierPayments store={store} />
       )}
-
       {tab === 'Purchase Orders' && (
         <PurchaseOrders store={store} />
       )}
-
       {tab === 'AI Recommendations' && (
         <AIRecommendations store={store} />
       )}
@@ -1666,266 +1685,327 @@ function PurchasesModule({ store, profile }) {
   )
 }
 
-function NewPurchase({ store, profile }) {
-  const [supplier, setSupplier] = useState(null)
-  const [supplierSearch, setSupplierSearch] = useState('')
+function NewPurchase({ store }) {
   const [suppliers, setSuppliers] = useState([])
   const [products, setProducts] = useState([])
-  const [productSearch, setProductSearch] = useState('')
-  const [items, setItems] = useState([])
+  const [supplierQuery, setSupplierQuery] = useState('')
+  const [productQuery, setProductQuery] = useState('')
+  const [selectedSupplier, setSelectedSupplier] = useState(null)
   const [invoiceNumber, setInvoiceNumber] = useState('')
   const [invoiceDate, setInvoiceDate] = useState(todayISO())
-  const [discount, setDiscount] = useState(0)
-  const [cgst, setCgst] = useState(0)
-  const [sgst, setSgst] = useState(0)
-  const [igst, setIgst] = useState(0)
-  const [otherCharges, setOtherCharges] = useState(0)
-  const [notes, setNotes] = useState('')
-  const [busy, setBusy] = useState(false)
+  const [items, setItems] = useState([emptyPurchaseItem()])
+  const [supplierModal, setSupplierModal] = useState(false)
+  const [productModal, setProductModal] = useState(false)
   const [message, setMessage] = useState('')
-  const [showSupplierForm, setShowSupplierForm] = useState(false)
-  const [showProductForm, setShowProductForm] = useState(false)
+  const [busy, setBusy] = useState(false)
 
   useEffect(() => {
+    if (!store?.id) return
+
+    loadSuppliers()
     loadProducts()
-  }, [store.id])
+  }, [store?.id])
 
-  async function loadProducts() {
-    const { data } = await supabase
-      .from('products')
-      .select(`
-        id,
-        product_name,
-        generic_display_name,
-        manufacturer,
-        strength_display,
-        dosage_form,
-        gst_rate
-      `)
-      .eq('is_active', true)
-      .order('product_name')
-      .limit(500)
-
-    setProducts(data || [])
-  }
-
-  async function searchSuppliers(value) {
-    setSupplierSearch(value)
-
-    if (!value.trim()) {
-      setSuppliers([])
-      return
-    }
-
+  const loadSuppliers = async () => {
     const { data } = await supabase
       .from('suppliers')
       .select('*')
       .eq('store_id', store.id)
       .eq('is_active', true)
-      .ilike('supplier_name', `%${value}%`)
-      .limit(8)
+      .order('supplier_name')
 
     setSuppliers(data || [])
   }
 
-  function addProduct(product) {
-    setProductSearch('')
+  const loadProducts = async () => {
+    const { data } = await supabase
+      .from('store_products')
+      .select(`
+        *,
+        products (
+          id,
+          product_name,
+          generic_display_name,
+          manufacturer,
+          composition_id,
+          gst_rate,
+          is_active
+        )
+      `)
+      .eq('store_id', store.id)
+      .eq('is_active', true)
 
-    setItems((current) => [
-      ...current,
-      {
-        ...emptyPurchaseItem(),
-        product_id: product.id,
-        product_name: product.product_name,
-        gst_rate: Number(product.gst_rate || 0),
-      },
-    ])
+    setProducts(
+      (data || [])
+        .filter((x) => x.products?.is_active !== false)
+        .map((x) => ({
+          ...x.products,
+          default_selling_price: x.default_selling_price,
+          default_discount_percent: x.default_discount_percent,
+        })),
+    )
   }
 
-  function updateItem(index, patch) {
+  const supplierResults = suppliers
+    .filter((x) =>
+      matchesSearch(
+        supplierQuery,
+        x.supplier_name,
+        x.phone,
+        x.email,
+        x.gstin,
+        x.drug_license_number,
+      ),
+    )
+    .slice(0, 10)
+
+  const productResults = products
+    .map((p) => ({
+      p,
+      score: fuzzyScore(
+        productQuery,
+        `${p.product_name} ${p.generic_display_name || ''} ${
+          p.manufacturer || ''
+        }`,
+      ),
+    }))
+    .filter((x) => !productQuery || x.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 12)
+    .map((x) => x.p)
+
+  const chooseProduct = (product) => {
+    setProductQuery('')
+
+    setItems((current) => {
+      const item = {
+        ...emptyPurchaseItem(),
+        product,
+        gstRate: Number(product.gst_rate || 0),
+      }
+
+      if (
+        current.length === 1 &&
+        !current[0].product
+      ) {
+        return [item]
+      }
+
+      return [...current, item]
+    })
+  }
+
+  const updateItem = (id, patch) => {
     setItems((current) =>
-      current.map((item, i) =>
-        i === index ? { ...item, ...patch } : item,
+      current.map((x) =>
+        x.id === id ? { ...x, ...patch } : x,
       ),
     )
   }
 
-  function removeItem(index) {
-    setItems((current) => current.filter((_, i) => i !== index))
+  const removeItem = (id) => {
+    setItems((current) => {
+      const next = current.filter((x) => x.id !== id)
+      return next.length ? next : [emptyPurchaseItem()]
+    })
   }
 
-  const subtotal = items.reduce(
-    (sum, item) =>
-      sum +
-      Number(item.paid_packs || 0) *
-        Number(item.purchase_rate_per_pack || 0),
-    0,
+  const subtotal = sum(
+    items.map((item) => {
+      const packs =
+        Number(item.paidPacks || 0) +
+        Number(item.freePacks || 0)
+
+      const rate = Number(item.purchaseRatePerPack || 0)
+
+      return Number(item.paidPacks || 0) * rate
+    }),
   )
 
-  const total =
-    subtotal -
-    Number(discount || 0) +
-    Number(cgst || 0) +
-    Number(sgst || 0) +
-    Number(igst || 0) +
-    Number(otherCharges || 0)
-
-  const filteredProducts = products.filter((product) =>
-    [
-      product.product_name,
-      product.generic_display_name,
-      product.manufacturer,
-      product.strength_display,
-    ]
-      .filter(Boolean)
-      .join(' ')
-      .toLowerCase()
-      .includes(productSearch.toLowerCase()),
-  )
-
-  async function completePurchase() {
+  const completePurchase = async (e) => {
+    e.preventDefault()
+    setBusy(true)
     setMessage('')
 
-    if (!supplier) {
-      setMessage('Select a supplier first.')
-      return
-    }
+    try {
+      if (!selectedSupplier) {
+        throw new Error('Select a supplier.')
+      }
 
-    if (!invoiceNumber.trim()) {
-      setMessage('Supplier invoice number is required.')
-      return
-    }
+      if (!invoiceNumber.trim()) {
+        throw new Error('Invoice number is required.')
+      }
 
-    if (items.length === 0) {
-      setMessage('Add at least one purchase item.')
-      return
-    }
+      const validItems = items.filter((x) => x.product)
 
-    setBusy(true)
+      if (!validItems.length) {
+        throw new Error('Add at least one product.')
+      }
 
-    const payload = items.map((item) => ({
-      product_id: item.product_id,
-      batch_number: item.batch_number,
-      expiry_date: item.expiry_date,
-      units_per_pack: Number(item.units_per_pack),
-      paid_packs: Number(item.paid_packs || 0),
-      free_packs: Number(item.free_packs || 0),
-      loose_units: Number(item.loose_units || 0),
-      purchase_rate_per_pack: Number(
-        item.purchase_rate_per_pack || 0,
-      ),
-      mrp_per_pack: Number(item.mrp_per_pack || 0),
-      supplier_discount_percent: Number(
-        item.supplier_discount_percent || 0,
-      ),
-      gst_rate: Number(item.gst_rate || 0),
-    }))
+      const payload = validItems.map((item) => ({
+        product_id: item.product.id,
+        batch_number: item.batchNumber,
+        expiry_date: item.expiryDate,
+        paid_packs: Number(item.paidPacks || 0),
+        free_packs: Number(item.freePacks || 0),
+        loose_units: Number(item.looseUnits || 0),
+        purchase_rate_per_pack: Number(
+          item.purchaseRatePerPack || 0,
+        ),
+        mrp_per_pack: Number(item.mrpPerPack || 0),
+        supplier_discount_percent: Number(
+          item.supplierDiscountPercent || 0,
+        ),
+        gst_rate: Number(item.gstRate || 0),
+        units_per_pack: Number(
+          item.unitsPerPack || 1,
+        ),
+      }))
 
-    const { data, error } = await supabase.rpc(
-      'pharmdesk_complete_purchase',
-      {
-        p_store_id: store.id,
-        p_supplier_id: supplier.id,
-        p_invoice_number: invoiceNumber.trim(),
-        p_invoice_date: invoiceDate,
-        p_items: payload,
-        p_discount_amount: Number(discount || 0),
-        p_cgst_amount: Number(cgst || 0),
-        p_sgst_amount: Number(sgst || 0),
-        p_igst_amount: Number(igst || 0),
-        p_other_charges: Number(otherCharges || 0),
-        p_notes: notes || null,
-      },
-    )
+      const { data, error } = await supabase.rpc(
+        'pharmdesk_complete_purchase',
+        {
+          p_store_id: store.id,
+          p_supplier_id: selectedSupplier.id,
+          p_invoice_number: invoiceNumber.trim(),
+          p_invoice_date: invoiceDate,
+          p_items: payload,
+        },
+      )
 
-    if (error) {
-      setMessage(error.message)
+      if (error) throw error
+
+      setMessage(`Purchase completed successfully: ${data}`)
+      setInvoiceNumber('')
+      setItems([emptyPurchaseItem()])
+    } catch (error) {
+      setMessage(error.message || 'Unable to complete purchase.')
+    } finally {
       setBusy(false)
-      return
     }
-
-    setMessage(`Purchase received successfully. Invoice ID: ${data}`)
-    setItems([])
-    setSupplier(null)
-    setSupplierSearch('')
-    setInvoiceNumber('')
-    setDiscount(0)
-    setCgst(0)
-    setSgst(0)
-    setIgst(0)
-    setOtherCharges(0)
-    setNotes('')
-    setBusy(false)
   }
 
   return (
-    <div className="workspace-grid">
-      <div className="workspace-main">
-        <div className="panel">
-          <div className="panel-header">
-            <div>
-              <h3>New purchase</h3>
-              <p>Receive supplier stock into inventory.</p>
+    <form onSubmit={completePurchase}>
+      <div className="two-column">
+        <div>
+          <PanelList title="Purchase Party / Supplier">
+            <div className="search-row">
+              <input
+                value={
+                  selectedSupplier
+                    ? selectedSupplier.supplier_name
+                    : supplierQuery
+                }
+                placeholder="Search supplier"
+                onChange={(e) => {
+                  setSelectedSupplier(null)
+                  setSupplierQuery(e.target.value)
+                }}
+              />
+
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => setSupplierModal(true)}
+              >
+                + Add Purchase Party
+              </button>
             </div>
-          </div>
 
-          <div className="form-grid three">
-            <label>
-              Purchase party
-              <div className="search-with-action">
-                <input
-                  value={supplierSearch}
-                  onChange={(e) =>
-                    searchSuppliers(e.target.value)
-                  }
-                  placeholder="Search supplier"
-                />
-                <button
-                  className="inline-btn"
-                  onClick={() => setShowSupplierForm(true)}
-                >
-                  + Add
-                </button>
-              </div>
-
-              {supplier && (
-                <div className="selected-chip">
-                  <strong>{supplier.supplier_name}</strong>
-                  <button onClick={() => setSupplier(null)}>
-                    ×
+            {!selectedSupplier && supplierQuery && (
+              <div className="suggestion-list">
+                {supplierResults.map((supplier) => (
+                  <button
+                    type="button"
+                    className="suggestion"
+                    key={supplier.id}
+                    onClick={() => {
+                      setSelectedSupplier(supplier)
+                      setSupplierQuery('')
+                    }}
+                  >
+                    <strong>{supplier.supplier_name}</strong>
+                    <span>{supplier.phone || ''}</span>
                   </button>
-                </div>
-              )}
+                ))}
+              </div>
+            )}
 
-              {!supplier &&
-                supplierSearch &&
-                suppliers.length > 0 && (
-                  <div className="suggestion-list">
-                    {suppliers.map((item) => (
-                      <button
-                        key={item.id}
-                        onClick={() => {
-                          setSupplier(item)
-                          setSupplierSearch(item.supplier_name)
-                          setSuppliers([])
-                        }}
-                      >
-                        <strong>{item.supplier_name}</strong>
-                        <span>{item.phone || 'No phone'}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-            </label>
+            {selectedSupplier && (
+              <div className="selected-record">
+                <strong>
+                  {selectedSupplier.supplier_name}
+                </strong>
+                <span>
+                  {selectedSupplier.phone || 'No phone'}
+                </span>
+              </div>
+            )}
+          </PanelList>
 
+          <PanelList title="Products">
+            <div className="search-row">
+              <input
+                value={productQuery}
+                placeholder="Search product"
+                onChange={(e) => setProductQuery(e.target.value)}
+              />
+
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => setProductModal(true)}
+              >
+                + Add New Product
+              </button>
+            </div>
+
+            {productQuery && (
+              <div className="suggestion-list">
+                {productResults.map((product) => (
+                  <button
+                    type="button"
+                    className="suggestion"
+                    key={product.id}
+                    onClick={() => chooseProduct(product)}
+                  >
+                    <strong>{product.product_name}</strong>
+                    <span>
+                      {product.generic_display_name ||
+                        product.manufacturer ||
+                        ''}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </PanelList>
+
+          <PanelList title="Purchase Items">
+            {items.map((item) => (
+              <PurchaseItemRow
+                key={item.id}
+                item={item}
+                onChange={(patch) =>
+                  updateItem(item.id, patch)
+                }
+                onRemove={() => removeItem(item.id)}
+              />
+            ))}
+          </PanelList>
+        </div>
+
+        <div>
+          <PanelList title="Invoice">
             <label>
-              Supplier invoice number
+              Invoice number
               <input
                 value={invoiceNumber}
                 onChange={(e) =>
                   setInvoiceNumber(e.target.value)
                 }
-                placeholder="e.g. INV-4582"
+                required
               />
             </label>
 
@@ -1934,569 +2014,608 @@ function NewPurchase({ store, profile }) {
               <input
                 type="date"
                 value={invoiceDate}
-                onChange={(e) => setInvoiceDate(e.target.value)}
-              />
-            </label>
-          </div>
-
-          <label>
-            Add product
-            <div className="search-with-action">
-              <input
-                value={productSearch}
-                onChange={(e) => setProductSearch(e.target.value)}
-                placeholder="Search product"
-              />
-              <button
-                className="inline-btn"
-                onClick={() => setShowProductForm(true)}
-              >
-                + New Product
-              </button>
-            </div>
-          </label>
-
-          {filteredProducts.length > 0 && (
-            <div className="suggestion-list product-results">
-              {filteredProducts.slice(0, 8).map((product) => (
-                <button
-                  key={product.id}
-                  onClick={() => addProduct(product)}
-                >
-                  <div>
-                    <strong>{product.product_name}</strong>
-                    <span>
-                      {product.generic_display_name || 'No generic'}
-                    </span>
-                  </div>
-                  <small>{product.manufacturer || ''}</small>
-                </button>
-              ))}
-            </div>
-          )}
-
-          <div className="purchase-items">
-            {items.length === 0 ? (
-              <EmptyState
-                icon="▤"
-                title="No purchase items"
-                text="Search for a product above to add stock."
-              />
-            ) : (
-              items.map((item, index) => (
-                <PurchaseItemRow
-                  key={`${item.product_id}-${index}`}
-                  item={item}
-                  index={index}
-                  updateItem={updateItem}
-                  removeItem={removeItem}
-                />
-              ))
-            )}
-          </div>
-
-          {message && (
-            <div
-              className={
-                message.includes('successfully')
-                  ? 'success-box'
-                  : 'error-box'
-              }
-            >
-              {message}
-            </div>
-          )}
-        </div>
-      </div>
-
-      <aside className="workspace-side">
-        <div className="panel sticky-panel">
-          <div className="panel-header">
-            <div>
-              <h3>Invoice totals</h3>
-              <p>Charges from the supplier invoice.</p>
-            </div>
-          </div>
-
-          <div className="totals-list">
-            <div>
-              <span>Subtotal</span>
-              <strong>{money(subtotal)}</strong>
-            </div>
-
-            <label>
-              Discount
-              <input
-                type="number"
-                min="0"
-                value={discount}
-                onChange={(e) => setDiscount(e.target.value)}
-              />
-            </label>
-
-            <label>
-              CGST
-              <input
-                type="number"
-                min="0"
-                value={cgst}
-                onChange={(e) => setCgst(e.target.value)}
-              />
-            </label>
-
-            <label>
-              SGST
-              <input
-                type="number"
-                min="0"
-                value={sgst}
-                onChange={(e) => setSgst(e.target.value)}
-              />
-            </label>
-
-            <label>
-              IGST
-              <input
-                type="number"
-                min="0"
-                value={igst}
-                onChange={(e) => setIgst(e.target.value)}
-              />
-            </label>
-
-            <label>
-              Other charges
-              <input
-                type="number"
-                min="0"
-                value={otherCharges}
                 onChange={(e) =>
-                  setOtherCharges(e.target.value)
+                  setInvoiceDate(e.target.value)
                 }
               />
             </label>
 
-            <div className="grand-total">
-              <span>Total</span>
-              <strong>{money(total)}</strong>
+            <div className="totals">
+              <div className="grand-total">
+                <span>Subtotal</span>
+                <strong>{money(subtotal)}</strong>
+              </div>
             </div>
-          </div>
+          </PanelList>
 
-          <label>
-            Notes
-            <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Optional purchase notes"
-              rows="3"
-            />
-          </label>
+          {message && (
+            <div className="message-box">{message}</div>
+          )}
 
           <button
-            className="primary-btn full"
-            disabled={busy || items.length === 0}
-            onClick={completePurchase}
+            className="primary-button large"
+            type="submit"
+            disabled={busy}
           >
-            {busy ? 'Receiving…' : 'Receive Purchase'}
+            {busy
+              ? 'Completing purchase…'
+              : `Complete Purchase • ${money(subtotal)}`}
           </button>
         </div>
-      </aside>
+      </div>
 
-      {showSupplierForm && (
+      {supplierModal && (
         <SupplierModal
           store={store}
-          onClose={() => setShowSupplierForm(false)}
-          onCreated={(newSupplier) => {
-            setSupplier(newSupplier)
-            setSupplierSearch(newSupplier.supplier_name)
-            setShowSupplierForm(false)
+          onClose={() => setSupplierModal(false)}
+          onCreated={(supplier) => {
+            setSuppliers((x) => [supplier, ...x])
+            setSelectedSupplier(supplier)
+            setSupplierModal(false)
           }}
         />
       )}
 
-      {showProductForm && (
+      {productModal && (
         <ProductModal
           store={store}
-          onClose={() => setShowProductForm(false)}
-          onCreated={async (product) => {
-            setShowProductForm(false)
-            await loadProducts()
-            addProduct(product)
+          onClose={() => setProductModal(false)}
+          onCreated={(product) => {
+            setProductModal(false)
+            loadProductsAfterCreate(
+              product,
+              products,
+              setProducts,
+            )
           }}
         />
       )}
-    </div>
+    </form>
   )
 }
 
-function PurchaseItemRow({
-  item,
-  index,
-  updateItem,
-  removeItem,
-}) {
+function PurchaseItemRow({ item, onChange, onRemove }) {
+  const paid =
+    Number(item.paidPacks || 0) *
+    Number(item.purchaseRatePerPack || 0)
+
   return (
-    <div className="purchase-item-card">
-      <div className="sale-item-top">
-        <div>
-          <strong>{item.product_name}</strong>
-          <span>Purchase stock and batch information</span>
+    <div className="transaction-item">
+      <div className="item-title">
+        <strong>
+          {item.product?.product_name || 'Product not selected'}
+        </strong>
+      </div>
+
+      {item.product && (
+        <div className="item-grid">
+          <label>
+            Batch
+            <input
+              value={item.batchNumber}
+              onChange={(e) =>
+                onChange({ batchNumber: e.target.value })
+              }
+              placeholder="Batch number"
+            />
+          </label>
+
+          <label>
+            Expiry
+            <input
+              type="date"
+              value={item.expiryDate}
+              onChange={(e) =>
+                onChange({ expiryDate: e.target.value })
+              }
+            />
+          </label>
+
+          <label>
+            Units / pack
+            <input
+              type="number"
+              min="1"
+              value={item.unitsPerPack || 1}
+              onChange={(e) =>
+                onChange({
+                  unitsPerPack: e.target.value,
+                })
+              }
+            />
+          </label>
+
+          <label>
+            Paid packs
+            <input
+              type="number"
+              min="0"
+              value={item.paidPacks}
+              onChange={(e) =>
+                onChange({ paidPacks: e.target.value })
+              }
+            />
+          </label>
+
+          <label>
+            Free packs
+            <input
+              type="number"
+              min="0"
+              value={item.freePacks}
+              onChange={(e) =>
+                onChange({ freePacks: e.target.value })
+              }
+            />
+          </label>
+
+          <label>
+            Loose units
+            <input
+              type="number"
+              min="0"
+              value={item.looseUnits}
+              onChange={(e) =>
+                onChange({ looseUnits: e.target.value })
+              }
+            />
+          </label>
+
+          <label>
+            Purchase rate
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={item.purchaseRatePerPack}
+              onChange={(e) =>
+                onChange({
+                  purchaseRatePerPack: e.target.value,
+                })
+              }
+            />
+          </label>
+
+          <label>
+            MRP / pack
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={item.mrpPerPack}
+              onChange={(e) =>
+                onChange({
+                  mrpPerPack: e.target.value,
+                })
+              }
+            />
+          </label>
+
+          <label>
+            GST %
+            <input
+              type="number"
+              min="0"
+              max="100"
+              value={item.gstRate}
+              onChange={(e) =>
+                onChange({ gstRate: e.target.value })
+              }
+            />
+          </label>
         </div>
+      )}
+
+      <div className="item-footer">
+        <strong>{money(paid)}</strong>
 
         <button
-          className="danger-text"
-          onClick={() => removeItem(index)}
+          type="button"
+          className="danger-button"
+          onClick={onRemove}
         >
           Remove
         </button>
       </div>
-
-      <div className="form-grid four">
-        <label>
-          Batch
-          <input
-            value={item.batch_number}
-            onChange={(e) =>
-              updateItem(index, {
-                batch_number: e.target.value,
-              })
-            }
-            placeholder="Batch no."
-          />
-        </label>
-
-        <label>
-          Expiry
-          <input
-            type="date"
-            value={item.expiry_date}
-            onChange={(e) =>
-              updateItem(index, {
-                expiry_date: e.target.value,
-              })
-            }
-          />
-        </label>
-
-        <label>
-          Units / pack
-          <input
-            type="number"
-            min="1"
-            value={item.units_per_pack}
-            onChange={(e) =>
-              updateItem(index, {
-                units_per_pack: e.target.value,
-              })
-            }
-          />
-        </label>
-
-        <label>
-          Purchase rate
-          <input
-            type="number"
-            min="0"
-            value={item.purchase_rate_per_pack}
-            onChange={(e) =>
-              updateItem(index, {
-                purchase_rate_per_pack: e.target.value,
-              })
-            }
-          />
-        </label>
-
-        <label>
-          Paid packs
-          <input
-            type="number"
-            min="0"
-            value={item.paid_packs}
-            onChange={(e) =>
-              updateItem(index, {
-                paid_packs: e.target.value,
-              })
-            }
-          />
-        </label>
-
-        <label>
-          Free packs
-          <input
-            type="number"
-            min="0"
-            value={item.free_packs}
-            onChange={(e) =>
-              updateItem(index, {
-                free_packs: e.target.value,
-              })
-            }
-          />
-        </label>
-
-        <label>
-          Loose units
-          <input
-            type="number"
-            min="0"
-            value={item.loose_units}
-            onChange={(e) =>
-              updateItem(index, {
-                loose_units: e.target.value,
-              })
-            }
-          />
-        </label>
-
-        <label>
-          MRP / pack
-          <input
-            type="number"
-            min="0"
-            value={item.mrp_per_pack}
-            onChange={(e) =>
-              updateItem(index, {
-                mrp_per_pack: e.target.value,
-              })
-            }
-          />
-        </label>
-      </div>
     </div>
   )
 }
 
+/* =========================================================
+   SUPPLIER HISTORY
+========================================================= */
+
 function SupplierInvoices({ store }) {
-  const [invoices, setInvoices] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [rows, setRows] = useState([])
+  const [selected, setSelected] = useState(null)
 
   useEffect(() => {
-    load()
-  }, [store.id])
+    if (!store?.id) return
 
-  async function load() {
-    setLoading(true)
-
-    const { data } = await supabase
+    supabase
       .from('purchase_invoices')
       .select(`
         *,
-        suppliers(supplier_name, phone)
+        suppliers (
+          supplier_name
+        )
       `)
       .eq('store_id', store.id)
       .order('invoice_date', { ascending: false })
       .limit(200)
-
-    setInvoices(data || [])
-    setLoading(false)
-  }
+      .then(({ data }) => setRows(data || []))
+  }, [store?.id])
 
   return (
-    <PanelList
-      title="Supplier invoices"
-      subtitle="Purchase invoice history."
-      loading={loading}
-      empty="No purchase invoices found."
-    >
-      {invoices.map((invoice) => (
-        <div className="list-row" key={invoice.id}>
-          <div>
-            <strong>{invoice.invoice_number}</strong>
-            <span>
-              {invoice.suppliers?.supplier_name || 'Supplier'} ·{' '}
-              {dateText(invoice.invoice_date)}
-            </span>
-          </div>
+    <PanelList title="Supplier Invoices">
+      <div className="record-list">
+        {rows.map((row) => (
+          <button
+            className="record-row"
+            key={row.id}
+            onClick={() => setSelected(row.suppliers)}
+          >
+            <div>
+              <strong>{row.invoice_number}</strong>
+              <span>
+                {row.suppliers?.supplier_name || 'Supplier'}
+              </span>
+            </div>
 
-          <div className="row-right">
-            <strong>{money(invoice.total_amount)}</strong>
-            <span
-              className={`status-pill ${
-                invoice.payment_status === 'paid'
-                  ? 'success'
-                  : invoice.payment_status === 'partial'
-                    ? 'warning'
-                    : 'danger'
-              }`}
-            >
-              {invoice.payment_status}
-            </span>
-          </div>
-        </div>
-      ))}
+            <div className="record-right">
+              <span>{dateText(row.invoice_date)}</span>
+              <strong>{money(row.total_amount)}</strong>
+            </div>
+          </button>
+        ))}
+      </div>
+
+      {selected && (
+        <SupplierHistoryModal
+          supplier={selected}
+          store={store}
+          onClose={() => setSelected(null)}
+        />
+      )}
     </PanelList>
   )
 }
 
-function PendingSupplierPayments({ store }) {
-  const [suppliers, setSuppliers] = useState([])
+function SupplierHistoryModal({ supplier, store, onClose }) {
+  const [invoices, setInvoices] = useState([])
+  const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    load()
-  }, [store.id])
+    loadHistory()
+  }, [supplier?.id])
 
-  async function load() {
+  const loadHistory = async () => {
+    if (!supplier?.id) {
+      setLoading(false)
+      return
+    }
+
     setLoading(true)
 
-    const { data } = await supabase
+    const { data: invoiceRows } = await supabase
       .from('purchase_invoices')
-      .select(`
-        id,
-        invoice_number,
-        invoice_date,
-        total_amount,
-        payment_status,
-        suppliers(supplier_name)
-      `)
+      .select(
+        'id, invoice_number, invoice_date, total_amount, payment_status',
+      )
       .eq('store_id', store.id)
-      .neq('payment_status', 'paid')
-      .order('invoice_date', { ascending: true })
+      .eq('supplier_id', supplier.id)
+      .order('invoice_date', { ascending: false })
 
-    setSuppliers(data || [])
+    setInvoices(invoiceRows || [])
+
+    if (invoiceRows?.length) {
+      const { data: itemRows } = await supabase
+        .from('purchase_items')
+        .select(`
+          *,
+          products (
+            id,
+            product_name,
+            generic_display_name
+          ),
+          batches (
+            batch_number,
+            expiry_date
+          )
+        `)
+        .in(
+          'purchase_invoice_id',
+          invoiceRows.map((x) => x.id),
+        )
+
+      setItems(itemRows || [])
+    }
+
     setLoading(false)
   }
 
+  const productHistory = useMemo(() => {
+    const map = new Map()
+
+    for (const item of items) {
+      if (!item.products) continue
+
+      const key = item.products.id
+
+      if (!map.has(key)) {
+        map.set(key, {
+          product: item.products,
+          packs: 0,
+          lastRate: 0,
+          lastDate: null,
+          lastBatch: null,
+        })
+      }
+
+      const entry = map.get(key)
+
+      entry.packs +=
+        Number(item.paid_packs || 0) +
+        Number(item.free_packs || 0)
+
+      entry.lastRate = Number(
+        item.purchase_rate_per_pack || 0,
+      )
+
+      entry.lastBatch =
+        item.batches?.batch_number ||
+        item.batch_number ||
+        null
+
+      const invoice = invoices.find(
+        (x) => x.id === item.purchase_invoice_id,
+      )
+
+      if (
+        invoice &&
+        (!entry.lastDate ||
+          new Date(invoice.invoice_date) >
+            new Date(entry.lastDate))
+      ) {
+        entry.lastDate = invoice.invoice_date
+      }
+    }
+
+    return Array.from(map.values()).sort(
+      (a, b) =>
+        new Date(b.lastDate || 0) -
+        new Date(a.lastDate || 0),
+    )
+  }, [items, invoices])
+
   return (
-    <PanelList
-      title="Pending supplier payments"
-      subtitle="Invoices requiring payment."
-      loading={loading}
-      empty="No pending supplier payments."
+    <Modal
+      title={`${supplier.supplier_name} • Purchase History`}
+      onClose={onClose}
     >
-      {suppliers.map((invoice) => (
-        <div className="list-row" key={invoice.id}>
-          <div>
-            <strong>{invoice.suppliers?.supplier_name}</strong>
-            <span>
-              {invoice.invoice_number} ·{' '}
-              {dateText(invoice.invoice_date)}
-            </span>
+      {loading ? (
+        <LoadingInline />
+      ) : (
+        <>
+          <h3>Products previously purchased from this supplier</h3>
+
+          <div className="record-list">
+            {productHistory.length === 0 && (
+              <EmptyState text="No previous purchases found." />
+            )}
+
+            {productHistory.map((entry) => (
+              <div
+                className="record-row static"
+                key={entry.product.id}
+              >
+                <div>
+                  <strong>
+                    {entry.product.product_name}
+                  </strong>
+                  <span>
+                    {entry.product.generic_display_name || ''}
+                  </span>
+                </div>
+
+                <div className="record-right">
+                  <span>
+                    Qty: {entry.packs} packs
+                  </span>
+                  <span>
+                    Last: {dateText(entry.lastDate)}
+                  </span>
+                  <span>
+                    Batch: {entry.lastBatch || '—'}
+                  </span>
+                  <strong>
+                    {money(entry.lastRate)}
+                  </strong>
+                </div>
+              </div>
+            ))}
           </div>
-          <strong>{money(invoice.total_amount)}</strong>
+
+          <h3>Previous invoices</h3>
+
+          <div className="record-list">
+            {invoices.map((invoice) => (
+              <div
+                className="record-row static"
+                key={invoice.id}
+              >
+                <div>
+                  <strong>{invoice.invoice_number}</strong>
+                  <span>
+                    {dateText(invoice.invoice_date)}
+                  </span>
+                </div>
+
+                <div className="record-right">
+                  <span>{invoice.payment_status}</span>
+                  <strong>
+                    {money(invoice.total_amount)}
+                  </strong>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </Modal>
+  )
+}
+
+function PendingSupplierPayments({ store }) {
+  const [rows, setRows] = useState([])
+
+  useEffect(() => {
+    if (!store?.id) return
+
+    supabase
+      .from('purchase_invoices')
+      .select(`
+        *,
+        suppliers (
+          supplier_name
+        )
+      `)
+      .eq('store_id', store.id)
+      .in('payment_status', ['pending', 'partial', 'due'])
+      .order('invoice_date', { ascending: true })
+      .then(({ data }) => setRows(data || []))
+  }, [store?.id])
+
+  return (
+    <PanelList title="Pending Supplier Payments">
+      {rows.length === 0 ? (
+        <EmptyState text="No pending supplier payments." />
+      ) : (
+        <div className="record-list">
+          {rows.map((row) => (
+            <div
+              className="record-row static"
+              key={row.id}
+            >
+              <div>
+                <strong>
+                  {row.suppliers?.supplier_name || 'Supplier'}
+                </strong>
+                <span>{row.invoice_number}</span>
+              </div>
+
+              <strong>{money(row.total_amount)}</strong>
+            </div>
+          ))}
         </div>
-      ))}
+      )}
     </PanelList>
   )
 }
 
 function PurchaseOrders({ store }) {
-  const [orders, setOrders] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [rows, setRows] = useState([])
 
   useEffect(() => {
-    load()
-  }, [store.id])
+    if (!store?.id) return
 
-  async function load() {
-    setLoading(true)
-
-    const { data } = await supabase
+    supabase
       .from('purchase_orders')
-      .select(`
-        *,
-        suppliers(supplier_name)
-      `)
+      .select('*')
       .eq('store_id', store.id)
-      .order('order_date', { ascending: false })
+      .order('created_at', { ascending: false })
       .limit(100)
-
-    setOrders(data || [])
-    setLoading(false)
-  }
+      .then(({ data }) => setRows(data || []))
+  }, [store?.id])
 
   return (
-    <PanelList
-      title="Purchase orders"
-      subtitle="Supplier order planning."
-      loading={loading}
-      empty="No purchase orders yet."
-    >
-      {orders.map((order) => (
-        <div className="list-row" key={order.id}>
-          <div>
-            <strong>{order.order_number || 'Purchase Order'}</strong>
-            <span>
-              {order.suppliers?.supplier_name || 'Supplier'} ·{' '}
-              {dateText(order.order_date)}
-            </span>
-          </div>
-          <span className="status-pill">
-            {order.status}
-          </span>
+    <PanelList title="Purchase Orders">
+      {rows.length === 0 ? (
+        <EmptyState text="No purchase orders yet." />
+      ) : (
+        <div className="record-list">
+          {rows.map((row) => (
+            <div
+              className="record-row static"
+              key={row.id}
+            >
+              <div>
+                <strong>
+                  {row.order_number || row.id.slice(0, 8)}
+                </strong>
+                <span>{row.status}</span>
+              </div>
+              <strong>{money(row.total_amount)}</strong>
+            </div>
+          ))}
         </div>
-      ))}
+      )}
     </PanelList>
   )
 }
 
 function AIRecommendations({ store }) {
-  const [recommendations, setRecommendations] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [rows, setRows] = useState([])
 
   useEffect(() => {
-    load()
-  }, [store.id])
+    if (!store?.id) return
 
-  async function load() {
-    setLoading(true)
-
-    const { data } = await supabase
+    supabase
       .from('ai_purchase_recommendations')
-      .select(`
-        *,
-        products(product_name),
-        suppliers(supplier_name)
-      `)
+      .select('*')
       .eq('store_id', store.id)
-      .order('generated_at', { ascending: false })
+      .order('created_at', { ascending: false })
       .limit(100)
-
-    setRecommendations(data || [])
-    setLoading(false)
-  }
+      .then(({ data }) => setRows(data || []))
+  }, [store?.id])
 
   return (
-    <PanelList
-      title="AI purchase recommendations"
-      subtitle="Recommendations generated from stock and movement data."
-      loading={loading}
-      empty="No recommendations available yet."
-    >
-      {recommendations.map((item) => (
-        <div className="list-row" key={item.id}>
-          <div>
-            <strong>{item.products?.product_name}</strong>
-            <span>
-              {item.suppliers?.supplier_name || 'Supplier'} ·{' '}
-              {item.reasoning || 'No reasoning provided'}
-            </span>
-          </div>
-          <div className="row-right">
-            <strong>{item.suggested_quantity}</strong>
-            <span className="status-pill">
-              {item.status}
-            </span>
-          </div>
+    <PanelList title="AI Purchase Recommendations">
+      {rows.length === 0 ? (
+        <EmptyState text="No AI purchase recommendations have been generated yet." />
+      ) : (
+        <div className="record-list">
+          {rows.map((row) => (
+            <div
+              className="record-row static"
+              key={row.id}
+            >
+              <div>
+                <strong>
+                  {row.product_name ||
+                    row.product_id ||
+                    'Product'}
+                </strong>
+                <span>
+                  Suggested quantity:{' '}
+                  {row.recommended_quantity ??
+                    row.suggested_quantity ??
+                    '—'}
+                </span>
+              </div>
+
+              <span>{row.status || 'pending'}</span>
+            </div>
+          ))}
         </div>
-      ))}
+      )}
     </PanelList>
   )
 }
 
-/* ============================================================
+/* =========================================================
    INVENTORY
-============================================================ */
+========================================================= */
 
 function InventoryModule({ store }) {
   const [tab, setTab] = useState('Products')
 
   return (
-    <div className="module">
+    <div>
       <ModuleHeader
-        eyebrow="INVENTORY"
         title="Inventory"
-        description="Products, batches, expiry and stock control."
+        subtitle="Products, batches, expiry and reconciliation"
       />
 
       <TabBar
@@ -2505,11 +2624,21 @@ function InventoryModule({ store }) {
         onChange={setTab}
       />
 
-      {tab === 'Products' && <ProductsInventory store={store} />}
-      {tab === 'Batches' && <BatchesInventory store={store} />}
-      {tab === 'Expiry' && <ExpiryInventory store={store} />}
-      {tab === 'Low Stock' && <LowStockInventory store={store} />}
-      {tab === 'Dead Stock' && <DeadStockInventory store={store} />}
+      {tab === 'Products' && (
+        <ProductsInventory store={store} />
+      )}
+      {tab === 'Batches' && (
+        <BatchesInventory store={store} />
+      )}
+      {tab === 'Expiry' && (
+        <ExpiryInventory store={store} />
+      )}
+      {tab === 'Low Stock' && (
+        <LowStockInventory store={store} />
+      )}
+      {tab === 'Dead Stock' && (
+        <DeadStockInventory store={store} />
+      )}
       {tab === 'Stock Reconciliation' && (
         <StockReconciliation store={store} />
       )}
@@ -2518,310 +2647,242 @@ function InventoryModule({ store }) {
 }
 
 function ProductsInventory({ store }) {
-  const [products, setProducts] = useState([])
-  const [search, setSearch] = useState('')
-  const [loading, setLoading] = useState(true)
-  const [showProductForm, setShowProductForm] = useState(false)
+  const [rows, setRows] = useState([])
+  const [query, setQuery] = useState('')
+  const [editing, setEditing] = useState(null)
 
-  useEffect(() => {
-    load()
-  }, [store.id])
-
-  async function load() {
-    setLoading(true)
-
+  const load = async () => {
     const { data } = await supabase
       .from('store_products')
       .select(`
         *,
-        products(
-          id,
-          product_name,
-          generic_display_name,
-          manufacturer,
-          dosage_form,
-          strength_display,
-          pack_quantity,
-          pack_unit,
-          hsn_code,
-          gst_rate,
-          product_categories(name)
+        products (
+          *
         )
       `)
       .eq('store_id', store.id)
       .eq('is_active', true)
       .order('created_at', { ascending: false })
 
-    setProducts(data || [])
-    setLoading(false)
+    setRows(data || [])
   }
 
-  const filtered = products.filter((row) =>
-    [
+  useEffect(() => {
+    if (store?.id) load()
+  }, [store?.id])
+
+  const filtered = rows.filter((row) =>
+    matchesSearch(
+      query,
       row.products?.product_name,
       row.products?.generic_display_name,
       row.products?.manufacturer,
       row.products?.strength_display,
-      row.products?.dosage_form,
-      row.products?.product_categories?.name,
-    ]
-      .filter(Boolean)
-      .join(' ')
-      .toLowerCase()
-      .includes(search.toLowerCase()),
+    ),
   )
 
   return (
-    <>
-      <div className="panel">
-        <div className="panel-header">
-          <div>
-            <h3>Products</h3>
-            <p>Product master and store-specific selling settings.</p>
-          </div>
+    <PanelList title="Products">
+      <div className="search-row">
+        <input
+          placeholder="Search product"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
 
-          <div className="header-actions">
-            <input
-              className="compact-search"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search products"
-            />
-
-            <button
-              className="primary-btn"
-              onClick={() => setShowProductForm(true)}
-            >
-              + Add Product
-            </button>
-          </div>
-        </div>
-
-        {loading ? (
-          <LoadingInline />
-        ) : filtered.length === 0 ? (
-          <EmptyState
-            title="No products found"
-            text="Add your first product to begin."
-          />
-        ) : (
-          <div className="product-grid">
-            {filtered.map((row) => (
-              <div className="product-card" key={row.id}>
-                <div>
-                  <span className="product-category">
-                    {row.products?.product_categories?.name ||
-                      'Product'}
-                  </span>
-                  <h3>{row.products?.product_name}</h3>
-                  <p>
-                    {row.products?.generic_display_name ||
-                      'Generic composition not assigned'}
-                  </p>
-                </div>
-
-                <div className="product-meta">
-                  <span>
-                    {row.products?.strength_display || ''}
-                  </span>
-                  <span>
-                    {row.products?.manufacturer || ''}
-                  </span>
-                </div>
-
-                <div className="product-pricing">
-                  <div>
-                    <small>Selling price</small>
-                    <strong>
-                      {money(row.default_selling_price)}
-                    </strong>
-                  </div>
-                  <div>
-                    <small>Discount</small>
-                    <strong>
-                      {Number(
-                        row.default_discount_percent || 0,
-                      )}
-                      %
-                    </strong>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+        <button
+          className="primary-button"
+          onClick={() => setEditing({})}
+        >
+          + Product
+        </button>
       </div>
 
-      {showProductForm && (
+      <div className="record-list">
+        {filtered.map((row) => (
+          <div className="record-row static" key={row.id}>
+            <div>
+              <strong>
+                {row.products?.product_name}
+              </strong>
+              <span>
+                {row.products?.generic_display_name ||
+                  row.products?.manufacturer ||
+                  '—'}
+              </span>
+            </div>
+
+            <div className="record-right">
+              <span>
+                Discount: {row.default_discount_percent || 0}%
+              </span>
+
+              <strong>
+                {money(row.default_selling_price)}
+              </strong>
+
+              <button
+                className="secondary-button"
+                onClick={() =>
+                  setEditing({
+                    ...row.products,
+                    default_selling_price:
+                      row.default_selling_price,
+                    default_discount_percent:
+                      row.default_discount_percent,
+                    minimum_stock: row.minimum_stock,
+                    reorder_level: row.reorder_level,
+                  })
+                }
+              >
+                Edit
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {editing !== null && (
         <ProductModal
           store={store}
-          onClose={() => setShowProductForm(false)}
+          product={editing.id ? editing : null}
+          onClose={() => setEditing(null)}
           onCreated={() => {
-            setShowProductForm(false)
+            setEditing(null)
             load()
           }}
         />
       )}
-    </>
+    </PanelList>
   )
 }
 
 function BatchesInventory({ store }) {
-  const [batches, setBatches] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [rows, setRows] = useState([])
 
   useEffect(() => {
-    load()
-  }, [store.id])
+    if (!store?.id) return
 
-  async function load() {
-    setLoading(true)
-
-    const { data } = await supabase
+    supabase
       .from('batches')
       .select(`
         *,
-        products(product_name, manufacturer, strength_display)
+        products (
+          product_name
+        )
       `)
       .eq('store_id', store.id)
-      .eq('is_active', true)
-      .order('expiry_date', { ascending: true })
-      .limit(500)
-
-    setBatches(data || [])
-    setLoading(false)
-  }
+      .order('expiry_date')
+      .then(({ data }) => setRows(data || []))
+  }, [store?.id])
 
   return (
-    <div className="panel">
-      <div className="panel-header">
-        <div>
-          <h3>Stock batches</h3>
-          <p>Batch-wise stock, purchase rate, MRP and expiry.</p>
-        </div>
-      </div>
+    <PanelList title="Batches">
+      <div className="record-list">
+        {rows.map((row) => (
+          <div
+            className="record-row static"
+            key={row.id}
+          >
+            <div>
+              <strong>
+                {row.products?.product_name || 'Product'}
+              </strong>
+              <span>
+                Batch {row.batch_number} • Exp{' '}
+                {dateText(row.expiry_date)}
+              </span>
+            </div>
 
-      {loading ? (
-        <LoadingInline />
-      ) : (
-        <div className="data-table-wrap">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Product</th>
-                <th>Batch</th>
-                <th>Expiry</th>
-                <th>Stock</th>
-                <th>Purchase</th>
-                <th>MRP</th>
-              </tr>
-            </thead>
-            <tbody>
-              {batches.map((batch) => (
-                <tr key={batch.id}>
-                  <td>
-                    <strong>{batch.products?.product_name}</strong>
-                    <span>
-                      {batch.products?.strength_display || ''}
-                    </span>
-                  </td>
-                  <td>{batch.batch_number}</td>
-                  <td>{dateText(batch.expiry_date)}</td>
-                  <td>
-                    {batch.current_stock_units}{' '}
-                    <small>units</small>
-                  </td>
-                  <td>{money(batch.purchase_rate_per_pack)}</td>
-                  <td>{money(batch.mrp_per_pack)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
+            <div className="record-right">
+              <span>Stock</span>
+              <strong>{row.current_stock_units}</strong>
+            </div>
+          </div>
+        ))}
+      </div>
+    </PanelList>
   )
 }
 
 function ExpiryInventory({ store }) {
-  const [batches, setBatches] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [rows, setRows] = useState([])
 
   useEffect(() => {
-    load()
-  }, [store.id])
+    if (!store?.id) return
 
-  async function load() {
-    setLoading(true)
+    const limit = new Date()
+    limit.setDate(limit.getDate() + 90)
 
-    const cutoff = new Date()
-    cutoff.setDate(cutoff.getDate() + 90)
-
-    const { data } = await supabase
+    supabase
       .from('batches')
       .select(`
         *,
-        products(product_name)
+        products (
+          product_name
+        )
       `)
       .eq('store_id', store.id)
-      .eq('is_active', true)
       .gt('current_stock_units', 0)
-      .lte('expiry_date', cutoff.toISOString().slice(0, 10))
-      .order('expiry_date', { ascending: true })
-
-    setBatches(data || [])
-    setLoading(false)
-  }
+      .lte(
+        'expiry_date',
+        limit.toISOString().slice(0, 10),
+      )
+      .order('expiry_date')
+      .then(({ data }) => setRows(data || []))
+  }, [store?.id])
 
   return (
-    <PanelList
-      title="Expiry watch"
-      subtitle="Stock expiring within the next 90 days."
-      loading={loading}
-      empty="No stock is currently within the 90-day expiry window."
-    >
-      {batches.map((batch) => (
-        <div className="list-row" key={batch.id}>
-          <div>
-            <strong>{batch.products?.product_name}</strong>
-            <span>
-              Batch {batch.batch_number} · {batch.current_stock_units}{' '}
-              units
-            </span>
+    <PanelList title="Expiry">
+      <div className="record-list">
+        {rows.map((row) => (
+          <div
+            className="record-row static"
+            key={row.id}
+          >
+            <div>
+              <strong>
+                {row.products?.product_name}
+              </strong>
+              <span>
+                Batch {row.batch_number}
+              </span>
+            </div>
+
+            <div className="record-right">
+              <span>{dateText(row.expiry_date)}</span>
+              <strong>
+                {row.current_stock_units}
+              </strong>
+            </div>
           </div>
-          <span className="status-pill danger">
-            {dateText(batch.expiry_date)}
-          </span>
-        </div>
-      ))}
+        ))}
+      </div>
     </PanelList>
   )
 }
 
 function LowStockInventory({ store }) {
-  const [products, setProducts] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [rows, setRows] = useState([])
 
   useEffect(() => {
-    load()
-  }, [store.id])
+    if (!store?.id) return
 
-  async function load() {
-    setLoading(true)
+    const load = async () => {
+      const { data } = await supabase
+        .from('store_products')
+        .select(`
+          *,
+          products (
+            product_name
+          )
+        `)
+        .eq('store_id', store.id)
+        .eq('is_active', true)
 
-    const { data } = await supabase
-      .from('store_products')
-      .select(`
-        *,
-        products(product_name, generic_display_name)
-      `)
-      .eq('store_id', store.id)
-      .eq('is_active', true)
+      const result = []
 
-    const rows = data || []
-
-    const enriched = await Promise.all(
-      rows.map(async (row) => {
+      for (const row of data || []) {
         const { data: batches } = await supabase
           .from('batches')
           .select('current_stock_units')
@@ -2829,505 +2890,436 @@ function LowStockInventory({ store }) {
           .eq('product_id', row.product_id)
           .eq('is_active', true)
 
-        const stock = (batches || []).reduce(
-          (sum, batch) =>
-            sum + Number(batch.current_stock_units || 0),
-          0,
+        const stock = sum(
+          (batches || []).map(
+            (x) => x.current_stock_units,
+          ),
         )
 
-        return {
-          ...row,
-          stock,
+        if (stock <= Number(row.minimum_stock || 0)) {
+          result.push({
+            ...row,
+            stock,
+          })
         }
-      }),
-    )
+      }
 
-    setProducts(
-      enriched.filter(
-        (row) => row.stock <= Number(row.reorder_level || 0),
-      ),
-    )
+      setRows(result)
+    }
 
-    setLoading(false)
-  }
+    load()
+  }, [store?.id])
 
   return (
-    <PanelList
-      title="Low stock"
-      subtitle="Products at or below their reorder level."
-      loading={loading}
-      empty="No products currently require replenishment."
-    >
-      {products.map((row) => (
-        <div className="list-row" key={row.id}>
-          <div>
-            <strong>{row.products?.product_name}</strong>
-            <span>
-              Reorder level: {row.reorder_level || 0}
-            </span>
-          </div>
-          <span className="status-pill warning">
-            {row.stock} units
-          </span>
+    <PanelList title="Low Stock">
+      {rows.length === 0 ? (
+        <EmptyState text="No products currently below minimum stock." />
+      ) : (
+        <div className="record-list">
+          {rows.map((row) => (
+            <div
+              className="record-row static"
+              key={row.id}
+            >
+              <div>
+                <strong>
+                  {row.products?.product_name}
+                </strong>
+                <span>
+                  Minimum {row.minimum_stock}
+                </span>
+              </div>
+
+              <strong>{row.stock}</strong>
+            </div>
+          ))}
         </div>
-      ))}
+      )}
     </PanelList>
   )
 }
 
 function DeadStockInventory({ store }) {
-  const [snapshots, setSnapshots] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [rows, setRows] = useState([])
 
   useEffect(() => {
-    load()
-  }, [store.id])
+    if (!store?.id) return
 
-  async function load() {
-    setLoading(true)
-
-    const { data } = await supabase
+    supabase
       .from('stock_risk_snapshots')
-      .select(`
-        *,
-        products(product_name)
-      `)
+      .select('*')
       .eq('store_id', store.id)
-      .eq('risk_category', 'dead_stock')
-      .order('snapshot_date', { ascending: false })
-      .limit(100)
-
-    setSnapshots(data || [])
-    setLoading(false)
-  }
+      .eq('risk_type', 'dead_stock')
+      .order('created_at', { ascending: false })
+      .then(({ data }) => setRows(data || []))
+  }, [store?.id])
 
   return (
-    <PanelList
-      title="Dead stock"
-      subtitle="Stock identified as slow or non-moving."
-      loading={loading}
-      empty="No dead-stock snapshots available yet."
-    >
-      {snapshots.map((item) => (
-        <div className="list-row" key={item.id}>
-          <div>
-            <strong>{item.products?.product_name}</strong>
-            <span>
-              {item.stock_units} units ·{' '}
-              {item.days_to_expiry ?? '—'} days to expiry
-            </span>
-          </div>
-          <span className="status-pill danger">
-            Dead stock
-          </span>
+    <PanelList title="Dead Stock">
+      {rows.length === 0 ? (
+        <EmptyState text="No dead-stock snapshots available." />
+      ) : (
+        <div className="record-list">
+          {rows.map((row) => (
+            <div
+              className="record-row static"
+              key={row.id}
+            >
+              <div>
+                <strong>
+                  {row.product_name ||
+                    row.product_id ||
+                    'Product'}
+                </strong>
+                <span>
+                  {dateText(row.created_at)}
+                </span>
+              </div>
+
+              <span>{row.current_stock_units}</span>
+            </div>
+          ))}
         </div>
-      ))}
+      )}
     </PanelList>
   )
 }
 
 function StockReconciliation({ store }) {
   const [batches, setBatches] = useState([])
-  const [physical, setPhysical] = useState({})
+  const [selectedBatch, setSelectedBatch] = useState('')
+  const [physical, setPhysical] = useState('')
   const [message, setMessage] = useState('')
-  const [busy, setBusy] = useState(false)
 
   useEffect(() => {
-    load()
-  }, [store.id])
+    if (!store?.id) return
 
-  async function load() {
-    const { data } = await supabase
-  .from('batches')
-  .select(`
-    id,
-    batch_number,
-    current_stock_units,
-    products(id, product_name)
-  `)
+    supabase
+      .from('batches')
+      .select(`
+        *,
+        products (
+          product_name
+        )
+      `)
       .eq('store_id', store.id)
       .eq('is_active', true)
-      .gt('current_stock_units', 0)
-      .order('batch_number')
-      .limit(200)
+      .order('created_at', { ascending: false })
+      .then(({ data }) => setBatches(data || []))
+  }, [store?.id])
 
-    setBatches(data || [])
-  }
+  const selected = batches.find(
+    (x) => x.id === selectedBatch,
+  )
 
-  async function saveReconciliation(batch) {
-    const value = Number(physical[batch.id])
+  const save = async () => {
+    setMessage('')
 
-    if (!Number.isFinite(value) || value < 0) {
-      setMessage('Enter a valid physical stock quantity.')
+    if (!selected) {
+      setMessage('Select a batch.')
       return
     }
 
-    setBusy(true)
+    const physicalNumber = Number(physical)
+
+    if (!Number.isFinite(physicalNumber) || physicalNumber < 0) {
+      setMessage('Enter a valid physical quantity.')
+      return
+    }
 
     const difference =
-      value - Number(batch.current_stock_units || 0)
+      physicalNumber -
+      Number(selected.current_stock_units || 0)
 
     const { error } = await supabase
       .from('stock_reconciliations')
       .insert({
         store_id: store.id,
-        product_id: batch.products?.id || null,
-        batch_id: batch.id,
-        system_stock_units: batch.current_stock_units,
-        physical_stock_units: value,
+        batch_id: selected.id,
+        system_stock_units:
+          selected.current_stock_units,
+        physical_stock_units: physicalNumber,
         difference_units: difference,
-        reason: 'Physical stock reconciliation',
       })
 
-    if (error) setMessage(error.message)
-    else setMessage('Reconciliation recorded.')
+    if (error) {
+      setMessage(error.message)
+      return
+    }
 
-    setBusy(false)
+    setMessage(
+      `Reconciliation recorded. Difference: ${difference}`,
+    )
   }
 
   return (
-    <div className="panel">
-      <div className="panel-header">
-        <div>
-          <h3>Stock reconciliation</h3>
-          <p>Compare system stock with physical stock.</p>
+    <PanelList title="Stock Reconciliation">
+      <label>
+        Batch
+        <select
+          value={selectedBatch}
+          onChange={(e) => setSelectedBatch(e.target.value)}
+        >
+          <option value="">Select batch</option>
+          {batches.map((batch) => (
+            <option key={batch.id} value={batch.id}>
+              {batch.products?.product_name} •{' '}
+              {batch.batch_number} • Stock{' '}
+              {batch.current_stock_units}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <label>
+        Physical stock
+        <input
+          type="number"
+          min="0"
+          value={physical}
+          onChange={(e) => setPhysical(e.target.value)}
+        />
+      </label>
+
+      {selected && (
+        <div className="info-box">
+          System stock: {selected.current_stock_units}
         </div>
-      </div>
+      )}
 
-      {message && <div className="success-box">{message}</div>}
+      {message && <div className="message-box">{message}</div>}
 
-      <div className="list-table">
-        {batches.map((batch) => (
-          <div className="list-row" key={batch.id}>
-            <div>
-              <strong>{batch.products?.product_name}</strong>
-              <span>Batch {batch.batch_number}</span>
-            </div>
+      <button
+        className="primary-button"
+        onClick={save}
+      >
+        Record Reconciliation
+      </button>
 
-            <span>
-              System: <strong>{batch.current_stock_units}</strong>
-            </span>
-
-            <input
-              className="small-input"
-              type="number"
-              min="0"
-              value={physical[batch.id] ?? ''}
-              onChange={(e) =>
-                setPhysical((current) => ({
-                  ...current,
-                  [batch.id]: e.target.value,
-                }))
-              }
-              placeholder="Physical"
-            />
-
-            <button
-              className="secondary-btn"
-              disabled={busy}
-              onClick={() => saveReconciliation(batch)}
-            >
-              Record
-            </button>
-          </div>
-        ))}
-      </div>
-    </div>
+      <p className="muted">
+        This records the reconciliation event. Actual stock
+        adjustment should be performed through the dedicated
+        stock-adjustment backend operation rather than silently
+        changing the batch from the browser.
+      </p>
+    </PanelList>
   )
 }
 
-/* ============================================================
+/* =========================================================
    CUSTOMERS
-============================================================ */
+========================================================= */
 
 function CustomersModule({ store }) {
-  const [customers, setCustomers] = useState([])
-  const [search, setSearch] = useState('')
-  const [loading, setLoading] = useState(true)
-  const [showModal, setShowModal] = useState(false)
+  const [rows, setRows] = useState([])
+  const [query, setQuery] = useState('')
+  const [modal, setModal] = useState(false)
+  const [history, setHistory] = useState(null)
 
-  useEffect(() => {
-    load()
-  }, [store.id])
-
-  async function load() {
-    setLoading(true)
-
+  const load = async () => {
     const { data } = await supabase
       .from('customers')
       .select('*')
       .eq('store_id', store.id)
-      .eq('is_active', true)
       .order('name')
-      .limit(500)
 
-    setCustomers(data || [])
-    setLoading(false)
+    setRows(data || [])
   }
 
-  const filtered = customers.filter((customer) =>
-    [customer.name, customer.phone]
-      .filter(Boolean)
-      .join(' ')
-      .toLowerCase()
-      .includes(search.toLowerCase()),
+  useEffect(() => {
+    if (store?.id) load()
+  }, [store?.id])
+
+  const filtered = rows.filter((x) =>
+    matchesSearch(query, x.name, x.phone),
   )
 
   return (
-    <div className="module">
+    <div>
       <ModuleHeader
-        eyebrow="CUSTOMERS"
         title="Customers"
-        description="Customer profiles, history and credit relationships."
+        subtitle="Customer records and purchase history"
       />
 
-      <div className="panel">
-        <div className="panel-header">
-          <div>
-            <h3>Customer directory</h3>
-            <p>Named customers and their contact information.</p>
-          </div>
+      <PanelList title="Customers">
+        <div className="search-row">
+          <input
+            placeholder="Search customer"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
 
-          <div className="header-actions">
-            <input
-              className="compact-search"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search name or phone"
-            />
-
-            <button
-              className="primary-btn"
-              onClick={() => setShowModal(true)}
-            >
-              + Add Customer
-            </button>
-          </div>
+          <button
+            className="primary-button"
+            onClick={() => setModal(true)}
+          >
+            + Customer
+          </button>
         </div>
 
-        {loading ? (
-          <LoadingInline />
-        ) : filtered.length === 0 ? (
-          <EmptyState
-            title="No customers found"
-            text="Add a customer to maintain named billing history."
-          />
-        ) : (
-          <div className="customer-grid">
-            {filtered.map((customer) => (
-              <div className="customer-card" key={customer.id}>
-                <div className="avatar large">
-                  {customer.name?.charAt(0)?.toUpperCase() || 'C'}
-                </div>
-
-                <div>
-                  <strong>{customer.name}</strong>
-                  <span>{customer.phone}</span>
-                  <small>
-                    {customer.address || 'No address added'}
-                  </small>
-                </div>
+        <div className="record-list">
+          {filtered.map((customer) => (
+            <div
+              className="record-row static"
+              key={customer.id}
+            >
+              <div>
+                <strong>
+                  {customer.name || 'Walk-in Customer'}
+                </strong>
+                <span>{customer.phone || '—'}</span>
               </div>
-            ))}
-          </div>
-        )}
-      </div>
 
-      {showModal && (
+              <div className="record-right">
+                <button
+                  className="secondary-button"
+                  onClick={() => setHistory(customer)}
+                >
+                  History
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </PanelList>
+
+      {modal && (
         <CustomerModal
           store={store}
-          onClose={() => setShowModal(false)}
-          onCreated={() => {
-            setShowModal(false)
-            load()
+          onClose={() => setModal(false)}
+          onCreated={(customer) => {
+            setRows((x) => [customer, ...x])
+            setModal(false)
           }}
+        />
+      )}
+
+      {history && (
+        <CustomerHistoryModal
+          customer={history}
+          onClose={() => setHistory(null)}
         />
       )}
     </div>
   )
 }
 
-/* ============================================================
+/* =========================================================
    REPORTS
-============================================================ */
+========================================================= */
 
-function ReportsModule({ store }) {
+function Reports({ store }) {
+  const [from, setFrom] = useState(todayISO())
+  const [to, setTo] = useState(todayISO())
   const [sales, setSales] = useState([])
   const [purchases, setPurchases] = useState([])
-  const [loading, setLoading] = useState(true)
+
+  const load = async () => {
+    const { data: salesRows } = await supabase
+      .from('sales')
+      .select('*')
+      .eq('store_id', store.id)
+      .eq('status', 'completed')
+      .gte('bill_datetime', `${from}T00:00:00`)
+      .lte('bill_datetime', `${to}T23:59:59`)
+
+    const { data: purchaseRows } = await supabase
+      .from('purchase_invoices')
+      .select('*')
+      .eq('store_id', store.id)
+      .gte('invoice_date', from)
+      .lte('invoice_date', to)
+
+    setSales(salesRows || [])
+    setPurchases(purchaseRows || [])
+  }
 
   useEffect(() => {
-    load()
-  }, [store.id])
-
-  async function load() {
-    setLoading(true)
-
-    const [{ data: salesData }, { data: purchaseData }] =
-      await Promise.all([
-        supabase
-          .from('sales')
-          .select('grand_total, amount_paid, amount_due')
-          .eq('store_id', store.id)
-          .eq('status', 'completed')
-          .limit(5000),
-
-        supabase
-          .from('purchase_invoices')
-          .select('total_amount')
-          .eq('store_id', store.id)
-          .limit(5000),
-      ])
-
-    setSales(salesData || [])
-    setPurchases(purchaseData || [])
-    setLoading(false)
-  }
-
-  const salesTotal = sales.reduce(
-    (sum, row) => sum + Number(row.grand_total || 0),
-    0,
-  )
-
-  const collected = sales.reduce(
-    (sum, row) => sum + Number(row.amount_paid || 0),
-    0,
-  )
-
-  const customerDue = sales.reduce(
-    (sum, row) => sum + Number(row.amount_due || 0),
-    0,
-  )
-
-  const purchaseTotal = purchases.reduce(
-    (sum, row) => sum + Number(row.total_amount || 0),
-    0,
-  )
-
-  if (loading) {
-    return (
-      <div className="module">
-        <ModuleHeader
-          eyebrow="REPORTS"
-          title="Reports"
-          description="Business overview from your pharmacy data."
-        />
-        <LoadingInline />
-      </div>
-    )
-  }
+    if (store?.id) load()
+  }, [store?.id])
 
   return (
-    <div className="module">
+    <div>
       <ModuleHeader
-        eyebrow="REPORTS"
         title="Reports"
-        description="Business overview from your pharmacy data."
+        subtitle="Sales and purchase overview"
       />
 
-      <div className="stat-grid">
-        <StatCard
-          label="Total Sales"
-          value={money(salesTotal)}
-          icon="₹"
-        />
-        <StatCard
-          label="Collected"
-          value={money(collected)}
-          icon="✓"
-        />
-        <StatCard
-          label="Customer Due"
-          value={money(customerDue)}
-          icon="!"
-        />
-        <StatCard
-          label="Purchases"
-          value={money(purchaseTotal)}
-          icon="▤"
-        />
-      </div>
+      <PanelList title="Date Range">
+        <div className="inline-fields">
+          <label>
+            From
+            <input
+              type="date"
+              value={from}
+              onChange={(e) => setFrom(e.target.value)}
+            />
+          </label>
 
-      <div className="dashboard-grid">
-        <div className="panel">
-          <h3>Sales report</h3>
-          <p className="muted">
-            Current completed sales available in the system.
-          </p>
+          <label>
+            To
+            <input
+              type="date"
+              value={to}
+              onChange={(e) => setTo(e.target.value)}
+            />
+          </label>
 
-          <div className="report-metric">
-            <span>Completed bills</span>
-            <strong>{sales.length}</strong>
-          </div>
-
-          <div className="report-metric">
-            <span>Average bill</span>
-            <strong>
-              {money(sales.length ? salesTotal / sales.length : 0)}
-            </strong>
-          </div>
+          <button className="primary-button" onClick={load}>
+            Refresh
+          </button>
         </div>
+      </PanelList>
 
-        <div className="panel">
-          <h3>Purchase report</h3>
-          <p className="muted">
-            Supplier purchase activity recorded in PharmDesk.
-          </p>
-
-          <div className="report-metric">
-            <span>Purchase invoices</span>
-            <strong>{purchases.length}</strong>
-          </div>
-
-          <div className="report-metric">
-            <span>Average invoice</span>
-            <strong>
-              {money(
-                purchases.length
-                  ? purchaseTotal / purchases.length
-                  : 0,
-              )}
-            </strong>
-          </div>
-        </div>
+      <div className="stats-grid">
+        <StatCard
+          title="Sales"
+          value={money(
+            sum(sales.map((x) => x.grand_total)),
+          )}
+        />
+        <StatCard
+          title="Purchases"
+          value={money(
+            sum(purchases.map((x) => x.total_amount)),
+          )}
+        />
+        <StatCard
+          title="Bills"
+          value={sales.length}
+        />
+        <StatCard
+          title="Purchase Invoices"
+          value={purchases.length}
+        />
       </div>
     </div>
   )
 }
 
-/* ============================================================
+/* =========================================================
    ALERTS
-============================================================ */
+========================================================= */
 
 function AlertsModule({ store }) {
-  const [alerts, setAlerts] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [rows, setRows] = useState([])
 
-  useEffect(() => {
-    load()
-  }, [store.id])
-
-  async function load() {
-    setLoading(true)
-
+  const load = async () => {
     const { data } = await supabase
       .from('alerts')
-      .select(`
-        *,
-        products(product_name),
-        suppliers(supplier_name),
-        customers(name)
-      `)
+      .select('*')
       .eq('store_id', store.id)
       .eq('is_resolved', false)
       .order('created_at', { ascending: false })
-      .limit(200)
 
-    setAlerts(data || [])
-    setLoading(false)
+    setRows(data || [])
   }
 
-  async function resolve(id) {
+  useEffect(() => {
+    if (store?.id) load()
+  }, [store?.id])
+
+  const resolve = async (id) => {
     await supabase
       .from('alerts')
       .update({
@@ -3340,39 +3332,35 @@ function AlertsModule({ store }) {
   }
 
   return (
-    <div className="module">
+    <div>
       <ModuleHeader
-        eyebrow="ALERTS"
         title="Alerts"
-        description="Items requiring attention without interrupting normal billing."
+        subtitle="Expiry, stock and system alerts"
       />
 
-      <div className="panel">
-        {loading ? (
-          <LoadingInline />
-        ) : alerts.length === 0 ? (
-          <EmptyState
-            icon="✓"
-            title="No open alerts"
-            text="Everything currently recorded is within your alert thresholds."
-          />
+      <PanelList title="Active Alerts">
+        {rows.length === 0 ? (
+          <EmptyState text="No unresolved alerts." />
         ) : (
-          <div className="alert-list">
-            {alerts.map((alert) => (
-              <div className="alert-card" key={alert.id}>
-                <div className={`alert-icon ${alert.severity || ''}`}>
-                  !
-                </div>
-
-                <div className="alert-content">
-                  <strong>{alert.title}</strong>
-                  <p>{alert.message}</p>
-                  <small>{dateTimeText(alert.created_at)}</small>
+          <div className="record-list">
+            {rows.map((row) => (
+              <div
+                className="record-row static"
+                key={row.id}
+              >
+                <div>
+                  <strong>{row.alert_type}</strong>
+                  <span>
+                    {row.title ||
+                      row.message ||
+                      row.description ||
+                      'Alert'}
+                  </span>
                 </div>
 
                 <button
-                  className="secondary-btn"
-                  onClick={() => resolve(alert.id)}
+                  className="secondary-button"
+                  onClick={() => resolve(row.id)}
                 >
                   Resolve
                 </button>
@@ -3380,288 +3368,230 @@ function AlertsModule({ store }) {
             ))}
           </div>
         )}
-      </div>
+      </PanelList>
     </div>
   )
 }
 
-/* ============================================================
+/* =========================================================
    SETTINGS
-============================================================ */
+========================================================= */
 
 function SettingsModule({ store, profile }) {
-  const [settings, setSettings] = useState(null)
-  const [form, setForm] = useState({})
-  const [busy, setBusy] = useState(false)
+  const [currency, setCurrency] = useState('INR')
+  const [expiryDays, setExpiryDays] = useState(90)
+  const [deadStockDays, setDeadStockDays] = useState(60)
+  const [allowPastDated, setAllowPastDated] = useState(true)
+  const [allowWalkIn, setAllowWalkIn] = useState(true)
+  const [salespersonRequired, setSalespersonRequired] =
+    useState(false)
   const [message, setMessage] = useState('')
 
   useEffect(() => {
-    load()
-  }, [store.id])
+    if (!store?.id) return
 
-  async function load() {
-    const { data } = await supabase
+    supabase
       .from('store_settings')
       .select('*')
       .eq('store_id', store.id)
       .maybeSingle()
+      .then(({ data }) => {
+        if (!data) return
 
-    setSettings(data)
+        setCurrency(data.currency || 'INR')
+        setExpiryDays(data.expiry_alert_days ?? 90)
+        setDeadStockDays(
+          data.dead_stock_days ?? 60,
+        )
+        setAllowPastDated(
+          data.allow_past_dated_bills ?? true,
+        )
+        setAllowWalkIn(
+          data.allow_walk_in_customers ?? true,
+        )
+        setSalespersonRequired(
+          data.salesperson_required ?? false,
+        )
+      })
+  }, [store?.id])
 
-    if (data) {
-      setForm(data)
-    }
-  }
-
-  async function save() {
-    setBusy(true)
-    setMessage('')
-
-    const payload = {
-      store_id: store.id,
-      currency: form.currency || 'INR',
-      gst_enabled: form.gst_enabled ?? true,
-      default_gst_mode:
-        form.default_gst_mode || 'inclusive',
-      invoice_prefix: form.invoice_prefix || 'INV',
-      invoice_start_number:
-        Number(form.invoice_start_number || 1),
-      near_expiry_days:
-        Number(form.near_expiry_days || 90),
-      dead_stock_days:
-        Number(form.dead_stock_days || 60),
-      allow_past_dated_bills:
-        form.allow_past_dated_bills ?? true,
-      allow_walk_in_sales:
-        form.allow_walk_in_sales ?? true,
-      require_salesperson:
-        form.require_salesperson ?? false,
-    }
-
+  const save = async () => {
     const { error } = await supabase
       .from('store_settings')
-      .upsert(payload)
+      .upsert({
+        store_id: store.id,
+        currency,
+        expiry_alert_days: Number(expiryDays),
+        dead_stock_days: Number(deadStockDays),
+        allow_past_dated_bills: allowPastDated,
+        allow_walk_in_customers: allowWalkIn,
+        salesperson_required: salespersonRequired,
+        updated_at: new Date().toISOString(),
+      })
 
-    if (error) setMessage(error.message)
-    else {
-      setMessage('Settings saved successfully.')
-      load()
-    }
-
-    setBusy(false)
-  }
-
-  function setField(field, value) {
-    setForm((current) => ({
-      ...current,
-      [field]: value,
-    }))
+    setMessage(
+      error
+        ? error.message
+        : 'Settings saved successfully.',
+    )
   }
 
   return (
-    <div className="module">
+    <div>
       <ModuleHeader
-        eyebrow="SETTINGS"
         title="Settings"
-        description="Configure your pharmacy workspace."
+        subtitle={store?.name || 'Store settings'}
       />
 
-      <div className="settings-grid">
-        <div className="panel">
-          <h3>Store information</h3>
+      <PanelList title="Store">
+        <div className="form-grid">
+          <label>
+            Store name
+            <input value={store?.name || ''} disabled />
+          </label>
 
-          <div className="settings-store">
-            <div className="store-avatar">LP</div>
-            <div>
-              <strong>{store.name}</strong>
-              <span>{store.phone || 'Phone not added'}</span>
-              <span>{store.email || 'Email not added'}</span>
-            </div>
-          </div>
+          <label>
+            Currency
+            <input
+              value={currency}
+              onChange={(e) => setCurrency(e.target.value)}
+            />
+          </label>
 
-          <div className="form-grid two">
-            <label>
-              Currency
-              <input
-                value={form.currency || 'INR'}
-                onChange={(e) =>
-                  setField('currency', e.target.value)
-                }
-              />
-            </label>
+          <label>
+            Expiry alert days
+            <input
+              type="number"
+              min="1"
+              value={expiryDays}
+              onChange={(e) =>
+                setExpiryDays(e.target.value)
+              }
+            />
+          </label>
 
-            <label>
-              Invoice prefix
-              <input
-                value={form.invoice_prefix || 'INV'}
-                onChange={(e) =>
-                  setField('invoice_prefix', e.target.value)
-                }
-              />
-            </label>
-
-            <label>
-              Near-expiry threshold (days)
-              <input
-                type="number"
-                value={form.near_expiry_days || 90}
-                onChange={(e) =>
-                  setField(
-                    'near_expiry_days',
-                    e.target.value,
-                  )
-                }
-              />
-            </label>
-
-            <label>
-              Dead-stock threshold (days)
-              <input
-                type="number"
-                value={form.dead_stock_days || 60}
-                onChange={(e) =>
-                  setField(
-                    'dead_stock_days',
-                    e.target.value,
-                  )
-                }
-              />
-            </label>
-          </div>
+          <label>
+            Dead stock days
+            <input
+              type="number"
+              min="1"
+              value={deadStockDays}
+              onChange={(e) =>
+                setDeadStockDays(e.target.value)
+              }
+            />
+          </label>
         </div>
 
-        <div className="panel">
-          <h3>Billing preferences</h3>
+        <ToggleRow
+          label="Allow walk-in customers"
+          checked={allowWalkIn}
+          onChange={setAllowWalkIn}
+        />
 
-          <div className="settings-list">
-            <ToggleRow
-              label="GST enabled"
-              description="Use GST fields throughout billing."
-              value={form.gst_enabled ?? true}
-              onChange={(value) =>
-                setField('gst_enabled', value)
-              }
-            />
+        <ToggleRow
+          label="Allow past-dated bills"
+          checked={allowPastDated}
+          onChange={setAllowPastDated}
+        />
 
-            <ToggleRow
-              label="Allow walk-in sales"
-              description="Permit anonymous rush-hour billing."
-              value={form.allow_walk_in_sales ?? true}
-              onChange={(value) =>
-                setField('allow_walk_in_sales', value)
-              }
-            />
+        <ToggleRow
+          label="Require salesperson"
+          checked={salespersonRequired}
+          onChange={setSalespersonRequired}
+        />
 
-            <ToggleRow
-              label="Allow past-dated bills"
-              description="Permit authorized users to create past-dated bills."
-              value={form.allow_past_dated_bills ?? true}
-              onChange={(value) =>
-                setField(
-                  'allow_past_dated_bills',
-                  value,
-                )
-              }
-            />
+        {message && (
+          <div className="message-box">{message}</div>
+        )}
 
-            <ToggleRow
-              label="Require salesperson"
-              description="Require a salesperson on every completed bill."
-              value={form.require_salesperson ?? false}
-              onChange={(value) =>
-                setField('require_salesperson', value)
-              }
-            />
-          </div>
+        <button
+          className="primary-button"
+          onClick={save}
+        >
+          Save Settings
+        </button>
+      </PanelList>
 
-          {message && <div className="success-box">{message}</div>}
-
-          <button
-            className="primary-btn"
-            disabled={busy}
-            onClick={save}
-          >
-            {busy ? 'Saving…' : 'Save Settings'}
-          </button>
+      <PanelList title="Signed-in User">
+        <div className="history-header">
+          <strong>{profile?.full_name || 'User'}</strong>
+          <span>{profile?.phone || ''}</span>
         </div>
-      </div>
+      </PanelList>
     </div>
   )
 }
 
-/* ============================================================
-   MODALS
-============================================================ */
+/* =========================================================
+   CUSTOMER MODAL
+========================================================= */
 
 function CustomerModal({ store, onClose, onCreated }) {
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
   const [address, setAddress] = useState('')
-  const [doctorName, setDoctorName] = useState('')
-  const [doctorAddress, setDoctorAddress] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
-  async function save(event) {
-    event.preventDefault()
+  const save = async (e) => {
+    e.preventDefault()
+    setBusy(true)
     setError('')
 
-    if (!name.trim() || !phone.trim()) {
-      setError('Customer name and phone are required.')
-      return
-    }
+    try {
+      if (!name.trim()) {
+        throw new Error('Customer name is required.')
+      }
 
-    setBusy(true)
+      if (!phone.trim()) {
+        throw new Error('Customer phone number is required.')
+      }
 
-    const { data, error: insertError } = await supabase
-      .from('customers')
-      .insert({
+      const payload = {
         store_id: store.id,
         customer_type: 'named',
         name: name.trim(),
         phone: phone.trim(),
         address: address.trim() || null,
-        referred_doctor_name:
-          doctorName.trim() || null,
-        referred_doctor_address:
-          doctorAddress.trim() || null,
         is_active: true,
-      })
-      .select('*')
-      .single()
+      }
 
-    if (insertError) {
-      setError(insertError.message)
+      let result = await supabase
+        .from('customers')
+        .insert(payload)
+        .select()
+        .single()
+
+      if (result.error) throw result.error
+
+      onCreated(result.data)
+    } catch (error) {
+      setError(error.message)
+    } finally {
       setBusy(false)
-      return
     }
-
-    onCreated(data)
-    setBusy(false)
   }
 
   return (
-    <Modal title="Add customer" onClose={onClose}>
-      <form className="form-stack" onSubmit={save}>
+    <Modal title="Add Customer" onClose={onClose}>
+      <form onSubmit={save}>
         <label>
-          Customer name *
+          Customer name
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
-            autoFocus
             required
-            placeholder="Enter customer name"
           />
         </label>
 
         <label>
-          Phone *
+          Phone
           <input
+            type="tel"
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
             required
-            placeholder="Enter phone number"
-            inputMode="tel"
           />
         </label>
 
@@ -3670,34 +3600,8 @@ function CustomerModal({ store, onClose, onCreated }) {
           <textarea
             value={address}
             onChange={(e) => setAddress(e.target.value)}
-            rows="3"
-            placeholder="Customer address"
           />
         </label>
-
-        <div className="form-grid two">
-          <label>
-            Referred doctor name
-            <input
-              value={doctorName}
-              onChange={(e) =>
-                setDoctorName(e.target.value)
-              }
-              placeholder="Doctor name"
-            />
-          </label>
-
-          <label>
-            Referred doctor address
-            <input
-              value={doctorAddress}
-              onChange={(e) =>
-                setDoctorAddress(e.target.value)
-              }
-              placeholder="Clinic / hospital address"
-            />
-          </label>
-        </div>
 
         {error && <div className="error-box">{error}</div>}
 
@@ -3711,119 +3615,135 @@ function CustomerModal({ store, onClose, onCreated }) {
   )
 }
 
+/* =========================================================
+   SUPPLIER MODAL
+========================================================= */
+
 function SupplierModal({ store, onClose, onCreated }) {
-  const [supplierName, setSupplierName] = useState('')
+  const [name, setName] = useState('')
+  const [license, setLicense] = useState('')
   const [phone, setPhone] = useState('')
   const [email, setEmail] = useState('')
-  const [gstin, setGstin] = useState('')
-  const [drugLicenseNumber, setDrugLicenseNumber] =
-    useState('')
   const [address, setAddress] = useState('')
+  const [gstin, setGstin] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
-  async function save(event) {
-    event.preventDefault()
+  const save = async (e) => {
+    e.preventDefault()
+    setBusy(true)
     setError('')
 
-    if (!supplierName.trim()) {
-      setError('Purchase party name is required.')
-      return
-    }
+    try {
+      if (!name.trim()) {
+        throw new Error('Supplier name is required.')
+      }
 
-    setBusy(true)
-
-    const { data, error: insertError } = await supabase
-      .from('suppliers')
-      .insert({
+      const modernPayload = {
         store_id: store.id,
-        supplier_name: supplierName.trim(),
+        supplier_name: name.trim(),
+        drug_license_number: license.trim() || null,
         phone: phone.trim() || null,
         email: email.trim() || null,
-        gstin: gstin.trim() || null,
-        drug_license_number:
-          drugLicenseNumber.trim() || null,
         address: address.trim() || null,
+        gstin: gstin.trim() || null,
         is_active: true,
-      })
-      .select('*')
-      .single()
+      }
 
-    if (insertError) {
-      setError(insertError.message)
+      let result = await supabase
+        .from('suppliers')
+        .insert(modernPayload)
+        .select()
+        .single()
+
+      /*
+       * The currently verified schema may still contain the old
+       * contact_person column. If so, retry without the newer
+       * drug_license_number field so supplier creation itself does
+       * not become unusable.
+       */
+      if (
+        result.error &&
+        /drug_license_number|column/i.test(
+          result.error.message || '',
+        )
+      ) {
+        result = await supabase
+          .from('suppliers')
+          .insert({
+            store_id: store.id,
+            supplier_name: name.trim(),
+            contact_person: license.trim() || null,
+            phone: phone.trim() || null,
+            email: email.trim() || null,
+            address: address.trim() || null,
+            gstin: gstin.trim() || null,
+            is_active: true,
+          })
+          .select()
+          .single()
+      }
+
+      if (result.error) throw result.error
+
+      onCreated(result.data)
+    } catch (error) {
+      setError(error.message)
+    } finally {
       setBusy(false)
-      return
     }
-
-    onCreated(data)
-    setBusy(false)
   }
 
   return (
-    <Modal title="Add purchase party" onClose={onClose}>
-      <form className="form-stack" onSubmit={save}>
+    <Modal title="Add Purchase Party" onClose={onClose}>
+      <form onSubmit={save}>
         <label>
-          Supplier / purchase party *
+          Supplier / purchase party
           <input
-            value={supplierName}
-            onChange={(e) =>
-              setSupplierName(e.target.value)
-            }
-            autoFocus
+            value={name}
+            onChange={(e) => setName(e.target.value)}
             required
-            placeholder="e.g. ABC Pharma Distributors"
           />
         </label>
 
-        <div className="form-grid two">
-          <label>
-            Phone
-            <input
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              placeholder="Phone number"
-              inputMode="tel"
-            />
-          </label>
+        <label>
+          Drug licence number
+          <input
+            value={license}
+            onChange={(e) => setLicense(e.target.value)}
+          />
+        </label>
 
-          <label>
-            Email
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="Email address"
-            />
-          </label>
+        <label>
+          Phone
+          <input
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+          />
+        </label>
 
-          <label>
-            GSTIN
-            <input
-              value={gstin}
-              onChange={(e) => setGstin(e.target.value)}
-              placeholder="GSTIN"
-            />
-          </label>
+        <label>
+          Email
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+        </label>
 
-          <label>
-            Drug licence number
-            <input
-              value={drugLicenseNumber}
-              onChange={(e) =>
-                setDrugLicenseNumber(e.target.value)
-              }
-              placeholder="Drug licence number"
-            />
-          </label>
-        </div>
+        <label>
+          GSTIN
+          <input
+            value={gstin}
+            onChange={(e) => setGstin(e.target.value)}
+          />
+        </label>
 
         <label>
           Address
           <textarea
             value={address}
             onChange={(e) => setAddress(e.target.value)}
-            rows="3"
-            placeholder="Supplier address"
           />
         </label>
 
@@ -3839,193 +3759,120 @@ function SupplierModal({ store, onClose, onCreated }) {
   )
 }
 
-const STRENGTH_UNITS = [
-  'mg',
-  'ml',
-  'mcg',
-  'g',
-  'IU',
-  '%',
-]
+/* =========================================================
+   COMPOSITION MODAL
+========================================================= */
 
-function emptyIngredientRow() {
-  return {
-    ingredient_name: '',
-    strength_value: '',
-    strength_unit: 'mg',
-  }
-}
-
-function CompositionModal({ onClose, onCreated }) {
-  const [dosageForm, setDosageForm] = useState('')
-  const [source, setSource] = useState('Manual')
+function CompositionModal({
+  onClose,
+  onCreated,
+  initialComposition = null,
+}) {
+  const [dosageForm, setDosageForm] = useState(
+    initialComposition?.dosage_form || '',
+  )
+  const [source, setSource] = useState(
+    initialComposition?.source || 'manual',
+  )
   const [sourceReference, setSourceReference] =
-    useState('')
+    useState(
+      initialComposition?.source_reference || '',
+    )
 
-  const [ingredients, setIngredients] = useState([
-    emptyIngredientRow(),
-  ])
+  const [ingredients, setIngredients] = useState(
+    initialComposition?.ingredients?.length
+      ? initialComposition.ingredients
+      : [
+          {
+            ingredient_name: '',
+            strength_value: '',
+            strength_unit: 'mg',
+            sequence_number: 1,
+          },
+        ],
+  )
 
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
-  function updateIngredient(index, patch) {
+  const updateIngredient = (index, patch) => {
     setIngredients((current) =>
-      current.map((row, i) =>
-        i === index
-          ? { ...row, ...patch }
-          : row,
+      current.map((x, i) =>
+        i === index ? { ...x, ...patch } : x,
       ),
     )
   }
 
-  function addIngredientRow() {
+  const addIngredient = () => {
     setIngredients((current) => [
       ...current,
-      emptyIngredientRow(),
+      {
+        ingredient_name: '',
+        strength_value: '',
+        strength_unit: 'mg',
+        sequence_number: current.length + 1,
+      },
     ])
   }
 
-  function removeIngredientRow(index) {
-    if (ingredients.length === 1) return
-
+  const removeIngredient = (index) => {
     setIngredients((current) =>
-      current.filter((_, i) => i !== index),
+      current
+        .filter((_, i) => i !== index)
+        .map((x, i) => ({
+          ...x,
+          sequence_number: i + 1,
+        })),
     )
   }
 
-  const generatedName = ingredients
-    .filter((row) => row.ingredient_name.trim())
-    .map((row) =>
-      [
-        row.ingredient_name.trim(),
-        row.strength_value
-          ? `${row.strength_value}${row.strength_unit || ''}`
-          : '',
-      ]
-        .filter(Boolean)
-        .join(' '),
-    )
-    .join(' + ')
-
-  async function save(event) {
-    event.preventDefault()
+  const save = async (e) => {
+    e.preventDefault()
+    setBusy(true)
     setError('')
 
-    const validIngredients = ingredients
-      .filter((row) => row.ingredient_name.trim())
-      .map((row, index) => ({
-        ingredient_name:
-          row.ingredient_name.trim(),
-        strength_value:
-          row.strength_value === ''
-            ? null
-            : Number(row.strength_value),
-        strength_unit:
-          row.strength_unit || null,
-        sequence_number: index + 1,
-      }))
+    try {
+      const clean = ingredients
+        .filter((x) => x.ingredient_name.trim())
+        .map((x, i) => ({
+          ingredient_name: x.ingredient_name.trim(),
+          strength_value: Number(x.strength_value),
+          strength_unit: x.strength_unit,
+          sequence_number: i + 1,
+        }))
 
-    if (validIngredients.length === 0) {
-      setError('Add at least one ingredient.')
-      return
-    }
-
-    for (const ingredient of validIngredients) {
-      if (
-        ingredient.strength_value !== null &&
-        (!Number.isFinite(
-          ingredient.strength_value,
-        ) ||
-          ingredient.strength_value <= 0)
-      ) {
-        setError(
-          'Strength must be a positive number when entered.',
-        )
-        return
+      if (!clean.length) {
+        throw new Error('Add at least one ingredient.')
       }
 
-      if (
-        ingredient.strength_value !== null &&
-        !ingredient.strength_unit
-      ) {
-        setError(
-          'Select a strength unit for every strength.',
+      const { data, error: rpcError } =
+        await supabase.rpc(
+          'pharmdesk_save_composition',
+          {
+            p_composition_id:
+              initialComposition?.id || null,
+            p_dosage_form:
+              dosageForm.trim() || null,
+            p_source: source,
+            p_source_reference:
+              sourceReference.trim() || null,
+            p_ingredients: clean,
+          },
         )
-        return
-      }
-    }
 
-    setBusy(true)
+      if (rpcError) throw rpcError
 
-    const { data: compositionId, error: compositionError } =
-      await supabase.rpc(
-        'pharmdesk_save_composition',
-        {
-          p_composition_id: null,
-          p_dosage_form:
-            dosageForm.trim() || null,
-          p_source: source.trim() || 'Manual',
-          p_source_reference:
-            sourceReference.trim() || null,
-          p_ingredients: validIngredients,
-        },
-      )
-
-    if (compositionError) {
-      setError(compositionError.message)
+      onCreated(data)
+    } catch (error) {
+      setError(error.message)
+    } finally {
       setBusy(false)
-      return
     }
-
-    const { data: composition, error: fetchError } =
-      await supabase
-        .from('compositions')
-        .select(`
-          id,
-          name,
-          dosage_form,
-          source,
-          source_reference,
-          is_verified,
-          is_active,
-          composition_ingredients(
-            ingredient_name,
-            strength_value,
-            strength_unit,
-            sequence_number
-          )
-        `)
-        .eq('id', compositionId)
-        .single()
-
-    if (fetchError) {
-      setError(fetchError.message)
-      setBusy(false)
-      return
-    }
-
-    const normalizedComposition = {
-      ...composition,
-      composition_ingredients: (
-        composition.composition_ingredients || []
-      ).sort(
-        (a, b) =>
-          Number(a.sequence_number || 0) -
-          Number(b.sequence_number || 0),
-      ),
-    }
-
-    onCreated(normalizedComposition)
-    setBusy(false)
   }
 
   return (
-    <Modal
-      title="Add new composition"
-      onClose={onClose}
-    >
-      <form className="form-stack" onSubmit={save}>
+    <Modal title="Composition" onClose={onClose}>
+      <form onSubmit={save}>
         <label>
           Dosage form
           <input
@@ -4033,145 +3880,91 @@ function CompositionModal({ onClose, onCreated }) {
             onChange={(e) =>
               setDosageForm(e.target.value)
             }
-            placeholder="Tablet / Syrup / Cream"
+            placeholder="Tablet / Capsule / Syrup"
           />
         </label>
 
-        <div className="form-stack">
-          {ingredients.map((row, index) => (
-            <div
-              className="form-grid three"
-              key={index}
-            >
-              <label>
-                Ingredient *
-                <input
-                  value={row.ingredient_name}
-                  onChange={(e) =>
-                    updateIngredient(index, {
-                      ingredient_name:
-                        e.target.value,
-                    })
-                  }
-                  autoFocus={index === 0}
-                  placeholder="e.g. Paracetamol"
-                  required
-                />
-              </label>
+        <label>
+          Source
+          <input
+            value={source}
+            onChange={(e) => setSource(e.target.value)}
+          />
+        </label>
 
-              <label>
-                Strength
-                <input
-                  type="number"
-                  min="0"
-                  step="any"
-                  value={row.strength_value}
-                  onChange={(e) =>
-                    updateIngredient(index, {
-                      strength_value:
-                        e.target.value,
-                    })
-                  }
-                  placeholder="e.g. 650"
-                />
-              </label>
+        <label>
+          Source reference
+          <input
+            value={sourceReference}
+            onChange={(e) =>
+              setSourceReference(e.target.value)
+            }
+          />
+        </label>
 
-              <label>
-                Unit
-                <div className="search-with-action">
-                  <select
-                    value={row.strength_unit}
-                    onChange={(e) =>
-                      updateIngredient(index, {
-                        strength_unit:
-                          e.target.value,
-                      })
-                    }
-                  >
-                    {STRENGTH_UNITS.map(
-                      (unit) => (
-                        <option
-                          key={unit}
-                          value={unit}
-                        >
-                          {unit}
-                        </option>
-                      ),
-                    )}
-                  </select>
+        <h3>Ingredients</h3>
 
-                  {ingredients.length > 1 && (
-                    <button
-                      type="button"
-                      className="icon-btn"
-                      onClick={() =>
-                        removeIngredientRow(
-                          index,
-                        )
-                      }
-                    >
-                      ×
-                    </button>
-                  )}
-                </div>
-              </label>
-            </div>
-          ))}
-        </div>
+        {ingredients.map((ingredient, index) => (
+          <div
+            className="ingredient-row"
+            key={index}
+          >
+            <input
+              placeholder="Ingredient"
+              value={ingredient.ingredient_name}
+              onChange={(e) =>
+                updateIngredient(index, {
+                  ingredient_name: e.target.value,
+                })
+              }
+            />
+
+            <input
+              type="number"
+              min="0"
+              step="any"
+              placeholder="Strength"
+              value={ingredient.strength_value}
+              onChange={(e) =>
+                updateIngredient(index, {
+                  strength_value: e.target.value,
+                })
+              }
+            />
+
+            <input
+              placeholder="Unit"
+              value={ingredient.strength_unit}
+              onChange={(e) =>
+                updateIngredient(index, {
+                  strength_unit: e.target.value,
+                })
+              }
+            />
+
+            {ingredients.length > 1 && (
+              <button
+                type="button"
+                className="danger-button"
+                onClick={() =>
+                  removeIngredient(index)
+                }
+              >
+                ×
+              </button>
+            )}
+          </div>
+        ))}
 
         <button
           type="button"
-          className="text-btn"
-          onClick={addIngredientRow}
+          className="secondary-button"
+          onClick={addIngredient}
         >
-          + Add another ingredient
+          + Ingredient
         </button>
 
-        <div className="form-grid two">
-          <label>
-            Source
-            <input
-              value={source}
-              onChange={(e) =>
-                setSource(e.target.value)
-              }
-              placeholder="Manual / verified source"
-            />
-          </label>
-
-          <label>
-            Source reference
-            <input
-              value={sourceReference}
-              onChange={(e) =>
-                setSourceReference(
-                  e.target.value,
-                )
-              }
-              placeholder="Optional reference"
-            />
-          </label>
-        </div>
-
-        {generatedName && (
-          <div className="selected-chip">
-            <div>
-              <strong>
-                {generatedName}
-              </strong>
-              <span>
-                This canonical name will be
-                generated by the database.
-              </span>
-            </div>
-          </div>
-        )}
-
-        {error && (
-          <div className="error-box">
-            {error}
-          </div>
-        )}
+        {error && <div className="error-box">{error}</div>}
 
         <ModalActions
           onClose={onClose}
@@ -4183,48 +3976,65 @@ function CompositionModal({ onClose, onCreated }) {
   )
 }
 
+/* =========================================================
+   PRODUCT MODAL
+========================================================= */
+
 function ProductModal({
   store,
+  product = null,
   onClose,
   onCreated,
 }) {
+  const editing = Boolean(product?.id)
+
   const [categories, setCategories] = useState([])
-  const [compositions, setCompositions] =
-    useState([])
+  const [compositions, setCompositions] = useState([])
+  const [compositionQuery, setCompositionQuery] =
+    useState('')
+  const [selectedComposition, setSelectedComposition] =
+    useState(null)
+  const [compositionModal, setCompositionModal] =
+    useState(false)
 
-  const [name, setName] = useState('')
-  const [manufacturer, setManufacturer] =
-    useState('')
-  const [dosageForm, setDosageForm] =
-    useState('')
-
-  const [compositionId, setCompositionId] =
-    useState('')
-  const [compositionSearch, setCompositionSearch] =
-    useState('')
-  const [
-    showCompositionSuggestions,
-    setShowCompositionSuggestions,
-  ] = useState(false)
-
-  const [categoryId, setCategoryId] =
-    useState('')
-  const [hsn, setHsn] = useState('')
-  const [gst, setGst] = useState(0)
+  const [name, setName] = useState(
+    product?.product_name || '',
+  )
+  const [manufacturer, setManufacturer] = useState(
+    product?.manufacturer || '',
+  )
+  const [dosageForm, setDosageForm] = useState(
+    product?.dosage_form || '',
+  )
+  const [categoryId, setCategoryId] = useState(
+    product?.category_id || '',
+  )
+  const [hsn, setHsn] = useState(
+    product?.hsn_code || '',
+  )
+  const [gst, setGst] = useState(
+    product?.gst_rate ?? 0,
+  )
   const [sellingPrice, setSellingPrice] =
-    useState('')
-  const [discount, setDiscount] =
-    useState(0)
+    useState(
+      product?.default_selling_price ?? 0,
+    )
+  const [discount, setDiscount] = useState(
+    product?.default_discount_percent ?? 0,
+  )
   const [minimumStock, setMinimumStock] =
-    useState(0)
+    useState(product?.minimum_stock ?? 0)
   const [reorderLevel, setReorderLevel] =
-    useState(0)
+    useState(product?.reorder_level ?? 0)
+
+  const [packagingName, setPackagingName] =
+    useState('Standard')
 
   const [packagingLevels, setPackagingLevels] =
     useState([
       {
         level_number: 1,
-        unit_name: '',
+        unit_name: 'Tablet',
         units_per_parent: 1,
         is_purchase_unit: true,
         is_sale_unit: true,
@@ -4233,212 +4043,149 @@ function ProductModal({
       },
     ])
 
-  const [packagingName, setPackagingName] =
-    useState('Standard')
+  const [existingPackagingId, setExistingPackagingId] =
+    useState(null)
 
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
-  const [
-    showCompositionForm,
-    setShowCompositionForm,
-  ] = useState(false)
-
-  async function loadMasterData() {
-    const [
-      {
-        data: categoryData,
-        error: categoryError,
-      },
-      {
-        data: compositionData,
-        error: compositionError,
-      },
-    ] = await Promise.all([
-      supabase
-        .from('product_categories')
-        .select('*')
-        .eq('is_active', true)
-        .order('name'),
-
-      supabase
-        .from('compositions')
-        .select(`
-          id,
-          name,
-          dosage_form,
-          source,
-          source_reference,
-          is_verified,
-          composition_ingredients(
-            ingredient_name,
-            strength_value,
-            strength_unit,
-            sequence_number
-          )
-        `)
-        .eq('is_active', true)
-        .order('name'),
-    ])
-
-    if (categoryError) {
-      setError(categoryError.message)
-      return
-    }
-
-    if (compositionError) {
-      setError(compositionError.message)
-      return
-    }
-
-    setCategories(categoryData || [])
-
-    setCompositions(
-      (compositionData || []).map(
-        (composition) => ({
-          ...composition,
-          composition_ingredients: (
-            composition.composition_ingredients ||
-            []
-          ).sort(
-            (a, b) =>
-              Number(
-                a.sequence_number || 0,
-              ) -
-              Number(
-                b.sequence_number || 0,
-              ),
-          ),
-        }),
-      ),
-    )
-  }
-
   useEffect(() => {
     loadMasterData()
-  }, [])
+  }, [store?.id, product?.id])
 
-  const selectedComposition =
-    compositions.find(
-      (composition) =>
-        composition.id === compositionId,
-    )
+  const loadMasterData = async () => {
+    const [{ data: categoryRows }, { data: compositionRows }] =
+      await Promise.all([
+        supabase
+          .from('product_categories')
+          .select('*')
+          .eq('is_active', true)
+          .order('name'),
 
-  const filteredCompositions = useMemo(() => {
-    const query = compositionSearch
-      .trim()
-      .toLowerCase()
+        supabase
+          .from('compositions')
+          .select(`
+            *,
+            composition_ingredients (
+              ingredient_name,
+              strength_value,
+              strength_unit,
+              sequence_number
+            )
+          `)
+          .eq('is_active', true)
+          .order('name'),
+      ])
 
-    if (!query) {
-      return compositions.slice(0, 10)
-    }
+    setCategories(categoryRows || [])
+    setCompositions(compositionRows || [])
 
-    const queryTokens = query
-      .split(/\s+/)
-      .filter(Boolean)
-
-    return compositions
-      .filter((composition) => {
-        const ingredientText = (
-          composition.composition_ingredients ||
-          []
-        )
-          .map((ingredient) =>
-            [
-              ingredient.ingredient_name,
-              ingredient.strength_value,
-              ingredient.strength_unit,
-            ]
-              .filter(Boolean)
-              .join(' '),
-          )
-          .join(' ')
-
-        const searchableText = [
-          composition.name,
-          composition.dosage_form,
-          ingredientText,
-        ]
-          .filter(Boolean)
-          .join(' ')
-          .toLowerCase()
-
-        return queryTokens.every((token) =>
-          searchableText.includes(token),
-        )
-      })
-      .slice(0, 10)
-  }, [compositions, compositionSearch])
-
-  function chooseComposition(
-    composition,
-  ) {
-    setCompositionId(composition.id)
-    setCompositionSearch(
-      composition.name,
-    )
-    setShowCompositionSuggestions(false)
-
-    if (composition.dosage_form) {
-      setDosageForm(
-        composition.dosage_form,
+    if (product?.composition_id) {
+      const found = (compositionRows || []).find(
+        (x) => x.id === product.composition_id,
       )
+
+      if (found) setSelectedComposition(found)
+    }
+
+    if (product?.id) {
+      const { data: configs } = await supabase
+        .from('product_packaging_configs')
+        .select(`
+          *,
+          product_packaging_levels (*)
+        `)
+        .eq('product_id', product.id)
+        .eq('is_active', true)
+        .order('is_default', {
+          ascending: false,
+        })
+        .limit(1)
+
+      const config = configs?.[0]
+
+      if (config) {
+        setExistingPackagingId(config.id)
+        setPackagingName(config.name || 'Standard')
+
+        const levels =
+          config.product_packaging_levels
+            ?.slice()
+            .sort(
+              (a, b) =>
+                a.level_number - b.level_number,
+            )
+
+        if (levels?.length) {
+          setPackagingLevels(levels)
+        }
+      }
     }
   }
 
-  function clearComposition() {
-    setCompositionId('')
-    setCompositionSearch('')
-    setShowCompositionSuggestions(true)
-  }
+  const filteredCompositions = compositions
+    .map((composition) => ({
+      composition,
+      score: fuzzyScore(
+        compositionQuery,
+        [
+          composition.name,
+          ...(composition.composition_ingredients || []).map(
+            (x) => x.ingredient_name,
+          ),
+        ].join(' '),
+      ),
+    }))
+    .filter(
+      (x) =>
+        !compositionQuery ||
+        x.score > 0,
+    )
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 10)
+    .map((x) => x.composition)
 
-  function updatePackagingLevel(
+  const updatePackagingLevel = (
     index,
     patch,
-  ) {
+  ) => {
     setPackagingLevels((current) =>
-      current.map((level, i) =>
-        i === index
-          ? { ...level, ...patch }
-          : level,
+      current.map((x, i) =>
+        i === index ? { ...x, ...patch } : x,
       ),
     )
   }
 
-  function addPackagingLevel() {
+  const addPackagingLevel = () => {
     setPackagingLevels((current) => {
       const nextLevel = current.length + 1
 
       return [
-        ...current,
+        ...current.map((x) => ({
+          ...x,
+          is_stock_unit: false,
+        })),
         {
           level_number: nextLevel,
           unit_name: '',
           units_per_parent: 1,
           is_purchase_unit: false,
-          is_sale_unit: false,
+          is_sale_unit: true,
           is_preferred_sale_unit: false,
           is_stock_unit: true,
         },
-      ].map((level, index) => ({
-        ...level,
-        level_number: index + 1,
-        is_stock_unit:
-          index === current.length,
-      }))
+      ]
     })
   }
 
-  function removePackagingLevel(index) {
-    if (packagingLevels.length === 1) {
-      return
-    }
+  const removePackagingLevel = (index) => {
+    if (packagingLevels.length === 1) return
 
     setPackagingLevels((current) =>
       current
         .filter((_, i) => i !== index)
-        .map((level, i) => ({
-          ...level,
+        .map((x, i) => ({
+          ...x,
           level_number: i + 1,
           is_stock_unit:
             i === current.length - 2,
@@ -4446,1038 +4193,638 @@ function ProductModal({
     )
   }
 
-  function togglePurchaseUnit(index) {
-    setPackagingLevels((current) =>
-      current.map((level, i) => ({
-        ...level,
-        is_purchase_unit:
-          i === index,
-      })),
-    )
-  }
-
-  function toggleSaleUnit(index) {
-    setPackagingLevels((current) =>
-      current.map((level, i) =>
-        i === index
-          ? {
-              ...level,
-              is_sale_unit:
-                !level.is_sale_unit,
-              is_preferred_sale_unit:
-                !level.is_sale_unit
-                  ? level.is_preferred_sale_unit
-                  : false,
-            }
-          : level,
-      ),
-    )
-  }
-
-  function setPreferredSaleUnit(index) {
-    setPackagingLevels((current) =>
-      current.map((level, i) => ({
-        ...level,
-        is_preferred_sale_unit:
-          i === index,
-        is_sale_unit:
-          i === index
-            ? true
-            : level.is_sale_unit,
-      })),
-    )
-  }
-
-  function setStockUnit(index) {
-    setPackagingLevels((current) =>
-      current.map((level, i) => ({
-        ...level,
-        is_stock_unit:
-          i === index,
-      })),
-    )
-  }
-
-  function packagingConversionText(
-    index,
-  ) {
-    const level = packagingLevels[index]
-
-    if (!level?.unit_name) {
-      return ''
+  const validatePackaging = () => {
+    if (!packagingLevels.length) {
+      throw new Error('Add at least one packaging level.')
     }
 
-    if (index === packagingLevels.length - 1) {
-      return `1 ${level.unit_name}`
-    }
+    const names = new Set()
 
-    const parts = [
-      `1 ${level.unit_name}`,
-    ]
+    for (const level of packagingLevels) {
+      if (!level.unit_name.trim()) {
+        throw new Error(
+          'Every packaging level needs a unit name.',
+        )
+      }
 
-    let multiplier = 1
-
-    for (
-      let i = index + 1;
-      i < packagingLevels.length;
-      i += 1
-    ) {
-      multiplier *= Number(
-        packagingLevels[i]
-          .units_per_parent || 1,
+      const normalized = normalize(
+        level.unit_name,
       )
 
+      if (names.has(normalized)) {
+        throw new Error(
+          'Packaging unit names must be unique.',
+        )
+      }
+
+      names.add(normalized)
+
       if (
-        packagingLevels[i].unit_name
+        Number(level.units_per_parent) <= 0
       ) {
-        parts.push(
-          `${multiplier} ${packagingLevels[i].unit_name}`,
+        throw new Error(
+          'Units per parent must be greater than zero.',
         )
       }
     }
 
-    return parts.join(' = ')
-  }
+    const purchaseUnits =
+      packagingLevels.filter(
+        (x) => x.is_purchase_unit,
+      )
 
-  function validatePackaging() {
-    if (!packagingLevels.length) {
-      return 'Add at least one packaging level.'
+    const stockUnits =
+      packagingLevels.filter(
+        (x) => x.is_stock_unit,
+      )
+
+    const preferredUnits =
+      packagingLevels.filter(
+        (x) => x.is_preferred_sale_unit,
+      )
+
+    if (purchaseUnits.length !== 1) {
+      throw new Error(
+        'Select exactly one purchase unit.',
+      )
     }
 
-    const names = packagingLevels.map(
-      (level) =>
-        level.unit_name.trim().toLowerCase(),
-    )
+    if (stockUnits.length !== 1) {
+      throw new Error(
+        'Select exactly one stock unit.',
+      )
+    }
+
+    if (preferredUnits.length > 1) {
+      throw new Error(
+        'Select at most one preferred sale unit.',
+      )
+    }
+
+    const stockIndex =
+      packagingLevels.findIndex(
+        (x) => x.is_stock_unit,
+      )
 
     if (
-      names.some((unit) => !unit)
+      stockIndex !==
+      packagingLevels.length - 1
     ) {
-      return 'Every packaging level needs a unit name.'
+      throw new Error(
+        'The stock unit must be the lowest packaging level.',
+      )
     }
-
-    if (
-      new Set(names).size !== names.length
-    ) {
-      return 'Packaging unit names must be unique.'
-    }
-
-    const purchaseCount =
-      packagingLevels.filter(
-        (level) =>
-          level.is_purchase_unit,
-      ).length
-
-    if (purchaseCount !== 1) {
-      return 'Select exactly one purchase unit.'
-    }
-
-    const stockCount =
-      packagingLevels.filter(
-        (level) =>
-          level.is_stock_unit,
-      ).length
-
-    if (stockCount !== 1) {
-      return 'Select exactly one stock unit.'
-    }
-
-    const preferredCount =
-      packagingLevels.filter(
-        (level) =>
-          level.is_preferred_sale_unit,
-      ).length
-
-    if (preferredCount > 1) {
-      return 'Only one preferred sale unit can be selected.'
-    }
-
-    for (
-      let i = 0;
-      i < packagingLevels.length;
-      i += 1
-    ) {
-      const level =
-        packagingLevels[i]
-
-      const unitsPerParent =
-        Number(
-          level.units_per_parent,
-        )
-
-      if (
-        !Number.isFinite(
-          unitsPerParent,
-        ) ||
-        unitsPerParent <= 0
-      ) {
-        return `Enter a valid conversion quantity for ${level.unit_name || `level ${i + 1}`}.`
-      }
-
-      if (
-        i === 0 &&
-        unitsPerParent !== 1
-      ) {
-        return 'The first packaging level must have a conversion of 1.'
-      }
-
-      if (
-        i ===
-          packagingLevels.length - 1 &&
-        !level.is_stock_unit
-      ) {
-        return 'The lowest packaging level must be the stock unit.'
-      }
-
-      if (
-        level.is_preferred_sale_unit &&
-        !level.is_sale_unit
-      ) {
-        return 'The preferred sale unit must also be a sale unit.'
-      }
-    }
-
-    return ''
   }
 
-  async function save(event) {
-    event.preventDefault()
+  const save = async (e) => {
+    e.preventDefault()
+    setBusy(true)
     setError('')
 
-    if (!name.trim()) {
-      setError('Product name is required.')
-      return
-    }
-
-    if (
-      Number(gst || 0) < 0 ||
-      Number(gst || 0) > 100
-    ) {
-      setError(
-        'GST must be between 0 and 100%.',
-      )
-      return
-    }
-
-    if (
-      Number(discount || 0) < 0 ||
-      Number(discount || 0) > 100
-    ) {
-      setError(
-        'Default discount must be between 0 and 100%.',
-      )
-      return
-    }
-
-    if (
-      Number(sellingPrice || 0) < 0 ||
-      Number(minimumStock || 0) < 0 ||
-      Number(reorderLevel || 0) < 0
-    ) {
-      setError(
-        'Price and stock values cannot be negative.',
-      )
-      return
-    }
-
-    if (
-      !compositionId &&
-      compositionSearch.trim()
-    ) {
-      setError(
-        'Select an existing composition or use “+ Add New”.',
-      )
-      return
-    }
-
-    const packagingError =
-      validatePackaging()
-
-    if (packagingError) {
-      setError(packagingError)
-      return
-    }
-
-    setBusy(true)
-
-    const {
-      data: productId,
-      error: productError,
-    } = await supabase.rpc(
-      'pharmdesk_save_product',
-      {
-        p_store_id: store.id,
-        p_product_id: null,
-        p_product_name: name.trim(),
-        p_generic_display_name:
-          selectedComposition?.name ||
-          null,
-        p_category_id:
-          categoryId || null,
-        p_composition_id:
-          compositionId || null,
-        p_manufacturer:
-          manufacturer.trim() || null,
-        p_dosage_form:
-          selectedComposition?.dosage_form ||
-          dosageForm.trim() ||
-          null,
-        p_strength_display: null,
-        p_pack_quantity: 1,
-        p_pack_unit: null,
-        p_hsn_code:
-          hsn.trim() || null,
-        p_gst_rate:
-          Number(gst || 0),
-        p_default_selling_price:
-          Number(sellingPrice || 0),
-        p_default_discount_percent:
-          Number(discount || 0),
-        p_minimum_stock:
-          Number(minimumStock || 0),
-        p_reorder_level:
-          Number(reorderLevel || 0),
-        p_is_active: true,
-      },
-    )
-
-    if (productError) {
-      setError(productError.message)
-      setBusy(false)
-      return
-    }
-
-    const normalizedPackagingLevels =
-      packagingLevels.map(
-        (level, index) => ({
-          level_number: index + 1,
-          unit_name:
-            level.unit_name.trim(),
-          units_per_parent:
-            index === 0
-              ? 1
-              : Number(
-                  level.units_per_parent,
-                ),
-          is_purchase_unit:
-            Boolean(
-              level.is_purchase_unit,
-            ),
-          is_sale_unit:
-            Boolean(
-              level.is_sale_unit,
-            ),
-          is_preferred_sale_unit:
-            Boolean(
-              level.is_preferred_sale_unit,
-            ),
-          is_stock_unit:
-            Boolean(
-              level.is_stock_unit,
-            ),
-        }),
-      )
-
-    const {
-  data: packagingConfigId,
-  error: packagingSaveError,
-} = await supabase.rpc(
-  'pharmdesk_save_packaging_config',
-  {
-    p_product_id: productId,
-    p_config_id: null,
-    p_config_name:
-      packagingName.trim() || 'Standard',
-    p_levels: normalizedPackagingLevels,
-  },
-)
-
-if (packagingSaveError) {
-  setError(
-    `Product was created, but packaging could not be saved: ${packagingSaveError.message}`,
-  )
-  setBusy(false)
-  return
-}
-
-    if (!packagingConfigId) {
-      setError(
-        'Product was created, but the packaging configuration was not returned.',
-      )
-      setBusy(false)
-      return
-    }
-
-    const {
-      data: product,
-      error: fetchError,
-    } = await supabase
-      .from('products')
-      .select(`
-        *,
-        store_products(
-          store_id,
-          default_selling_price,
-          default_discount_percent,
-          minimum_stock,
-          reorder_level,
-          is_active
-        ),
-        product_packaging_configs(
-          id,
-          name,
-          is_default,
-          is_active,
-          product_packaging_levels(
-            id,
-            level_number,
-            unit_name,
-            units_per_parent,
-            is_purchase_unit,
-            is_sale_unit,
-            is_preferred_sale_unit,
-            is_stock_unit
-          )
-        )
-      `)
-      .eq('id', productId)
-      .single()
-
-    if (fetchError) {
-      setError(fetchError.message)
-      setBusy(false)
-      return
-    }
-
-    onCreated(product)
-    setBusy(false)
-  }
-
-  function handleCompositionCreated(
-    newComposition,
-  ) {
-    setShowCompositionForm(false)
-
-    setCompositions((current) => {
-      const exists = current.some(
-        (item) =>
-          item.id ===
-          newComposition.id,
-      )
-
-      if (exists) {
-        return current
+    try {
+      if (!name.trim()) {
+        throw new Error('Product name is required.')
       }
 
-      return [
-        ...current,
-        newComposition,
-      ].sort((a, b) =>
-        a.name.localeCompare(b.name),
-      )
-    })
+      if (
+        Number(gst) < 0 ||
+        Number(gst) > 100
+      ) {
+        throw new Error(
+          'GST must be between 0 and 100.',
+        )
+      }
 
-    setCompositionId(
-      newComposition.id,
-    )
-    setCompositionSearch(
-      newComposition.name,
-    )
-    setShowCompositionSuggestions(false)
+      if (
+        Number(discount) < 0 ||
+        Number(discount) > 100
+      ) {
+        throw new Error(
+          'Discount must be between 0 and 100.',
+        )
+      }
 
-    if (newComposition.dosage_form) {
-      setDosageForm(
-        newComposition.dosage_form,
-      )
+      if (!selectedComposition) {
+        throw new Error(
+          'Select a composition or create one.',
+        )
+      }
+
+      validatePackaging()
+
+      const { data: productId, error: productError } =
+        await supabase.rpc(
+          'pharmdesk_save_product',
+          {
+            p_store_id: store.id,
+            p_product_id: product?.id || null,
+            p_product_name: name.trim(),
+            p_generic_display_name:
+              selectedComposition.name,
+            p_category_id:
+              categoryId || null,
+            p_composition_id:
+              selectedComposition.id,
+            p_manufacturer:
+              manufacturer.trim() || null,
+            p_dosage_form:
+              dosageForm.trim() || null,
+            p_strength_display: null,
+            p_pack_quantity: 1,
+            p_pack_unit:
+              packagingLevels[
+                packagingLevels.length - 1
+              ].unit_name,
+            p_hsn_code:
+              hsn.trim() || null,
+            p_gst_rate: Number(gst || 0),
+            p_default_selling_price:
+              Number(sellingPrice || 0),
+            p_default_discount_percent:
+              Number(discount || 0),
+            p_minimum_stock:
+              Number(minimumStock || 0),
+            p_reorder_level:
+              Number(reorderLevel || 0),
+            p_is_active: true,
+          },
+        )
+
+      if (productError) throw productError
+
+      const { error: packagingError } =
+        await supabase.rpc(
+          'pharmdesk_save_packaging_config',
+          {
+            p_store_id: store.id,
+            p_product_id: productId,
+            p_config_name:
+              packagingName.trim() ||
+              'Standard',
+            p_levels: packagingLevels.map(
+              (x, index) => ({
+                ...x,
+                level_number: index + 1,
+                units_per_parent:
+                  Number(
+                    x.units_per_parent || 1,
+                  ),
+              }),
+            ),
+            p_packaging_config_id:
+              existingPackagingId || null,
+          },
+        )
+
+      if (packagingError) {
+        throw packagingError
+      }
+
+      onCreated({ id: productId })
+    } catch (error) {
+      setError(error.message)
+    } finally {
+      setBusy(false)
     }
   }
 
   return (
-    <>
-      <Modal
-        title="Add new product"
-        onClose={onClose}
-      >
-        <form
-          className="form-stack"
-          onSubmit={save}
-        >
-          <div className="form-grid two">
-            <label>
-              Brand / product name *
-              <input
-                value={name}
-                onChange={(e) =>
-                  setName(e.target.value)
-                }
-                autoFocus
-                required
-                placeholder="e.g. Crocin 650"
-              />
-            </label>
+    <Modal
+      title={
+        editing
+          ? 'Edit Product'
+          : 'Add New Product'
+      }
+      onClose={onClose}
+    >
+      <form onSubmit={save}>
+        <label>
+          Product / Brand name
+          <input
+            value={name}
+            onChange={(e) =>
+              setName(e.target.value)
+            }
+            placeholder="e.g. Dolo 650"
+            required
+          />
+        </label>
 
-            <label>
-              Manufacturer
-              <input
-                value={manufacturer}
-                onChange={(e) =>
-                  setManufacturer(
-                    e.target.value,
-                  )
-                }
-                placeholder="e.g. Sun Pharma"
-              />
-            </label>
+        <label>
+          Composition
+          <input
+            value={
+              selectedComposition
+                ? selectedComposition.name
+                : compositionQuery
+            }
+            onChange={(e) => {
+              setSelectedComposition(null)
+              setCompositionQuery(e.target.value)
+            }}
+            placeholder="Search composition / ingredient"
+          />
 
-            <label>
-              Generic composition
-              <div className="search-with-action">
-                <input
-                  value={compositionSearch}
-                  onChange={(e) => {
-                    setCompositionSearch(
-                      e.target.value,
-                    )
-                    setCompositionId('')
-                    setShowCompositionSuggestions(
-                      true,
-                    )
-                  }}
-                  onFocus={() =>
-                    setShowCompositionSuggestions(
-                      true,
-                    )
-                  }
-                  placeholder="Type composition or ingredient"
-                  autoComplete="off"
-                />
-
-                <button
-                  type="button"
-                  className="inline-btn"
-                  onClick={() =>
-                    setShowCompositionForm(
-                      true,
-                    )
-                  }
-                >
-                  + Add New
-                </button>
-              </div>
-
-              {showCompositionSuggestions && (
-                <div className="suggestion-list">
-                  {filteredCompositions.length >
-                  0 ? (
-                    filteredCompositions.map(
-                      (composition) => (
-                        <button
-                          type="button"
-                          key={composition.id}
-                          onClick={() =>
-                            chooseComposition(
-                              composition,
-                            )
-                          }
-                        >
-                          <div>
-                            <strong>
-                              {
-                                composition.name
-                              }
-                            </strong>
-
-                            <span>
-                              {composition.dosage_form ||
-                                'Dosage form not specified'}
-                            </span>
-                          </div>
-
-                          {!composition.is_verified && (
-                            <small>
-                              Manual
-                            </small>
-                          )}
-                        </button>
-                      ),
-                    )
-                  ) : (
-                    <div className="empty-state">
-                      <strong>
-                        No matching composition
-                      </strong>
-                      <span>
-                        Use “+ Add New” to create
-                        it.
-                      </span>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {selectedComposition && (
-                <div className="selected-chip">
-                  <div>
-                    <strong>
-                      {
-                        selectedComposition.name
-                      }
-                    </strong>
-
-                    {selectedComposition
-                      .composition_ingredients
-                      ?.length >
-                      0 && (
-                      <span>
-                        {selectedComposition.composition_ingredients
-                          .map(
-                            (ingredient) =>
-                              `${ingredient.ingredient_name} ${ingredient.strength_value ?? ''} ${ingredient.strength_unit ?? ''}`.trim(),
-                          )
-                          .join(' + ')}
-                      </span>
-                    )}
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={
-                      clearComposition
-                    }
-                  >
-                    ×
-                  </button>
-                </div>
-              )}
-            </label>
-
-            <label>
-              Dosage form
-              <input
-                value={dosageForm}
-                onChange={(e) =>
-                  setDosageForm(
-                    e.target.value,
-                  )
-                }
-                placeholder="Tablet / Syrup / Cream"
-                disabled={Boolean(
-                  selectedComposition?.dosage_form,
-                )}
-              />
-            </label>
-
-            <label>
-              Category
-              <select
-                value={categoryId}
-                onChange={(e) =>
-                  setCategoryId(
-                    e.target.value,
-                  )
-                }
-              >
-                <option value="">
-                  Select category
-                </option>
-
-                {categories.map(
-                  (category) => (
-                    <option
-                      key={category.id}
-                      value={category.id}
+          {compositionQuery &&
+            !selectedComposition && (
+              <div className="suggestion-list">
+                {filteredCompositions.map(
+                  (composition) => (
+                    <button
+                      type="button"
+                      className="suggestion"
+                      key={composition.id}
+                      onClick={() => {
+                        setSelectedComposition(
+                          composition,
+                        )
+                        setCompositionQuery('')
+                      }}
                     >
-                      {category.name}
-                    </option>
+                      <strong>
+                        {composition.name}
+                      </strong>
+
+                      <span>
+                        {composition.dosage_form ||
+                          ''}
+                      </span>
+                    </button>
                   ),
                 )}
-              </select>
-            </label>
+              </div>
+            )}
 
-            <label>
-              HSN
-              <input
-                value={hsn}
-                onChange={(e) =>
-                  setHsn(e.target.value)
-                }
-              />
-            </label>
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() =>
+              setCompositionModal(true)
+            }
+          >
+            + Add Composition
+          </button>
+        </label>
 
-            <label>
-              GST %
-              <input
-                type="number"
-                min="0"
-                max="100"
-                step="0.01"
-                value={gst}
-                onChange={(e) =>
-                  setGst(e.target.value)
-                }
-              />
-            </label>
+        <div className="form-grid">
+          <label>
+            Manufacturer
+            <input
+              value={manufacturer}
+              onChange={(e) =>
+                setManufacturer(e.target.value)
+              }
+            />
+          </label>
 
-            <label>
-              Default selling price
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={sellingPrice}
-                onChange={(e) =>
-                  setSellingPrice(
-                    e.target.value,
-                  )
-                }
-                placeholder="₹0.00"
-              />
-            </label>
+          <label>
+            Dosage form
+            <input
+              value={dosageForm}
+              onChange={(e) =>
+                setDosageForm(e.target.value)
+              }
+            />
+          </label>
 
-            <label>
-              Default discount %
-              <input
-                type="number"
-                min="0"
-                max="100"
-                step="0.01"
-                value={discount}
-                onChange={(e) =>
-                  setDiscount(
-                    e.target.value,
-                  )
-                }
-              />
-            </label>
+          <label>
+            Category
+            <select
+              value={categoryId}
+              onChange={(e) =>
+                setCategoryId(e.target.value)
+              }
+            >
+              <option value="">Select category</option>
 
-            <label>
-              Minimum stock
-              <input
-                type="number"
-                min="0"
-                step="any"
-                value={minimumStock}
-                onChange={(e) =>
-                  setMinimumStock(
-                    e.target.value,
-                  )
-                }
-              />
-            </label>
+              {categories.map((category) => (
+                <option
+                  key={category.id}
+                  value={category.id}
+                >
+                  {category.name}
+                </option>
+              ))}
+            </select>
+          </label>
 
-            <label>
-              Reorder level
-              <input
-                type="number"
-                min="0"
-                step="any"
-                value={reorderLevel}
-                onChange={(e) =>
-                  setReorderLevel(
-                    e.target.value,
-                  )
-                }
-              />
-            </label>
-          </div>
+          <label>
+            HSN
+            <input
+              value={hsn}
+              onChange={(e) =>
+                setHsn(e.target.value)
+              }
+            />
+          </label>
 
-          <div className="form-stack">
+          <label>
+            GST %
+            <input
+              type="number"
+              min="0"
+              max="100"
+              step="0.01"
+              value={gst}
+              onChange={(e) =>
+                setGst(e.target.value)
+              }
+            />
+          </label>
+
+          <label>
+            Default selling price
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={sellingPrice}
+              onChange={(e) =>
+                setSellingPrice(e.target.value)
+              }
+            />
+          </label>
+
+          <label>
+            Default discount %
+            <input
+              type="number"
+              min="0"
+              max="100"
+              step="0.01"
+              value={discount}
+              onChange={(e) =>
+                setDiscount(e.target.value)
+              }
+            />
+          </label>
+
+          <label>
+            Minimum stock
+            <input
+              type="number"
+              min="0"
+              value={minimumStock}
+              onChange={(e) =>
+                setMinimumStock(e.target.value)
+              }
+            />
+          </label>
+
+          <label>
+            Reorder level
+            <input
+              type="number"
+              min="0"
+              value={reorderLevel}
+              onChange={(e) =>
+                setReorderLevel(e.target.value)
+              }
+            />
+          </label>
+        </div>
+
+        <div className="packaging-section">
+          <div className="section-heading">
             <div>
               <h3>Packaging</h3>
               <p className="muted">
-                Define how this product is
-                packed. You can purchase and
-                sell at different packaging
-                levels.
+                Define how the product is purchased,
+                sold and physically stocked.
               </p>
             </div>
-
-            <label>
-              Packaging configuration name
-              <input
-                value={packagingName}
-                onChange={(e) =>
-                  setPackagingName(
-                    e.target.value,
-                  )
-                }
-                placeholder="Standard"
-              />
-            </label>
-
-            <div className="form-stack">
-              {packagingLevels.map(
-                (level, index) => (
-                  <div
-                    className="selected-chip"
-                    key={index}
-                  >
-                    <div className="form-stack">
-                      <strong>
-                        Level {index + 1}
-                      </strong>
-
-                      <div className="form-grid two">
-                        <label>
-                          Unit name
-                          <input
-                            value={
-                              level.unit_name
-                            }
-                            onChange={(e) =>
-                              updatePackagingLevel(
-                                index,
-                                {
-                                  unit_name:
-                                    e.target.value,
-                                },
-                              )
-                            }
-                            placeholder={
-                              index === 0
-                                ? 'Box'
-                                : 'Strip / Tablet / Bottle'
-                            }
-                          />
-                        </label>
-
-                        <label>
-                          Contains
-                          {index === 0 ? (
-                            <>
-                              <input
-                                value="1"
-                                disabled
-                              />
-                              <small>
-                                Outermost
-                                level
-                              </small>
-                            </>
-                          ) : (
-                            <>
-                              <input
-                                type="number"
-                                min="0.000001"
-                                step="any"
-                                value={
-                                  level.units_per_parent
-                                }
-                                onChange={(e) =>
-                                  updatePackagingLevel(
-                                    index,
-                                    {
-                                      units_per_parent:
-                                        e.target.value,
-                                    },
-                                  )
-                                }
-                                placeholder={`How many ${level.unit_name || 'units'} in 1 ${packagingLevels[index - 1]?.unit_name || 'parent'}?`}
-                              />
-
-                              <small>
-                                1{' '}
-                                {packagingLevels[
-                                  index - 1
-                                ]?.unit_name ||
-                                  'parent'}{' '}
-                                ={' '}
-                                {level.units_per_parent ||
-                                  0}{' '}
-                                {level.unit_name ||
-                                  'units'}
-                              </small>
-                            </>
-                          )}
-                        </label>
-                      </div>
-
-                      <div className="form-grid two">
-                        <label>
-                          Purchase unit
-                          <input
-                            type="radio"
-                            name="purchase-unit"
-                            checked={
-                              level.is_purchase_unit
-                            }
-                            onChange={() =>
-                              togglePurchaseUnit(
-                                index,
-                              )
-                            }
-                          />
-                        </label>
-
-                        <label>
-                          Sale unit
-                          <input
-                            type="checkbox"
-                            checked={
-                              level.is_sale_unit
-                            }
-                            onChange={() =>
-                              toggleSaleUnit(
-                                index,
-                              )
-                            }
-                          />
-                        </label>
-
-                        <label>
-                          Stock unit
-                          <input
-                            type="radio"
-                            name="stock-unit"
-                            checked={
-                              level.is_stock_unit
-                            }
-                            onChange={() =>
-                              setStockUnit(
-                                index,
-                              )
-                            }
-                          />
-                        </label>
-
-                        <label>
-                          Preferred sale unit
-                          <input
-                            type="radio"
-                            name="preferred-sale-unit"
-                            checked={
-                              level.is_preferred_sale_unit
-                            }
-                            disabled={
-                              !level.is_sale_unit
-                            }
-                            onChange={() =>
-                              setPreferredSaleUnit(
-                                index,
-                              )
-                            }
-                          />
-                        </label>
-                      </div>
-
-                      {level.unit_name && (
-                        <small>
-                          {packagingConversionText(
-                            index,
-                          )}
-                        </small>
-                      )}
-
-                      {packagingLevels.length >
-                        1 && (
-                        <button
-                          type="button"
-                          className="text-btn"
-                          onClick={() =>
-                            removePackagingLevel(
-                              index,
-                            )
-                          }
-                        >
-                          Remove this level
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ),
-              )}
-            </div>
-
-            <button
-              type="button"
-              className="text-btn"
-              onClick={addPackagingLevel}
-            >
-              + Add packaging level
-            </button>
-
-            {packagingLevels.some(
-              (level) =>
-                level.unit_name.trim(),
-            ) && (
-              <div className="selected-chip">
-                <div>
-                  <strong>
-                    Packaging preview
-                  </strong>
-
-                  <span>
-                    {packagingLevels
-                      .filter((level) =>
-                        level.unit_name.trim(),
-                      )
-                      .map(
-                        (level) =>
-                          level.unit_name.trim(),
-                      )
-                      .join(' → ')}
-                  </span>
-
-                  {packagingLevels
-                    .filter((level) =>
-                      level.unit_name.trim(),
-                    )
-                    .map(
-                      (level, index) => (
-                        <span
-                          key={index}
-                        >
-                          {packagingConversionText(
-                            index,
-                          )}
-                        </span>
-                      ),
-                    )}
-                </div>
-              </div>
-            )}
           </div>
 
-          {error && (
-            <div className="error-box">
-              {error}
-            </div>
+          <label>
+            Configuration name
+            <input
+              value={packagingName}
+              onChange={(e) =>
+                setPackagingName(e.target.value)
+              }
+            />
+          </label>
+
+          {packagingLevels.map(
+            (level, index) => (
+              <div
+                className="packaging-card"
+                key={index}
+              >
+                <div className="packaging-title">
+                  <strong>
+                    Level {index + 1}
+                  </strong>
+
+                  {packagingLevels.length > 1 && (
+                    <button
+                      type="button"
+                      className="danger-button"
+                      onClick={() =>
+                        removePackagingLevel(index)
+                      }
+                    >
+                      Remove
+                    </button>
+                  )}
+                </div>
+
+                <div className="form-grid">
+                  <label>
+                    Unit name
+                    <input
+                      value={level.unit_name}
+                      onChange={(e) =>
+                        updatePackagingLevel(
+                          index,
+                          {
+                            unit_name:
+                              e.target.value,
+                          },
+                        )
+                      }
+                      placeholder="Tablet / Strip / Box"
+                    />
+                  </label>
+
+                  <label>
+                    Units per parent
+                    <input
+                      type="number"
+                      min="1"
+                      step="any"
+                      value={
+                        level.units_per_parent
+                      }
+                      disabled={index === 0}
+                      onChange={(e) =>
+                        updatePackagingLevel(
+                          index,
+                          {
+                            units_per_parent:
+                              e.target.value,
+                          },
+                        )
+                      }
+                    />
+                  </label>
+                </div>
+
+                <div className="toggle-grid">
+                  <ToggleRow
+                    label="Purchase unit"
+                    checked={
+                      level.is_purchase_unit
+                    }
+                    onChange={() =>
+                      setPackagingLevels(
+                        packagingLevels.map(
+                          (x, i) => ({
+                            ...x,
+                            is_purchase_unit:
+                              i === index,
+                          }),
+                        ),
+                      )
+                    }
+                  />
+
+                  <ToggleRow
+                    label="Sale unit"
+                    checked={level.is_sale_unit}
+                    onChange={(checked) =>
+                      updatePackagingLevel(
+                        index,
+                        {
+                          is_sale_unit: checked,
+                          is_preferred_sale_unit:
+                            checked
+                              ? level.is_preferred_sale_unit
+                              : false,
+                        },
+                      )
+                    }
+                  />
+
+                  <ToggleRow
+                    label="Preferred sale unit"
+                    checked={
+                      level.is_preferred_sale_unit
+                    }
+                    onChange={() =>
+                      setPackagingLevels(
+                        packagingLevels.map(
+                          (x, i) => ({
+                            ...x,
+                            is_preferred_sale_unit:
+                              i === index,
+                            is_sale_unit:
+                              i === index
+                                ? true
+                                : x.is_sale_unit,
+                          }),
+                        ),
+                      )
+                    }
+                  />
+
+                  <ToggleRow
+                    label="Stock unit"
+                    checked={level.is_stock_unit}
+                    onChange={() =>
+                      setPackagingLevels(
+                        packagingLevels.map(
+                          (x, i) => ({
+                            ...x,
+                            is_stock_unit:
+                              i === index,
+                          }),
+                        ),
+                      )
+                    }
+                  />
+                </div>
+              </div>
+            ),
           )}
 
-          <ModalActions
-            onClose={onClose}
-            busy={busy}
-            label="Save Product"
-          />
-        </form>
-      </Modal>
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={addPackagingLevel}
+          >
+            + Add Packaging Level
+          </button>
 
-      {showCompositionForm && (
-        <CompositionModal
-          onClose={() =>
-            setShowCompositionForm(false)
-          }
-          onCreated={
-            handleCompositionCreated
+          <div className="info-box">
+            Example: 1 Box → 10 Strips → 100 Tablets.
+            The lowest level is the stock unit.
+          </div>
+        </div>
+
+        {error && <div className="error-box">{error}</div>}
+
+        <ModalActions
+          onClose={onClose}
+          busy={busy}
+          label={
+            editing
+              ? 'Save Product'
+              : 'Create Product'
           }
         />
+      </form>
+
+      {compositionModal && (
+        <CompositionModal
+          onClose={() =>
+            setCompositionModal(false)
+          }
+          onCreated={async (compositionId) => {
+            setCompositionModal(false)
+
+            const { data } = await supabase
+              .from('compositions')
+              .select(`
+                *,
+                composition_ingredients (
+                  ingredient_name,
+                  strength_value,
+                  strength_unit,
+                  sequence_number
+                )
+              `)
+              .eq('id', compositionId)
+              .maybeSingle()
+
+            if (data) {
+              setCompositions((current) => [
+                data,
+                ...current.filter(
+                  (x) => x.id !== data.id,
+                ),
+              ])
+              setSelectedComposition(data)
+            }
+          }}
+        />
       )}
-    </>
+    </Modal>
   )
 }
 
-/* ============================================================
-   SHARED COMPONENTS
-============================================================ */
+/* =========================================================
+   SHARED UI
+========================================================= */
 
-function ModuleHeader({ eyebrow, title, description }) {
+function ModuleHeader({ title, subtitle }) {
   return (
-    <section className="module-header">
+    <div className="module-header">
       <div>
-        <div className="eyebrow">{eyebrow}</div>
-        <h2>{title}</h2>
-        <p>{description}</p>
+        <h1>{title}</h1>
+        <p>{subtitle}</p>
       </div>
-    </section>
+    </div>
   )
 }
 
@@ -5487,7 +4834,11 @@ function TabBar({ tabs, active, onChange }) {
       {tabs.map((tab) => (
         <button
           key={tab}
-          className={active === tab ? 'active' : ''}
+          className={
+            active === tab
+              ? 'tab active'
+              : 'tab'
+          }
           onClick={() => onChange(tab)}
         >
           {tab}
@@ -5497,51 +4848,52 @@ function TabBar({ tabs, active, onChange }) {
   )
 }
 
-function PanelList({
-  title,
-  subtitle,
-  loading,
-  empty,
-  children,
-}) {
+function PanelList({ title, children }) {
   return (
-    <div className="panel">
-      <div className="panel-header">
-        <div>
-          <h3>{title}</h3>
-          <p>{subtitle}</p>
+    <section className="panel">
+      {title && (
+        <div className="panel-header">
+          <h2>{title}</h2>
         </div>
-      </div>
-
-      {loading ? (
-        <LoadingInline />
-      ) : React.Children.count(children) === 0 ? (
-        <EmptyState title={empty} />
-      ) : (
-        <div className="list-table">{children}</div>
       )}
-    </div>
+
+      <div className="panel-body">{children}</div>
+    </section>
   )
 }
 
-function EmptyState({ icon = '○', title, text }) {
-  return (
-    <div className="empty-state">
-      <div className="empty-icon">{icon}</div>
-      <strong>{title}</strong>
-      {text && <span>{text}</span>}
-    </div>
-  )
+function EmptyState({ text }) {
+  return <div className="empty-state">{text}</div>
 }
 
 function LoadingInline() {
+  return <div className="loading-inline">Loading…</div>
+}
+
+function ToggleRow({
+  label,
+  checked,
+  onChange,
+}) {
   return (
-    <div className="loading-inline">
-      <div className="spinner small" />
-      <span>Loading…</span>
-    </div>
+    <label className="toggle-row">
+      <span>{label}</span>
+
+      <input
+        type="checkbox"
+        checked={Boolean(checked)}
+        onChange={(e) =>
+          onChange(e.target.checked)
+        }
+      />
+    </label>
   )
 }
+
+/* =========================================================
+   MODAL
+   iOS/iPad-safe scrolling
+========================================================= */
 
 function Modal({ title, onClose, children }) {
   return (
@@ -5554,20 +4906,23 @@ function Modal({ title, onClose, children }) {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        padding: '16px',
-        overflow: 'hidden',
-        background: 'rgba(0, 0, 0, 0.45)',
+        padding: '12px',
+        overflowY: 'auto',
+        overflowX: 'hidden',
+        WebkitOverflowScrolling: 'touch',
+        background: 'rgba(0,0,0,.45)',
       }}
     >
       <div
         className="modal"
         style={{
           width: 'min(760px, 100%)',
-          height: 'calc(100vh - 32px)',
-          maxHeight: 'calc(100vh - 32px)',
+          height: 'calc(100vh - 24px)',
+          maxHeight: 'calc(100dvh - 24px)',
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
+          margin: 'auto',
         }}
       >
         <div
@@ -5576,9 +4931,7 @@ function Modal({ title, onClose, children }) {
             flex: '0 0 auto',
           }}
         >
-          <div>
-            <h2>{title}</h2>
-          </div>
+          <h2>{title}</h2>
 
           <button
             type="button"
@@ -5592,12 +4945,13 @@ function Modal({ title, onClose, children }) {
         <div
           className="modal-body"
           style={{
-            flex: '1 1 0',
+            flex: '1 1 auto',
             minHeight: 0,
-            overflowY: 'auto',
+            overflowY: 'scroll',
             overflowX: 'hidden',
             WebkitOverflowScrolling: 'touch',
-            paddingBottom: '32px',
+            overscrollBehavior: 'contain',
+            paddingBottom: '40px',
           }}
         >
           {children}
@@ -5607,20 +4961,25 @@ function Modal({ title, onClose, children }) {
   )
 }
 
-function ModalActions({ onClose, busy, label }) {
+function ModalActions({
+  onClose,
+  busy,
+  label = 'Save',
+}) {
   return (
     <div className="modal-actions">
       <button
         type="button"
-        className="secondary-btn"
+        className="secondary-button"
         onClick={onClose}
+        disabled={busy}
       >
         Cancel
       </button>
 
       <button
         type="submit"
-        className="primary-btn"
+        className="primary-button"
         disabled={busy}
       >
         {busy ? 'Saving…' : label}
@@ -5628,30 +4987,3 @@ function ModalActions({ onClose, busy, label }) {
     </div>
   )
 }
-
-function ToggleRow({
-  label,
-  description,
-  value,
-  onChange,
-}) {
-  return (
-    <div className="toggle-row">
-      <div>
-        <strong>{label}</strong>
-        <span>{description}</span>
-      </div>
-
-      <button
-        type="button"
-        className={`toggle ${value ? 'on' : ''}`}
-        onClick={() => onChange(!value)}
-        aria-pressed={value}
-      >
-        <span />
-      </button>
-    </div>
-  )
-}
-
-export default App
