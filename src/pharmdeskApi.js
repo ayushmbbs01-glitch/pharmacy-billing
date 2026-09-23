@@ -265,6 +265,59 @@ async claimApprovedStoreAccess() {
   return call('claim_approved_store_access', {})
 },
 
+async isPlatformAdmin() {
+  try {
+    return await call('pharmdesk_is_platform_admin', {})
+  } catch (error) {
+    console.error('Failed to check platform admin status:', error)
+    return false
+  }
+},
+
+async adminListStores() {
+  return call('pharmdesk_admin_list_stores', {})
+},
+
+async adminCreateStore({
+  name,
+  ownerEmail,
+  address = null,
+  phone = null,
+  email = null,
+  gstin = null,
+  drugLicenseNumber = null,
+}) {
+  return call('pharmdesk_admin_create_store', {
+    p_name: name,
+    p_owner_email: ownerEmail,
+    p_address: address,
+    p_phone: phone,
+    p_email: email,
+    p_gstin: gstin,
+    p_drug_license_number: drugLicenseNumber,
+  })
+},
+
+async adminActivateStore(storeId, startDate = null) {
+  return call('pharmdesk_admin_activate_store', {
+    p_store_id: storeId,
+    p_start_date: startDate || new Date().toISOString().slice(0, 10),
+  })
+},
+
+async adminSuspendStore(storeId) {
+  return call('pharmdesk_admin_suspend_store', {
+    p_store_id: storeId,
+  })
+},
+
+async adminReactivateStore(storeId, startDate = null) {
+  return call('pharmdesk_admin_reactivate_store', {
+    p_store_id: storeId,
+    p_start_date: startDate || new Date().toISOString().slice(0, 10),
+  })
+},
+
   getStores() {
     return select('stores', {
       select: '*',
