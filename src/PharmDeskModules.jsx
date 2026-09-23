@@ -291,57 +291,394 @@ function LoadingScreen() {
   )  
 }  
   
-function LoginScreen() {  
-  const [email, setEmail] = useState('')  
-  const [password, setPassword] = useState('')  
-  const [busy, setBusy] = useState(false)  
-  const [error, setError] = useState('')  
-  
-  const login = async (e) => {  
-    e.preventDefault()  
-    setBusy(true)  
-    setError('')  
-  
+function LoginScreen() {
+  const [mode, setMode] = useState('login')
+
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+
+  const [ownerName, setOwnerName] = useState('')
+  const [storeName, setStoreName] = useState('')
+  const [address, setAddress] = useState('')
+  const [phone, setPhone] = useState('')
+  const [storeEmail, setStoreEmail] = useState('')
+  const [gstin, setGstin] = useState('')
+  const [drugLicenseNumber, setDrugLicenseNumber] =
+    useState('')
+  const [confirmPassword, setConfirmPassword] =
+    useState('')
+
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
+
+  const resetMessages = () => {
+    setError('')
+    setSuccess('')
+  }
+
+  const login = async (e) => {
+    e.preventDefault()
+    setBusy(true)
+    resetMessages()
+
     try {
-      await PharmDeskAPI.signIn(email, password)
+      await PharmDeskAPI.signIn(
+        email.trim(),
+        password,
+      )
     } catch (authError) {
-      setError(authError.message || 'Unable to sign in.')
+      setError(
+        authError.message ||
+          'Unable to sign in.',
+      )
     } finally {
       setBusy(false)
-    }  
-  }  
-  
-  return (  
-    <div className="auth-screen">  
-      <form className="auth-card" onSubmit={login}>  
-        <h1>PharmDesk</h1>  
-        <p>LABDHI PHARMA</p>  
-  
-        <input  
-          type="email"  
-          placeholder="Email"  
-          value={email}  
-          onChange={(e) => setEmail(e.target.value)}  
-          required  
-        />  
-  
-        <input  
-          type="password"  
-          placeholder="Password"  
-          value={password}  
-          onChange={(e) => setPassword(e.target.value)}  
-          required  
-        />  
-  
-        {error && <div className="error-box">{error}</div>}  
-  
-        <button disabled={busy} className="primary-button">  
-          {busy ? 'Signing in…' : 'Sign in'}  
-        </button>  
-      </form>  
-    </div>  
-  )  
-}  
+    }
+  }
+
+  const signup = async (e) => {
+    e.preventDefault()
+    setBusy(true)
+    resetMessages()
+
+    if (password !== confirmPassword) {
+      setError('Passwords do not match.')
+      setBusy(false)
+      return
+    }
+
+    if (password.length < 6) {
+      setError(
+        'Password must be at least 6 characters long.',
+      )
+      setBusy(false)
+      return
+    }
+
+    try {
+      const signupResult =
+        await PharmDeskAPI.signUp(
+          email.trim(),
+          password,
+        )
+
+      const signupSession =
+        signupResult?.session ??
+        signupResult?.data?.session ??
+        null
+
+      if (!signupSession) {
+        setSuccess(
+          'Your account has been created. Please verify your email, then sign in to complete your medical store application.',
+        )
+        setBusy(false)
+        return
+      }
+
+      await PharmDeskAPI.submitStoreApplication({
+        ownerName: ownerName.trim(),
+        storeName: storeName.trim(),
+        address: address.trim() || null,
+        phone: phone.trim() || null,
+        storeEmail:
+          storeEmail.trim() || null,
+        gstin: gstin.trim() || null,
+        drugLicenseNumber:
+          drugLicenseNumber.trim() || null,
+      })
+
+      setSuccess(
+        'Your medical store application has been submitted. Your application is now pending admin approval. You will be contacted within 24 hours.',
+      )
+
+      setPassword('')
+      setConfirmPassword('')
+    } catch (signupError) {
+      setError(
+        signupError.message ||
+          'Unable to submit your application.',
+      )
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const switchMode = (nextMode) => {
+    setMode(nextMode)
+    resetMessages()
+  }
+
+  if (mode === 'signup') {
+    return (
+      <div className="auth-screen">
+        <form
+          className="auth-card"
+          onSubmit={signup}
+        >
+          <div className="brand-mark">
+            P
+          </div>
+
+          <h1>Create your PharmDesk account</h1>
+
+          <p>
+            Register your medical store and submit
+            it for approval.
+          </p>
+
+          <div className="form-stack">
+            <label>
+              Owner name
+              <input
+                type="text"
+                placeholder="Full name"
+                value={ownerName}
+                onChange={(e) =>
+                  setOwnerName(e.target.value)
+                }
+                required
+              />
+            </label>
+
+            <label>
+              Email
+              <input
+                type="email"
+                placeholder="Owner email"
+                value={email}
+                onChange={(e) =>
+                  setEmail(e.target.value)
+                }
+                required
+              />
+            </label>
+
+            <label>
+              Password
+              <input
+                type="password"
+                placeholder="Create a password"
+                value={password}
+                onChange={(e) =>
+                  setPassword(e.target.value)
+                }
+                minLength={6}
+                required
+              />
+            </label>
+
+            <label>
+              Confirm password
+              <input
+                type="password"
+                placeholder="Re-enter password"
+                value={confirmPassword}
+                onChange={(e) =>
+                  setConfirmPassword(
+                    e.target.value,
+                  )
+                }
+                minLength={6}
+                required
+              />
+            </label>
+
+            <label>
+              Medical store name
+              <input
+                type="text"
+                placeholder="Registered store name"
+                value={storeName}
+                onChange={(e) =>
+                  setStoreName(e.target.value)
+                }
+                required
+              />
+            </label>
+
+            <label>
+              Store address
+              <textarea
+                placeholder="Complete store address"
+                value={address}
+                onChange={(e) =>
+                  setAddress(e.target.value)
+                }
+                rows={3}
+              />
+            </label>
+
+            <label>
+              Phone number
+              <input
+                type="tel"
+                placeholder="Store / owner phone number"
+                value={phone}
+                onChange={(e) =>
+                  setPhone(e.target.value)
+                }
+                required
+              />
+            </label>
+
+            <label>
+              Store email
+              <input
+                type="email"
+                placeholder="Store email, if different"
+                value={storeEmail}
+                onChange={(e) =>
+                  setStoreEmail(e.target.value)
+                }
+              />
+            </label>
+
+            <label>
+              GSTIN
+              <input
+                type="text"
+                placeholder="GST identification number"
+                value={gstin}
+                onChange={(e) =>
+                  setGstin(e.target.value)
+                }
+              />
+            </label>
+
+            <label>
+              Drug License Number
+              <input
+                type="text"
+                placeholder="Drug license number"
+                value={drugLicenseNumber}
+                onChange={(e) =>
+                  setDrugLicenseNumber(
+                    e.target.value,
+                  )
+                }
+                required
+              />
+            </label>
+
+            {error && (
+              <div className="error-box">
+                {error}
+              </div>
+            )}
+
+            {success && (
+              <div className="success-box">
+                {success}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={busy}
+              className="primary-button"
+            >
+              {busy
+                ? 'Submitting application…'
+                : 'Create account & apply'}
+            </button>
+
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() =>
+                switchMode('login')
+              }
+              disabled={busy}
+            >
+              Already have an account? Sign in
+            </button>
+          </div>
+        </form>
+      </div>
+    )
+  }
+
+  return (
+    <div className="auth-screen">
+      <form
+        className="auth-card"
+        onSubmit={login}
+      >
+        <div className="brand-mark">
+          P
+        </div>
+
+        <h1>PharmDesk</h1>
+
+        <p>
+          Medical store management made simple.
+        </p>
+
+        <div className="form-stack">
+          <label>
+            Email
+            <input
+              type="email"
+              placeholder="Email"
+              value={email}
+              onChange={(e) =>
+                setEmail(e.target.value)
+              }
+              required
+            />
+          </label>
+
+          <label>
+            Password
+            <input
+              type="password"
+              placeholder="Password"
+              value={password}
+              onChange={(e) =>
+                setPassword(e.target.value)
+              }
+              required
+            />
+          </label>
+
+          {error && (
+            <div className="error-box">
+              {error}
+            </div>
+          )}
+
+          {success && (
+            <div className="success-box">
+              {success}
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={busy}
+            className="primary-button"
+          >
+            {busy
+              ? 'Signing in…'
+              : 'Sign in'}
+          </button>
+
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() =>
+              switchMode('signup')
+            }
+            disabled={busy}
+          >
+            New medical store? Sign up
+          </button>
+        </div>
+      </form>
+    </div>
+  )
+}
   
 /* =========================================================  
    MAIN SHELL  
