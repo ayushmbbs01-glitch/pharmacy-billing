@@ -347,16 +347,30 @@ function PharmacyApp({ session }) {
   }, [session.user.id])  
   
   const loadStore = async () => {
-    setLoading(true)
-    try {
-      const stores = await PharmDeskAPI.getStoresForUser(session.user.id)
-      setStore(stores?.[0] || null)
-      const userProfile = await PharmDeskAPI.getUserProfile(session.user.id)
-      setProfile(userProfile || null)
-    } finally {
-      setLoading(false)
-    }
+  setLoading(true)
+
+  try {
+    const userProfile =
+      await PharmDeskAPI.getUserProfile(
+        session.user.id,
+      )
+
+    setProfile(
+      userProfile || null,
+    )
+
+    const stores =
+      await PharmDeskAPI.getStoresForUser(
+        session.user.id,
+      )
+
+    setStore(
+      stores?.[0] || null,
+    )
+  } finally {
+    setLoading(false)
   }
+}
 
   if (loading) return <LoadingScreen />  
   
@@ -8547,6 +8561,244 @@ function SettingsModule({
     accessMessage,
     setAccessMessage,
   ] = useState('')
+  
+  const [isPlatformAdmin, setIsPlatformAdmin] =
+  useState(false)
+
+const [adminStores, setAdminStores] =
+  useState([])
+
+const [adminLoading, setAdminLoading] =
+  useState(false)
+
+const [adminMessage, setAdminMessage] =
+  useState('')
+
+const [newStore, setNewStore] =
+  useState({
+    name: '',
+    ownerEmail: '',
+    address: '',
+    phone: '',
+    email: '',
+    gstin: '',
+    drugLicenseNumber: '',
+  })
+
+const loadAdminStores = async () => {
+  try {
+    setAdminLoading(true)
+
+    const result =
+      await PharmDeskAPI.adminListStores()
+
+    setAdminStores(
+      Array.isArray(result)
+        ? result
+        : [],
+    )
+  } catch (error) {
+    console.error(
+      'Failed to load admin stores:',
+      error,
+    )
+
+    setAdminMessage(
+      error?.message ||
+        'Failed to load stores.',
+    )
+  } finally {
+    setAdminLoading(false)
+  }
+}
+
+useEffect(() => {
+  let mounted = true
+
+  const checkPlatformAdmin =
+    async () => {
+      try {
+        const admin =
+          await PharmDeskAPI.isPlatformAdmin()
+
+        if (!mounted || !admin) {
+          return
+        }
+
+        setIsPlatformAdmin(true)
+
+        await loadAdminStores()
+      } catch (error) {
+        console.error(
+          'Platform admin check failed:',
+          error,
+        )
+      }
+    }
+
+  checkPlatformAdmin()
+
+  return () => {
+    mounted = false
+  }
+}, [])
+
+const createAdminStore = async () => {
+  try {
+    setAdminLoading(true)
+    setAdminMessage('')
+
+    if (!newStore.name.trim()) {
+      throw new Error(
+        'Medical store name is required.',
+      )
+    }
+
+    if (!newStore.ownerEmail.trim()) {
+      throw new Error(
+        'Owner email is required.',
+      )
+    }
+
+    await PharmDeskAPI.adminCreateStore({
+      name: newStore.name.trim(),
+      ownerEmail:
+        newStore.ownerEmail.trim(),
+      address:
+        newStore.address.trim() || null,
+      phone:
+        newStore.phone.trim() || null,
+      email:
+        newStore.email.trim() || null,
+      gstin:
+        newStore.gstin.trim() || null,
+      drugLicenseNumber:
+        newStore.drugLicenseNumber.trim() ||
+        null,
+    })
+
+    setNewStore({
+      name: '',
+      ownerEmail: '',
+      address: '',
+      phone: '',
+      email: '',
+      gstin: '',
+      drugLicenseNumber: '',
+    })
+
+    setAdminMessage(
+      'Medical store created successfully. It is now pending activation.',
+    )
+
+    await loadAdminStores()
+  } catch (error) {
+    console.error(
+      'Failed to create medical store:',
+      error,
+    )
+
+    setAdminMessage(
+      error?.message ||
+        'Failed to create medical store.',
+    )
+  } finally {
+    setAdminLoading(false)
+  }
+}
+
+const activateAdminStore = async (
+  storeId,
+) => {
+  try {
+    setAdminLoading(true)
+    setAdminMessage('')
+
+    await PharmDeskAPI.adminActivateStore(
+      storeId,
+    )
+
+    setAdminMessage(
+      'Store approved and 1-year service activated.',
+    )
+
+    await loadAdminStores()
+  } catch (error) {
+    console.error(
+      'Failed to activate store:',
+      error,
+    )
+
+    setAdminMessage(
+      error?.message ||
+        'Failed to activate store.',
+    )
+  } finally {
+    setAdminLoading(false)
+  }
+}
+
+const suspendAdminStore = async (
+  storeId,
+) => {
+  try {
+    setAdminLoading(true)
+    setAdminMessage('')
+
+    await PharmDeskAPI.adminSuspendStore(
+      storeId,
+    )
+
+    setAdminMessage(
+      'Store service has been suspended.',
+    )
+
+    await loadAdminStores()
+  } catch (error) {
+    console.error(
+      'Failed to suspend store:',
+      error,
+    )
+
+    setAdminMessage(
+      error?.message ||
+        'Failed to suspend store.',
+    )
+  } finally {
+    setAdminLoading(false)
+  }
+}
+
+const reactivateAdminStore = async (
+  storeId,
+) => {
+  try {
+    setAdminLoading(true)
+    setAdminMessage('')
+
+    await PharmDeskAPI.adminReactivateStore(
+      storeId,
+    )
+
+    setAdminMessage(
+      'Store service has been renewed for 1 year.',
+    )
+
+    await loadAdminStores()
+  } catch (error) {
+    console.error(
+      'Failed to reactivate store:',
+      error,
+    )
+
+    setAdminMessage(
+      error?.message ||
+        'Failed to renew store service.',
+    )
+  } finally {
+    setAdminLoading(false)
+  }
+}
 
   useEffect(() => {
     setStoreName(
@@ -9312,6 +9564,323 @@ function SettingsModule({
           )}
         </div>
       </PanelList>
+      
+      {isPlatformAdmin && (
+  <PanelList title="PharmDesk Administration">
+    <div className="history-header">
+      <div>
+        <strong>
+          Medical Store Management
+        </strong>
+
+        <span>
+          Create stores, activate service,
+          suspend access and manage yearly
+          renewals.
+        </span>
+      </div>
+
+      <button
+        className="secondary-button"
+        onClick={loadAdminStores}
+        disabled={adminLoading}
+      >
+        Refresh
+      </button>
+    </div>
+
+    {adminMessage && (
+      <div className="message-box">
+        {adminMessage}
+      </div>
+    )}
+
+    <div className="settings-section">
+      <h3>
+        Add Medical Store
+      </h3>
+
+      <label>
+        Medical store name
+        <input
+          value={newStore.name}
+          onChange={(e) =>
+            setNewStore({
+              ...newStore,
+              name: e.target.value,
+            })
+          }
+          placeholder="e.g. ABC Medical Store"
+        />
+      </label>
+
+      <label>
+        Owner email
+        <input
+          type="email"
+          value={newStore.ownerEmail}
+          onChange={(e) =>
+            setNewStore({
+              ...newStore,
+              ownerEmail:
+                e.target.value,
+            })
+          }
+          placeholder="owner@example.com"
+        />
+      </label>
+
+      <label>
+        Store address
+        <input
+          value={newStore.address}
+          onChange={(e) =>
+            setNewStore({
+              ...newStore,
+              address:
+                e.target.value,
+            })
+          }
+        />
+      </label>
+
+      <label>
+        Phone
+        <input
+          type="tel"
+          value={newStore.phone}
+          onChange={(e) =>
+            setNewStore({
+              ...newStore,
+              phone:
+                e.target.value,
+            })
+          }
+        />
+      </label>
+
+      <label>
+        Store email
+        <input
+          type="email"
+          value={newStore.email}
+          onChange={(e) =>
+            setNewStore({
+              ...newStore,
+              email:
+                e.target.value,
+            })
+          }
+        />
+      </label>
+
+      <label>
+        GSTIN
+        <input
+          value={newStore.gstin}
+          onChange={(e) =>
+            setNewStore({
+              ...newStore,
+              gstin:
+                e.target.value,
+            })
+          }
+        />
+      </label>
+
+      <label>
+        Drug licence number
+        <input
+          value={
+            newStore.drugLicenseNumber
+          }
+          onChange={(e) =>
+            setNewStore({
+              ...newStore,
+              drugLicenseNumber:
+                e.target.value,
+            })
+          }
+        />
+      </label>
+
+      <button
+        className="primary-button"
+        onClick={createAdminStore}
+        disabled={adminLoading}
+      >
+        {adminLoading
+          ? 'Creating...'
+          : 'Add Medical Store'}
+      </button>
+    </div>
+
+    <div className="settings-section">
+      <h3>
+        Registered Medical Stores
+      </h3>
+
+      {adminLoading &&
+        adminStores.length === 0 && (
+          <div className="message-box">
+            Loading stores...
+          </div>
+        )}
+
+      {!adminLoading &&
+        adminStores.length === 0 && (
+          <div className="message-box">
+            No medical stores found.
+          </div>
+        )}
+
+      {adminStores.map((adminStore) => {
+        const today =
+          new Date()
+            .toISOString()
+            .slice(0, 10)
+
+        const isExpired =
+          adminStore.service_end_date &&
+          adminStore.service_end_date <
+            today
+
+        const effectiveStatus =
+          isExpired &&
+          adminStore.service_status ===
+            'active'
+            ? 'expired'
+            : adminStore.service_status
+
+        return (
+          <div
+            key={adminStore.id}
+            className="history-item"
+          >
+            <div className="history-header">
+              <div>
+                <strong>
+                  {adminStore.name}
+                </strong>
+
+                <span>
+                  {adminStore.email ||
+                    adminStore.phone ||
+                    'No contact details'}
+                </span>
+              </div>
+
+              <strong>
+                {effectiveStatus
+                  .toUpperCase()}
+              </strong>
+            </div>
+
+            <div className="history-header">
+            <span>
+  Store contact:
+  {' '}
+  {adminStore.email ||
+    adminStore.phone ||
+    'Not provided'}
+</span>
+
+              <span>
+                GSTIN:
+                {' '}
+                {adminStore.gstin ||
+                  'Not provided'}
+              </span>
+            </div>
+
+            <div className="history-header">
+              <span>
+                Service start:
+                {' '}
+                {adminStore
+                  .service_start_date ||
+                  'Not activated'}
+              </span>
+
+              <span>
+                Service end:
+                {' '}
+                {adminStore
+                  .service_end_date ||
+                  'Not activated'}
+              </span>
+            </div>
+
+            <div
+              className="button-row"
+            >
+              {effectiveStatus ===
+                'pending' && (
+                <button
+                  className="primary-button"
+                  onClick={() =>
+                    activateAdminStore(
+                      adminStore.id,
+                    )
+                  }
+                  disabled={adminLoading}
+                >
+                  Approve & Start
+                  1-Year Service
+                </button>
+              )}
+
+              {effectiveStatus ===
+                'active' && (
+                <button
+                  className="secondary-button"
+                  onClick={() =>
+                    suspendAdminStore(
+                      adminStore.id,
+                    )
+                  }
+                  disabled={adminLoading}
+                >
+                  Suspend Service
+                </button>
+              )}
+
+              {effectiveStatus ===
+                'expired' && (
+                <button
+                  className="primary-button"
+                  onClick={() =>
+                    reactivateAdminStore(
+                      adminStore.id,
+                    )
+                  }
+                  disabled={adminLoading}
+                >
+                  Renew for 1 Year
+                </button>
+              )}
+
+              {effectiveStatus ===
+                'suspended' && (
+                <button
+                  className="primary-button"
+                  onClick={() =>
+                    reactivateAdminStore(
+                      adminStore.id,
+                    )
+                  }
+                  disabled={adminLoading}
+                >
+                  Reactivate for 1 Year
+                </button>
+              )}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  </PanelList>
+)}
 
       <PanelList title="Signed-in User">
         <div className="history-header">
