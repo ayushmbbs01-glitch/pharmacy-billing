@@ -3298,7 +3298,11 @@ function CompletedBills({ store }) {
     printWindow.print()
   }, 250)
 }
-  
+ 
+  function exportSaleInvoicePdf(details, store) {
+  printSaleInvoice(details, store)
+}
+   
 function SaleBillModal({  
   store,  
   sale,  
@@ -3410,33 +3414,46 @@ function SaleBillModal({
     </span>
   </div>
 
-  <div className="button-row">
+ <div className="button-row">
+  <button
+    type="button"
+    className="primary-button"
+    onClick={() =>
+      printSaleInvoice(
+        details,
+        store,
+      )
+    }
+  >
+    Print Invoice
+  </button>
+
+  <button
+    type="button"
+    className="secondary-button"
+    onClick={() =>
+      exportSaleInvoicePdf(
+        details,
+        store,
+      )
+    }
+  >
+    Export PDF
+  </button>
+
+  {details.status ===
+    'completed' && (
     <button
       type="button"
-      className="primary-button"
+      className="secondary-button"
       onClick={() =>
-        printSaleInvoice(
-          details,
-          store,
-        )
+        setEditing(true)
       }
     >
-      Print Invoice
+      Edit Bill
     </button>
-
-    {details.status ===
-      'completed' && (
-      <button
-        type="button"
-        className="secondary-button"
-        onClick={() =>
-          setEditing(true)
-        }
-      >
-        Edit Bill
-      </button>
-    )}
-  </div>
+  )}
+</div>
 </div> 
   
           <h3>Products</h3>  
@@ -6690,78 +6707,662 @@ function SupplierPurchaseCatalogue({ store }) {
   )
 }
   
-function PurchaseOrders({  
-  store,  
-}) {  
-  const [rows, setRows] =  
-    useState([])  
-  
-  useEffect(() => {  
-    if (!store?.id) return  
-  
-    supabase  
-      .from(  
-        'purchase_orders',  
-      )  
-      .select('*')  
-      .eq(  
-        'store_id',  
-        store.id,  
-      )  
-      .order(  
-        'created_at',  
-        {  
-          ascending: false,  
-        },  
-      )  
-      .limit(100)  
-      .then(({ data }) =>  
-        setRows(  
-          data || [],  
-        ),  
-      )  
-  }, [store?.id])  
-  
-  return (  
-    <PanelList title="Purchase Orders">  
-      {rows.length ===  
-      0 ? (  
-        <EmptyState text="No purchase orders yet." />  
-      ) : (  
-        <div className="record-list">  
-          {rows.map(  
-            (row) => (  
-              <div  
-                className="record-row static"  
-                key={row.id}  
-              >  
-                <div>  
-                  <strong>  
-                    {row.order_number ||  
-                      row.id.slice(  
-                        0,  
-                        8,  
-                      )}  
-                  </strong>  
-  
-                  <span>  
-                    {row.status}  
-                  </span>  
-                </div>  
-  
-                <strong>  
-                  {money(  
-                    row.total_amount,  
-                  )}  
-                </strong>  
-              </div>  
-            ),  
-          )}  
-        </div>  
-      )}  
-    </PanelList>  
-  )  
-}  
+function PurchaseOrders({
+  store,
+}) {
+  const [rows, setRows] =
+    useState([])
+
+  const [selectedOrder, setSelectedOrder] =
+    useState(null)
+
+  const [orderLoading, setOrderLoading] =
+    useState(false)
+
+  const [orderError, setOrderError] =
+    useState('')
+
+  useEffect(() => {
+    if (!store?.id) return
+
+    supabase
+      .from('purchase_orders')
+      .select('*')
+      .eq('store_id', store.id)
+      .order('created_at', {
+        ascending: false,
+      })
+      .limit(100)
+      .then(({ data, error }) => {
+        if (error) {
+          console.error(
+            'Failed to load purchase orders:',
+            error,
+          )
+          return
+        }
+
+        setRows(data || [])
+      })
+  }, [store?.id])
+
+  const openOrder = async (orderId) => {
+    try {
+      setOrderLoading(true)
+      setOrderError('')
+
+      const details =
+        await PharmDeskAPI.getPurchaseOrderDetail(
+          store.id,
+          orderId,
+        )
+
+      setSelectedOrder(details)
+    } catch (error) {
+      console.error(
+        'Failed to load purchase order:',
+        error,
+      )
+
+      setOrderError(
+        error?.message ||
+          'Unable to load purchase order.',
+      )
+    } finally {
+      setOrderLoading(false)
+    }
+  }
+
+  const exportOrderPdf = () => {
+    if (!selectedOrder) return
+
+    const order =
+      selectedOrder
+
+    const items =
+      order.items || []
+
+    const supplier =
+      order.supplier || {}
+
+    const itemRows = items
+      .map(
+        (item, index) => `
+          <tr>
+            <td>${index + 1}</td>
+            <td>
+              ${item.product?.product_name || 'Product'}
+              ${
+                item.product
+                  ?.generic_display_name
+                  ? `<div class="muted">
+                      ${item.product.generic_display_name}
+                    </div>`
+                  : ''
+              }
+            </td>
+            <td>
+              ${
+                item.product
+                  ?.dosage_form || '—'
+              }
+            </td>
+            <td>
+              ${
+                item.product
+                  ?.strength_display || '—'
+              }
+            </td>
+            <td>
+              ${
+                item.product
+                  ?.pack_quantity ??
+                '—'
+              }
+              ${
+                item.product
+                  ?.pack_unit || ''
+              }
+            </td>
+            <td class="right">
+              ${item.quantity || 0}
+            </td>
+          </tr>
+        `,
+      )
+      .join('')
+
+    const printWindow =
+      window.open(
+        '',
+        '_blank',
+        'width=900,height=900',
+      )
+
+    if (!printWindow) {
+      window.alert(
+        'Unable to open the PDF window. Please allow pop-ups for PharmDesk.',
+      )
+      return
+    }
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>
+            ${order.order_number || 'Purchase Order'}
+          </title>
+
+          <style>
+            * {
+              box-sizing: border-box;
+            }
+
+            body {
+              font-family:
+                Arial,
+                Helvetica,
+                sans-serif;
+              margin: 0;
+              padding: 32px;
+              color: #111827;
+            }
+
+            .header {
+              display: flex;
+              justify-content: space-between;
+              gap: 24px;
+              margin-bottom: 28px;
+              padding-bottom: 20px;
+              border-bottom: 2px solid #111827;
+            }
+
+            .store-name {
+              font-size: 24px;
+              font-weight: 700;
+              margin-bottom: 8px;
+            }
+
+            .muted {
+              color: #6b7280;
+              font-size: 12px;
+              margin-top: 3px;
+            }
+
+            .order-title {
+              text-align: right;
+            }
+
+            .order-title h1 {
+              margin: 0 0 8px;
+              font-size: 24px;
+            }
+
+            .order-meta {
+              font-size: 13px;
+              line-height: 1.6;
+            }
+
+            .section {
+              margin-bottom: 24px;
+            }
+
+            .section-title {
+              font-size: 13px;
+              font-weight: 700;
+              text-transform: uppercase;
+              margin-bottom: 8px;
+            }
+
+            .supplier-box {
+              border: 1px solid #d1d5db;
+              border-radius: 8px;
+              padding: 14px;
+              line-height: 1.6;
+            }
+
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              margin-top: 12px;
+            }
+
+            th,
+            td {
+              border: 1px solid #d1d5db;
+              padding: 9px;
+              font-size: 12px;
+              text-align: left;
+              vertical-align: top;
+            }
+
+            th {
+              font-weight: 700;
+              background: #f3f4f6;
+            }
+
+            .right {
+              text-align: right;
+            }
+
+            .notes {
+              border: 1px solid #d1d5db;
+              border-radius: 8px;
+              padding: 14px;
+              white-space: pre-wrap;
+              font-size: 13px;
+            }
+
+            .footer {
+              margin-top: 40px;
+              padding-top: 16px;
+              border-top: 1px solid #d1d5db;
+              font-size: 11px;
+              color: #6b7280;
+              text-align: center;
+            }
+
+            @media print {
+              body {
+                padding: 18px;
+              }
+            }
+          </style>
+        </head>
+
+        <body>
+          <div class="header">
+            <div>
+              <div class="store-name">
+                ${
+                  store?.name ||
+                  'PharmDesk Store'
+                }
+              </div>
+
+              ${
+                store?.address
+                  ? `<div>${store.address}</div>`
+                  : ''
+              }
+
+              ${
+                store?.phone
+                  ? `<div>Phone: ${store.phone}</div>`
+                  : ''
+              }
+
+              ${
+                store?.email
+                  ? `<div>Email: ${store.email}</div>`
+                  : ''
+              }
+
+              ${
+                store?.gstin
+                  ? `<div>GSTIN: ${store.gstin}</div>`
+                  : ''
+              }
+
+              ${
+                store?.drug_license_number
+                  ? `<div>
+                      Drug License:
+                      ${store.drug_license_number}
+                    </div>`
+                  : ''
+              }
+            </div>
+
+            <div class="order-title">
+              <h1>PURCHASE ORDER</h1>
+
+              <div class="order-meta">
+                <div>
+                  <strong>Order No:</strong>
+                  ${
+                    order.order_number ||
+                    '—'
+                  }
+                </div>
+
+                <div>
+                  <strong>Date:</strong>
+                  ${
+                    order.order_date ||
+                    '—'
+                  }
+                </div>
+
+                <div>
+                  <strong>Status:</strong>
+                  ${
+                    order.status ||
+                    '—'
+                  }
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-title">
+              Supplier
+            </div>
+
+            <div class="supplier-box">
+              <strong>
+                ${
+                  supplier.supplier_name ||
+                  'Supplier'
+                }
+              </strong>
+
+              ${
+                supplier.contact_person
+                  ? `<div>
+                      Contact:
+                      ${supplier.contact_person}
+                    </div>`
+                  : ''
+              }
+
+              ${
+                supplier.phone
+                  ? `<div>
+                      Phone:
+                      ${supplier.phone}
+                    </div>`
+                  : ''
+              }
+
+              ${
+                supplier.email
+                  ? `<div>
+                      Email:
+                      ${supplier.email}
+                    </div>`
+                  : ''
+              }
+
+              ${
+                supplier.address
+                  ? `<div>
+                      Address:
+                      ${supplier.address}
+                    </div>`
+                  : ''
+              }
+
+              ${
+                supplier.gstin
+                  ? `<div>
+                      GSTIN:
+                      ${supplier.gstin}
+                    </div>`
+                  : ''
+              }
+
+              ${
+                supplier.drug_license_number
+                  ? `<div>
+                      Drug License:
+                      ${supplier.drug_license_number}
+                    </div>`
+                  : ''
+              }
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-title">
+              Ordered Products
+            </div>
+
+            <table>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Product</th>
+                  <th>Dosage Form</th>
+                  <th>Strength</th>
+                  <th>Pack</th>
+                  <th class="right">
+                    Quantity
+                  </th>
+                </tr>
+              </thead>
+
+              <tbody>
+                ${itemRows}
+              </tbody>
+            </table>
+          </div>
+
+          ${
+            order.notes
+              ? `
+                <div class="section">
+                  <div class="section-title">
+                    Notes
+                  </div>
+
+                  <div class="notes">
+                    ${order.notes}
+                  </div>
+                </div>
+              `
+              : ''
+          }
+
+          <div class="footer">
+            This purchase order represents the
+            quantity requested from the supplier.
+            Actual received quantities are recorded
+            separately during purchase/stock intake.
+          </div>
+        </body>
+      </html>
+    `)
+
+    printWindow.document.close()
+    printWindow.focus()
+
+    setTimeout(() => {
+      printWindow.print()
+    }, 250)
+  }
+
+  return (
+    <>
+      <PanelList title="Purchase Orders">
+        {rows.length === 0 ? (
+          <EmptyState text="No purchase orders yet." />
+        ) : (
+          <div className="record-list">
+            {rows.map((row) => (
+              <button
+                type="button"
+                className="record-row"
+                key={row.id}
+                onClick={() =>
+                  openOrder(row.id)
+                }
+              >
+                <div>
+                  <strong>
+                    {row.order_number ||
+                      row.id.slice(0, 8)}
+                  </strong>
+
+                  <span>
+                    {row.status}
+                  </span>
+                </div>
+
+                <strong>
+                  {money(
+                    row.total_amount,
+                  )}
+                </strong>
+              </button>
+            ))}
+          </div>
+        )}
+      </PanelList>
+
+      {selectedOrder && (
+        <Modal
+          title={
+            selectedOrder.order_number ||
+            'Purchase Order'
+          }
+          onClose={() =>
+            setSelectedOrder(null)
+          }
+        >
+          <div className="button-row">
+            <button
+              type="button"
+              className="primary-button"
+              onClick={
+                exportOrderPdf
+              }
+            >
+              Export PDF
+            </button>
+
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() =>
+                setSelectedOrder(null)
+              }
+            >
+              Close
+            </button>
+          </div>
+
+          <div className="detail-stack">
+            <div>
+              <strong>
+                Supplier
+              </strong>
+
+              <div>
+                {
+                  selectedOrder
+                    .supplier
+                    ?.supplier_name ||
+                  '—'
+                }
+              </div>
+            </div>
+
+            <div>
+              <strong>
+                Order Date
+              </strong>
+
+              <div>
+                {
+                  selectedOrder.order_date ||
+                  '—'
+                }
+              </div>
+            </div>
+
+            <div>
+              <strong>
+                Status
+              </strong>
+
+              <div>
+                {
+                  selectedOrder.status ||
+                  '—'
+                }
+              </div>
+            </div>
+
+            <div>
+              <strong>
+                Products
+              </strong>
+
+              <div className="record-list">
+                {(
+                  selectedOrder.items ||
+                  []
+                ).map((item) => (
+                  <div
+                    className="record-row static"
+                    key={item.id}
+                  >
+                    <div>
+                      <strong>
+                        {
+                          item.product
+                            ?.product_name ||
+                          'Product'
+                        }
+                      </strong>
+
+                      <span>
+                        {
+                          item.product
+                            ?.generic_display_name ||
+                          ''
+                        }
+                      </span>
+                    </div>
+
+                    <strong>
+                      Qty:{' '}
+                      {item.quantity ||
+                        0}
+                    </strong>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {selectedOrder.notes && (
+              <div>
+                <strong>
+                  Notes
+                </strong>
+
+                <div>
+                  {selectedOrder.notes}
+                </div>
+              </div>
+            )}
+          </div>
+        </Modal>
+      )}
+
+      {orderLoading && (
+        <Modal
+          title="Loading Purchase Order"
+          onClose={() => {}}
+        >
+          <p>
+            Loading purchase order
+            details...
+          </p>
+        </Modal>
+      )}
+
+      {orderError && (
+        <div className="error-message">
+          {orderError}
+        </div>
+      )}
+    </>
+  )
+}
   
 
 
