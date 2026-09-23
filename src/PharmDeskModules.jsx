@@ -292,7 +292,12 @@ function LoadingScreen() {
 }  
   
 function LoginScreen() {
-  const [mode, setMode] = useState('login')
+  const [mode, setMode] = useState(() =>
+    window.location.pathname.replace(/\/+$/, '') ===
+    '/signup'
+      ? 'signup'
+      : 'login',
+  )
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -2895,6 +2900,405 @@ function CompletedBills({ store }) {
   )  
 }  
   
+  function printSaleInvoice(details, store) {
+  if (!details) return
+
+  const printWindow = window.open(
+    '',
+    '_blank',
+    'width=800,height=900',
+  )
+
+  if (!printWindow) {
+    window.alert(
+      'Unable to open the print window. Please allow pop-ups for PharmDesk.',
+    )
+    return
+  }
+
+  const customer =
+    details.customers?.name ||
+    'Walk-in Customer'
+
+  const customerPhone =
+    details.customers?.phone || ''
+
+  const items = details.sale_items || []
+  const payments = details.sale_payments || []
+
+  const itemRows = items
+    .map(
+      (item) => `
+        <tr>
+          <td>
+            ${item.products?.product_name || 'Product'}
+            ${
+              item.products?.generic_display_name
+                ? `<div class="muted">${item.products.generic_display_name}</div>`
+                : ''
+            }
+          </td>
+          <td>${item.batches?.batch_number || '—'}</td>
+          <td>${item.quantity_entered || 0} ${item.unit_type || ''}</td>
+          <td>${money(item.selling_price_per_pack)}</td>
+          <td>${item.discount_percent || 0}%</td>
+          <td class="right">${money(item.line_total)}</td>
+        </tr>
+      `,
+    )
+    .join('')
+
+  const paymentRows = payments
+    .map(
+      (payment) => `
+        <div class="payment-row">
+          <span>${paymentLabel(payment.payment_method)}</span>
+          <strong>${money(payment.amount)}</strong>
+        </div>
+      `,
+    )
+    .join('')
+
+  printWindow.document.write(`
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <title>
+          ${details.invoice_number || 'Invoice'}
+        </title>
+
+        <style>
+          * {
+            box-sizing: border-box;
+          }
+
+          body {
+            margin: 0;
+            padding: 24px;
+            font-family: Arial, Helvetica, sans-serif;
+            color: #111;
+            background: #fff;
+            font-size: 13px;
+          }
+
+          .invoice {
+            max-width: 800px;
+            margin: 0 auto;
+          }
+
+          .header {
+            display: flex;
+            justify-content: space-between;
+            gap: 24px;
+            border-bottom: 2px solid #111;
+            padding-bottom: 16px;
+            margin-bottom: 16px;
+          }
+
+          .store-name {
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 6px;
+          }
+
+          .invoice-title {
+            text-align: right;
+          }
+
+          .invoice-title h1 {
+            margin: 0 0 6px;
+            font-size: 24px;
+          }
+
+          .muted {
+            color: #666;
+            font-size: 11px;
+            margin-top: 3px;
+          }
+
+          .section {
+            margin-bottom: 18px;
+          }
+
+          .section-title {
+            font-weight: 700;
+            margin-bottom: 7px;
+            font-size: 13px;
+            text-transform: uppercase;
+          }
+
+          .customer-box {
+            border: 1px solid #ddd;
+            padding: 10px;
+          }
+
+          table {
+            width: 100%;
+            border-collapse: collapse;
+          }
+
+          th,
+          td {
+            border-bottom: 1px solid #ddd;
+            padding: 8px 6px;
+            text-align: left;
+            vertical-align: top;
+          }
+
+          th {
+            background: #f5f5f5;
+            font-size: 11px;
+          }
+
+          .right {
+            text-align: right;
+          }
+
+          .totals {
+            width: 320px;
+            margin-left: auto;
+            margin-top: 18px;
+          }
+
+          .total-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 5px 0;
+          }
+
+          .grand-total {
+            border-top: 2px solid #111;
+            margin-top: 5px;
+            padding-top: 8px;
+            font-size: 16px;
+            font-weight: 700;
+          }
+
+          .payments {
+            margin-top: 18px;
+            border-top: 1px solid #ddd;
+            padding-top: 12px;
+          }
+
+          .payment-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 4px 0;
+          }
+
+          .footer {
+            margin-top: 35px;
+            padding-top: 12px;
+            border-top: 1px solid #ddd;
+            text-align: center;
+            color: #666;
+            font-size: 11px;
+          }
+
+          @media print {
+            body {
+              padding: 0;
+            }
+
+            .invoice {
+              max-width: none;
+            }
+          }
+        </style>
+      </head>
+
+      <body>
+        <div class="invoice">
+
+          <div class="header">
+            <div>
+              <div class="store-name">
+                ${store?.name || 'Medical Store'}
+              </div>
+
+              ${
+                store?.address
+                  ? `<div>${store.address}</div>`
+                  : ''
+              }
+
+              ${
+                store?.phone
+                  ? `<div>Phone: ${store.phone}</div>`
+                  : ''
+              }
+
+              ${
+                store?.email
+                  ? `<div>Email: ${store.email}</div>`
+                  : ''
+              }
+
+              ${
+                store?.gstin
+                  ? `<div>GSTIN: ${store.gstin}</div>`
+                  : ''
+              }
+
+              ${
+                store?.drug_license_number
+                  ? `<div>Drug License: ${store.drug_license_number}</div>`
+                  : ''
+              }
+            </div>
+
+            <div class="invoice-title">
+              <h1>INVOICE</h1>
+
+              <div>
+                <strong>
+                  ${
+                    details.invoice_number ||
+                    'Bill'
+                  }
+                </strong>
+              </div>
+
+              <div>
+                ${dateTimeText(details.bill_datetime)}
+              </div>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-title">
+              Customer
+            </div>
+
+            <div class="customer-box">
+              <strong>${customer}</strong>
+
+              ${
+                customerPhone
+                  ? `<div>Phone: ${customerPhone}</div>`
+                  : ''
+              }
+
+              ${
+                details.customers?.address
+                  ? `<div>${details.customers.address}</div>`
+                  : ''
+              }
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-title">
+              Items
+            </div>
+
+            <table>
+              <thead>
+                <tr>
+                  <th>Product</th>
+                  <th>Batch</th>
+                  <th>Qty</th>
+                  <th>Rate</th>
+                  <th>Disc.</th>
+                  <th class="right">Amount</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                ${itemRows}
+              </tbody>
+            </table>
+          </div>
+
+          <div class="totals">
+            <div class="total-row">
+              <span>Subtotal</span>
+              <strong>
+                ${money(details.subtotal)}
+              </strong>
+            </div>
+
+            <div class="total-row">
+              <span>Item discounts</span>
+              <strong>
+                ${money(details.item_discount_total)}
+              </strong>
+            </div>
+
+            <div class="total-row">
+              <span>Bill discount</span>
+              <strong>
+                ${money(details.bill_discount_amount)}
+              </strong>
+            </div>
+
+            <div class="total-row">
+              <span>CGST</span>
+              <strong>
+                ${money(details.cgst_amount)}
+              </strong>
+            </div>
+
+            <div class="total-row">
+              <span>SGST</span>
+              <strong>
+                ${money(details.sgst_amount)}
+              </strong>
+            </div>
+
+            <div class="total-row grand-total">
+              <span>Total</span>
+              <strong>
+                ${money(details.grand_total)}
+              </strong>
+            </div>
+
+            <div class="total-row">
+              <span>Paid</span>
+              <strong>
+                ${money(details.amount_paid)}
+              </strong>
+            </div>
+
+            <div class="total-row">
+              <span>Due</span>
+              <strong>
+                ${money(details.amount_due)}
+              </strong>
+            </div>
+          </div>
+
+          ${
+            paymentRows
+              ? `
+                <div class="payments">
+                  <div class="section-title">
+                    Payments
+                  </div>
+
+                  ${paymentRows}
+                </div>
+              `
+              : ''
+          }
+
+          <div class="footer">
+            Thank you for your business.
+          </div>
+
+        </div>
+      </body>
+    </html>
+  `)
+
+  printWindow.document.close()
+  printWindow.focus()
+
+  setTimeout(() => {
+    printWindow.print()
+  }, 250)
+}
+  
 function SaleBillModal({  
   store,  
   sale,  
@@ -2985,39 +3389,55 @@ function SaleBillModal({
         <EmptyState text="Unable to load this bill." />  
       ) : (  
         <>  
-          <div className="history-header">  
-            <div>  
-              <strong>  
-                {details.invoice_number ||  
-                  'Bill'}  
-              </strong>  
-  
-              <span>  
-                {dateTimeText(  
-                  details.bill_datetime,  
-                )}  
-              </span>  
-  
-              <span>  
-                Customer:{' '}  
-                {details.customers  
-                  ?.name ||  
-                  'Walk-in Customer'}  
-              </span>  
-            </div>  
-  
-            {details.status ===  
-              'completed' && (  
-              <button  
-                className="secondary-button"  
-                onClick={() =>  
-                  setEditing(true)  
-                }  
-              >  
-                Edit Bill  
-              </button>  
-            )}  
-          </div>  
+       <div className="history-header">
+  <div>
+    <strong>
+      {details.invoice_number ||
+        'Bill'}
+    </strong>
+
+    <span>
+      {dateTimeText(
+        details.bill_datetime,
+      )}
+    </span>
+
+    <span>
+      Customer:{' '}
+      {details.customers
+        ?.name ||
+        'Walk-in Customer'}
+    </span>
+  </div>
+
+  <div className="button-row">
+    <button
+      type="button"
+      className="primary-button"
+      onClick={() =>
+        printSaleInvoice(
+          details,
+          store,
+        )
+      }
+    >
+      Print Invoice
+    </button>
+
+    {details.status ===
+      'completed' && (
+      <button
+        type="button"
+        className="secondary-button"
+        onClick={() =>
+          setEditing(true)
+        }
+      >
+        Edit Bill
+      </button>
+    )}
+  </div>
+</div> 
   
           <h3>Products</h3>  
   
