@@ -338,71 +338,63 @@ function LoginScreen() {
   }
 
   const signup = async (e) => {
-    e.preventDefault()
-    setBusy(true)
-    resetMessages()
+  e.preventDefault()
+  setBusy(true)
+  resetMessages()
 
-    if (password !== confirmPassword) {
-      setError('Passwords do not match.')
-      setBusy(false)
-      return
-    }
-
-    if (password.length < 6) {
-      setError(
-        'Password must be at least 6 characters long.',
-      )
-      setBusy(false)
-      return
-    }
-
-    try {
-      const signupResult =
-        await PharmDeskAPI.signUp(
-          email.trim(),
-          password,
-        )
-
-      const signupSession =
-        signupResult?.session ??
-        signupResult?.data?.session ??
-        null
-
-      if (!signupSession) {
-        setSuccess(
-          'Your account has been created. Please verify your email, then sign in to complete your medical store application.',
-        )
-        setBusy(false)
-        return
-      }
-
-      await PharmDeskAPI.submitStoreApplication({
-        ownerName: ownerName.trim(),
-        storeName: storeName.trim(),
-        address: address.trim() || null,
-        phone: phone.trim() || null,
-        storeEmail:
-          storeEmail.trim() || null,
-        gstin: gstin.trim() || null,
-        drugLicenseNumber:
-          drugLicenseNumber.trim() || null,
-      })
-
-      setSuccess(
-        'Your medical store application has been submitted. Your application is now pending admin approval. You will be contacted within 24 hours.',
-      )
-
-      setPassword('')
-      setConfirmPassword('')
-    } catch (signupError) {
-      setError(
-        signupError.message ||
-          'Unable to submit your application.',
-      )
-    } finally {
-      setBusy(false)
-    }
+  if (password !== confirmPassword) {
+    setError('Passwords do not match.')
+    setBusy(false)
+    return
   }
+
+  if (password.length < 6) {
+    setError(
+      'Password must be at least 6 characters long.',
+    )
+    setBusy(false)
+    return
+  }
+
+  if (!ownerName.trim()) {
+    setError('Please enter the owner name.')
+    setBusy(false)
+    return
+  }
+
+  try {
+    const signupResult =
+      await PharmDeskAPI.signUp(
+        email.trim(),
+        password,
+      )
+
+    const signupSession =
+      signupResult?.session ??
+      signupResult?.data?.session ??
+      null
+
+    if (signupSession) {
+      setSuccess(
+        'Account created successfully. Please continue by completing your medical store application.',
+      )
+    } else {
+      setSuccess(
+        'Account created successfully. Please check your email and verify your account. After verification, sign in to complete your medical store application.',
+      )
+    }
+
+    setPassword('')
+    setConfirmPassword('')
+  } catch (signupError) {
+    setError(
+      signupError.message ||
+        'Unable to create your account.',
+    )
+  } finally {
+    setBusy(false)
+  }
+}
 
   const switchMode = (nextMode) => {
     setMode(nextMode)
