@@ -358,6 +358,21 @@ async submitStoreApplication({
   )
 },
 
+async getMyStoreApplication(userId) {
+  return select('store_applications', {
+    select: '*',
+    eq: {
+      owner_user_id: userId,
+    },
+    order: [
+      {
+        column: 'created_at',
+        ascending: false,
+      },
+    ],
+  })
+},
+
 async adminListStoreApplications() {
   return call(
     'pharmdesk_admin_list_store_applications',
