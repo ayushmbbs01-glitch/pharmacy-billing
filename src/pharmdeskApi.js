@@ -318,6 +318,68 @@ async adminReactivateStore(storeId, startDate = null) {
   })
 },
 
+async submitStoreApplication({
+  ownerName,
+  storeName,
+  address = null,
+  phone = null,
+  storeEmail = null,
+  gstin = null,
+  drugLicenseNumber = null,
+}) {
+  return call(
+    'pharmdesk_submit_store_application',
+    {
+      p_owner_name: ownerName,
+      p_store_name: storeName,
+      p_address: address,
+      p_phone: phone,
+      p_store_email: storeEmail,
+      p_gstin: gstin,
+      p_drug_license_number:
+        drugLicenseNumber,
+    },
+  )
+},
+
+async adminListStoreApplications() {
+  return call(
+    'pharmdesk_admin_list_store_applications',
+    {},
+  )
+},
+
+async adminApproveStoreApplication(
+  applicationId,
+  startDate = null,
+) {
+  return call(
+    'pharmdesk_admin_approve_store_application',
+    {
+      p_application_id: applicationId,
+      p_start_date:
+        startDate ||
+        new Date()
+          .toISOString()
+          .slice(0, 10),
+    },
+  )
+},
+
+async adminRejectStoreApplication(
+  applicationId,
+  rejectionReason = null,
+) {
+  return call(
+    'pharmdesk_admin_reject_store_application',
+    {
+      p_application_id: applicationId,
+      p_rejection_reason:
+        rejectionReason,
+    },
+  )
+},
+
   getStores() {
     return select('stores', {
       select: '*',
