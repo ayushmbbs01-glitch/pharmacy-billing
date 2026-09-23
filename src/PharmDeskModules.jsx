@@ -1177,10 +1177,35 @@ function LoginScreen() {
 ========================================================= */  
   
 function PharmacyApp({ session }) {  
-  const [activeNav, setActiveNav] = useState('Dashboard')  
+  const [activeNav, setActiveNav] = useState('Dashboard')
+  const [sidebarOpen, setSidebarOpen] = useState(false)
   const [store, setStore] = useState(null)  
   const [profile, setProfile] = useState(null)  
   const [loading, setLoading] = useState(true)  
+  
+  useEffect(() => {
+  const handleModuleHeaderClick = (event) => {
+    if (window.innerWidth > 800) return
+
+    const header = event.target.closest('.module-header')
+
+    if (!header) return
+
+    setSidebarOpen((current) => !current)
+  }
+
+  document.addEventListener(
+    'click',
+    handleModuleHeaderClick,
+  )
+
+  return () => {
+    document.removeEventListener(
+      'click',
+      handleModuleHeaderClick,
+    )
+  }
+}, [])
   
   useEffect(() => {  
     loadStore()  
@@ -1253,39 +1278,49 @@ function PharmacyApp({ session }) {
   
   return (  
     <div className="app-shell">  
-      <aside className="sidebar">  
-        <div className="brand">  
-          <div className="brand-mark">P</div>  
-  
-          <div>  
-            <strong>PharmDesk</strong>  
-            <span>{store?.name || 'Pharmacy'}</span>  
-          </div>  
-        </div>  
-  
-        <nav>  
-          {NAV_ITEMS.map((item) => (  
-            <button  
-              key={item}  
-              className={  
-                activeNav === item  
-                  ? 'nav-item active'  
-                  : 'nav-item'  
-              }  
-              onClick={() => setActiveNav(item)}  
-            >  
-              {item}  
-            </button>  
-          ))}  
-        </nav>  
-  
-        <button  
-          className="logout-button"  
-          onClick={() => PharmDeskAPI.signOut()}  
-        >  
-          Sign out  
-        </button>  
-      </aside>  
+    {sidebarOpen && (
+  <div
+    className="nav-overlay"
+    onClick={() => setSidebarOpen(false)}
+  />
+)}
+
+<aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
+  <div className="brand">
+    <div className="brand-mark">P</div>
+
+    <div>
+      <strong>PharmDesk</strong>
+      <span>{store?.name || 'Pharmacy'}</span>
+    </div>
+  </div>
+
+  <nav>
+    {NAV_ITEMS.map((item) => (
+      <button
+        key={item}
+        className={
+          activeNav === item
+            ? 'nav-item active'
+            : 'nav-item'
+        }
+        onClick={() => {
+          setActiveNav(item)
+          setSidebarOpen(false)
+        }}
+      >
+        {item}
+      </button>
+    ))}
+  </nav>
+
+  <button
+    className="logout-button"
+    onClick={() => PharmDeskAPI.signOut()}
+  >
+    Sign out
+  </button>
+</aside>
   
       <main className="main-content">{renderPage()}</main>  
     </div>  
