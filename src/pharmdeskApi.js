@@ -1280,6 +1280,27 @@ async dashboardSnapshot(storeId, startDate, expiryDays = 90) {
     })
   },
 
+  getSupplierPurchaseCatalogue(storeId, supplierId) {
+    return call('pharmdesk_get_supplier_purchase_catalogue', {
+      p_store_id: storeId,
+      p_supplier_id: supplierId,
+    })
+  },
+
+  createPurchaseOrder({
+    storeId,
+    supplierId,
+    items,
+    notes = null,
+  }) {
+    return call('pharmdesk_create_purchase_order', {
+      p_store_id: storeId,
+      p_supplier_id: supplierId,
+      p_items: items,
+      p_notes: notes,
+    })
+  },
+
   addCatalogueAlias(storeId, catalogueProductId, productId) {
     return call('pharmdesk_record_catalogue_product_alias', {
       p_store_id: storeId,
