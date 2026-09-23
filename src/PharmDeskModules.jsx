@@ -3298,11 +3298,7 @@ function CompletedBills({ store }) {
     printWindow.print()
   }, 250)
 }
- 
-  function exportSaleInvoicePdf(details, store) {
-  printSaleInvoice(details, store)
-}
-   
+  
 function SaleBillModal({  
   store,  
   sale,  
@@ -3414,46 +3410,46 @@ function SaleBillModal({
     </span>
   </div>
 
- <div className="button-row">
-  <button
-    type="button"
-    className="primary-button"
-    onClick={() =>
-      printSaleInvoice(
-        details,
-        store,
-      )
-    }
-  >
-    Print Invoice
-  </button>
+  <div className="button-row">
+    <button
+      type="button"
+      className="primary-button"
+      onClick={() =>
+        printSaleInvoice(
+          details,
+          store,
+        )
+      }
+    >
+      Print Invoice
+    </button>
 
-  <button
-    type="button"
-    className="secondary-button"
-    onClick={() =>
-      exportSaleInvoicePdf(
-        details,
-        store,
-      )
-    }
-  >
-    Export PDF
-  </button>
-
-  {details.status ===
-    'completed' && (
     <button
       type="button"
       className="secondary-button"
       onClick={() =>
-        setEditing(true)
+        printSaleInvoice(
+          details,
+          store,
+        )
       }
     >
-      Edit Bill
+      Export PDF
     </button>
-  )}
-</div>
+
+    {details.status ===
+      'completed' && (
+      <button
+        type="button"
+        className="secondary-button"
+        onClick={() =>
+          setEditing(true)
+        }
+      >
+        Edit Bill
+      </button>
+    )}
+  </div>
 </div> 
   
           <h3>Products</h3>  
@@ -4446,21 +4442,20 @@ function PurchasesModule({ store }) {
         />  
       )}  
   
-    {tab === 'Supplier Orders' && (
-  <PurchaseOrders store={store} />
-)}
+      {tab === 'Supplier Orders' && (  
+        <PurchaseOrders store={store} />  
+      )}  
 
-{tab === 'Catalogue & Orders' && (
-  <SupplierPurchaseCatalogue
-    store={store}
-  />
-)}
-
-{tab === 'AI Recommendations' && (
-  <AIRecommendations
-    store={store}
-  />
-)}  
+      {tab === 'Catalogue & Orders' && (
+        <SupplierPurchaseCatalogue store={store} />
+      )}
+  
+      {tab ===  
+        'AI Recommendations' && (  
+        <AIRecommendations  
+          store={store}  
+        />  
+      )}  
     </div>  
   )  
 }  
@@ -6362,144 +6357,363 @@ function PendingSupplierPayments({
     </PanelList>  
   )  
 }  
+  
+function PurchaseOrders({
+  store,
+}) {
+  const [rows, setRows] = useState([])
+  const [selected, setSelected] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  const load = async () => {
+    if (!store?.id) return
+    setLoading(true)
+    setError('')
+    try {
+      const data = await pharmdeskDb
+        .from('purchase_orders')
+        .select('*')
+        .eq('store_id', store.id)
+        .order('created_at', { ascending: false })
+        .limit(100)
+      setRows(data || [])
+    } catch (err) {
+      setError(err?.message || 'Unable to load supplier orders.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    load()
+  }, [store?.id])
+
+  return (
+    <>
+      <PanelList title="Supplier Orders">
+        {error && <div className="error-box">{error}</div>}
+        {loading ? (
+          <LoadingInline />
+        ) : rows.length === 0 ? (
+          <EmptyState text="No supplier orders yet." />
+        ) : (
+          <div className="record-list">
+            {rows.map((row) => (
+              <button
+                type="button"
+                className="record-row"
+                key={row.id}
+                onClick={() => setSelected(row)}
+              >
+                <div>
+                  <strong>
+                    {row.order_number || row.id.slice(0, 8)}
+                  </strong>
+                  <span>
+                    {dateText(row.order_date || row.created_at)} • {row.status || 'draft'}
+                  </span>
+                </div>
+                <div className="record-right">
+                  <span>View →</span>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+      </PanelList>
+
+      {selected && (
+        <PurchaseOrderDetailModal
+          store={store}
+          order={selected}
+          onClose={() => setSelected(null)}
+        />
+      )}
+    </>
+  )
+}
+
+function PurchaseOrderDetailModal({ store, order, onClose }) {
+  const [details, setDetails] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let mounted = true
+
+    const load = async () => {
+      setLoading(true)
+      setError('')
+      try {
+        const result = await PharmDeskAPI.getPurchaseOrderDetail(
+          store.id,
+          order.id,
+        )
+        if (mounted) setDetails(result || null)
+      } catch (err) {
+        if (mounted) {
+          setError(err?.message || 'Unable to load supplier order details.')
+        }
+      } finally {
+        if (mounted) setLoading(false)
+      }
+    }
+
+    load()
+    return () => {
+      mounted = false
+    }
+  }, [store?.id, order?.id])
+
+  const exportPdf = () => {
+    if (!details) return
+
+    const supplier = details.supplier || {}
+    const items = details.items || []
+    const escapeHtml = (value) =>
+      String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/\"/g, '&quot;')
+        .replace(/'/g, '&#039;')
+
+    const rows = items.map((item, index) => `
+      <tr>
+        <td>${index + 1}</td>
+        <td>
+          <strong>${escapeHtml(item.product?.product_name || 'Product')}</strong>
+          <div class="muted">${escapeHtml(item.product?.generic_display_name || '')}</div>
+        </td>
+        <td>${escapeHtml(item.product?.dosage_form || '—')}</td>
+        <td>${escapeHtml(item.product?.strength_display || '—')}</td>
+        <td>${escapeHtml(item.product?.pack_quantity || '—')} ${escapeHtml(item.product?.pack_unit || '')}</td>
+        <td class="right">${escapeHtml(item.quantity || 0)}</td>
+      </tr>
+    `).join('')
+
+    const printWindow = window.open('', '_blank', 'width=900,height=900')
+    if (!printWindow) {
+      window.alert('Unable to open the PDF window. Please allow pop-ups for PharmDesk.')
+      return
+    }
+
+    printWindow.document.write(`
+      <!doctype html>
+      <html>
+        <head>
+          <title>${escapeHtml(details.order_number || 'Supplier Order')}</title>
+          <style>
+            * { box-sizing: border-box; }
+            body { margin: 0; padding: 28px; font-family: Arial, Helvetica, sans-serif; color: #111; font-size: 13px; }
+            h1 { margin: 0 0 6px; font-size: 22px; }
+            h2 { margin: 24px 0 10px; font-size: 15px; }
+            .muted { color: #666; font-size: 11px; margin-top: 3px; }
+            .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin: 20px 0; }
+            .box { border: 1px solid #ddd; padding: 12px; border-radius: 6px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+            th, td { border-bottom: 1px solid #ddd; padding: 8px 6px; text-align: left; vertical-align: top; }
+            th { background: #f5f5f5; }
+            .right { text-align: right; }
+            .footer { margin-top: 28px; color: #666; font-size: 11px; }
+            @media print { body { padding: 12mm; } }
+          </style>
+        </head>
+        <body>
+          <h1>Supplier Purchase Order</h1>
+          <div class="muted">Requested order — not a stock receipt or supplier invoice</div>
+
+          <div class="meta">
+            <div class="box">
+              <strong>Order</strong><br />
+              ${escapeHtml(details.order_number || '—')}<br />
+              Date: ${escapeHtml(dateText(details.order_date || details.created_at))}<br />
+              Status: ${escapeHtml(details.status || 'draft')}
+            </div>
+            <div class="box">
+              <strong>Supplier</strong><br />
+              ${escapeHtml(supplier.supplier_name || '—')}<br />
+              ${escapeHtml(supplier.phone || '')}<br />
+              ${escapeHtml(supplier.email || '')}<br />
+              GSTIN: ${escapeHtml(supplier.gstin || '—')}
+            </div>
+          </div>
+
+          <h2>Products Requested</h2>
+          <table>
+            <thead>
+              <tr><th>#</th><th>Product</th><th>Form</th><th>Strength</th><th>Pack</th><th class="right">Quantity</th></tr>
+            </thead>
+            <tbody>${rows || '<tr><td colspan="6">No products in this order.</td></tr>'}</tbody>
+          </table>
+
+          ${details.notes ? `<h2>Notes</h2><div class="box">${escapeHtml(details.notes)}</div>` : ''}
+          <div class="footer">Generated from PharmDesk. Quantities represent the requested supplier order; actual received quantities must be recorded separately.</div>
+        </body>
+      </html>
+    `)
+    printWindow.document.close()
+    printWindow.focus()
+    setTimeout(() => printWindow.print(), 250)
+  }
+
+  return (
+    <Modal
+      title={details?.order_number || 'Supplier Order'}
+      onClose={onClose}
+    >
+      {loading ? (
+        <LoadingInline />
+      ) : error ? (
+        <div className="error-box">{error}</div>
+      ) : !details ? (
+        <EmptyState text="Supplier order details are unavailable." />
+      ) : (
+        <>
+          <div className="history-header">
+            <div>
+              <strong>{details.supplier?.supplier_name || 'Supplier'}</strong>
+              <span>{dateText(details.order_date || details.created_at)}</span>
+              <span>Status: {details.status || 'draft'}</span>
+            </div>
+            <button
+              type="button"
+              className="primary-button"
+              onClick={exportPdf}
+            >
+              Export PDF
+            </button>
+          </div>
+
+          <div className="record-list">
+            {(details.items || []).map((item) => (
+              <div className="record-row static" key={item.id}>
+                <div>
+                  <strong>{item.product?.product_name || 'Product'}</strong>
+                  <span>
+                    {item.product?.generic_display_name || ''}
+                    {item.product?.dosage_form ? ` • ${item.product.dosage_form}` : ''}
+                    {item.product?.strength_display ? ` • ${item.product.strength_display}` : ''}
+                  </span>
+                  <span>
+                    Pack: {item.product?.pack_quantity || '—'} {item.product?.pack_unit || ''}
+                  </span>
+                </div>
+                <strong>Qty: {item.quantity || 0}</strong>
+              </div>
+            ))}
+          </div>
+
+          {details.notes && (
+            <div className="selected-record">
+              <strong>Notes</strong>
+              <span>{details.notes}</span>
+            </div>
+          )}
+        </>
+      )}
+    </Modal>
+  )
+}
 
 function SupplierPurchaseCatalogue({ store }) {
   const [suppliers, setSuppliers] = useState([])
   const [supplierId, setSupplierId] = useState('')
   const [rows, setRows] = useState([])
   const [quantities, setQuantities] = useState({})
+  const [notes, setNotes] = useState('')
+  const [query, setQuery] = useState('')
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
   const [message, setMessage] = useState('')
-  const [notes, setNotes] = useState('')
+  const [error, setError] = useState('')
 
   useEffect(() => {
     if (!store?.id) return
-
-    const loadSuppliers = async () => {
-      const { data, error: loadError } =
-        await supabase
-          .from('suppliers')
-          .select('id, supplier_name')
-          .eq('store_id', store.id)
-          .eq('is_active', true)
-          .order('supplier_name')
-
-      if (loadError) {
-        setError(loadError.message)
-        return
+    const load = async () => {
+      try {
+        const data = await PharmDeskAPI.suppliers(store.id)
+        setSuppliers(data || [])
+      } catch (err) {
+        setError(err?.message || 'Unable to load suppliers.')
       }
-
-      setSuppliers(data || [])
     }
-
-    loadSuppliers()
+    load()
   }, [store?.id])
 
   const loadCatalogue = async (nextSupplierId) => {
     setSupplierId(nextSupplierId)
     setRows([])
     setQuantities({})
-    setError('')
     setMessage('')
-
+    setError('')
     if (!nextSupplierId) return
 
     setLoading(true)
-
     try {
-      const result =
-        await PharmDeskAPI.getSupplierPurchaseCatalogue(
-          store.id,
-          nextSupplierId,
-        )
-
-      setRows(
-        Array.isArray(result)
-          ? result
-          : [],
+      const data = await PharmDeskAPI.getSupplierPurchaseCatalogue(
+        store.id,
+        nextSupplierId,
       )
-    } catch (loadError) {
-      console.error(
-        'Failed to load supplier purchase catalogue:',
-        loadError,
-      )
-
-      setError(
-        loadError?.message ||
-          'Unable to load purchase history for this supplier.',
-      )
+      setRows(Array.isArray(data) ? data : [])
+      if (!data?.length) {
+        setMessage('No products have been purchased from this supplier yet.')
+      }
+    } catch (err) {
+      setError(err?.message || 'Unable to load the supplier catalogue.')
     } finally {
       setLoading(false)
     }
   }
 
-  const updateQuantity = (
-    productId,
-    value,
-  ) => {
-    setQuantities((current) => ({
-      ...current,
-      [productId]: value,
+  const filtered = useMemo(() => {
+    const q = normalize(query)
+    if (!q) return rows
+    return rows.filter((row) =>
+      normalize([
+        row.product_name,
+        row.composition,
+        row.manufacturer,
+        row.dosage_form,
+        row.strength_display,
+        row.pack_unit,
+      ].filter(Boolean).join(' ')).includes(q),
+    )
+  }, [rows, query])
+
+  const selectedItems = filtered
+    .filter((row) => safeNumber(quantities[row.product_id]) > 0)
+    .map((row) => ({
+      product_id: row.product_id,
+      quantity: safeNumber(quantities[row.product_id]),
     }))
-  }
 
   const createOrder = async () => {
-    setError('')
-    setMessage('')
-
-    const items = rows
-      .map((row) => ({
-        product_id: row.product_id,
-        quantity: safeNumber(
-          quantities[row.product_id],
-        ),
-      }))
-      .filter(
-        (item) =>
-          item.quantity > 0,
-      )
-
     if (!supplierId) {
       setError('Select a supplier first.')
       return
     }
-
-    if (!items.length) {
-      setError(
-        'Enter a quantity for at least one product.',
-      )
+    if (!selectedItems.length) {
+      setError('Enter a quantity for at least one product.')
       return
     }
 
     setSaving(true)
-
+    setError('')
+    setMessage('')
     try {
-      const orderId =
-        await PharmDeskAPI.createPurchaseOrder({
-          storeId: store.id,
-          supplierId,
-          items,
-          notes: notes.trim() || null,
-        })
-
-      setMessage(
-        `Purchase order created successfully: ${orderId}`,
-      )
-
+      const orderId = await PharmDeskAPI.createPurchaseOrder({
+        storeId: store.id,
+        supplierId,
+        items: selectedItems,
+        notes: notes.trim() || null,
+      })
+      setMessage(`Supplier order created successfully: ${orderId}`)
       setQuantities({})
       setNotes('')
-    } catch (saveError) {
-      console.error(
-        'Failed to create purchase order:',
-        saveError,
-      )
-
-      setError(
-        saveError?.message ||
-          'Unable to create purchase order.',
-      )
+    } catch (err) {
+      setError(err?.message || 'Unable to create supplier order.')
     } finally {
       setSaving(false)
     }
@@ -6508,862 +6722,125 @@ function SupplierPurchaseCatalogue({ store }) {
   return (
     <div>
       <ModuleHeader
-        title="Supplier Catalogue & Orders"
-        subtitle="Choose a supplier, review products previously purchased from them, enter quantities manually and create an order."
+        title="Catalogue & Orders"
+        subtitle="Choose a supplier, review products previously purchased from them, enter quantities and create a supplier order."
       />
 
-      <PanelList title="Supplier">
+      <PanelList title="1. Select Supplier">
         <label>
-          Select supplier
+          Supplier
           <select
             value={supplierId}
-            onChange={(e) =>
-              loadCatalogue(
-                e.target.value,
-              )
-            }
+            onChange={(e) => loadCatalogue(e.target.value)}
           >
-            <option value="">
-              Select supplier
-            </option>
-
-            {suppliers.map(
-              (supplier) => (
-                <option
-                  key={supplier.id}
-                  value={supplier.id}
-                >
-                  {supplier.supplier_name}
-                </option>
-              ),
-            )}
+            <option value="">Select supplier</option>
+            {suppliers.map((supplier) => (
+              <option key={supplier.id} value={supplier.id}>
+                {supplier.supplier_name}
+              </option>
+            ))}
           </select>
         </label>
+        <p className="muted">
+          Products shown below come from this store's previous purchase history with the selected supplier.
+        </p>
       </PanelList>
 
-      {error && (
-        <div className="error-box">
-          {error}
-        </div>
-      )}
+      {error && <div className="error-box">{error}</div>}
+      {message && <div className="success-box">{message}</div>}
 
-      {message && (
-        <div className="success-box">
-          {message}
-        </div>
-      )}
+      {supplierId && (
+        <PanelList title="2. Supplier Product Catalogue">
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search product, composition, strength or pack"
+          />
 
-      {loading && (
-        <PanelList title="Supplier Products">
-          <div className="message-box">
-            Loading products previously
-            purchased from this supplier…
-          </div>
-        </PanelList>
-      )}
-
-      {!loading &&
-        supplierId &&
-        rows.length === 0 && (
-          <PanelList title="Supplier Products">
-            <EmptyState
-              text="No previous purchase history was found for this supplier."
-            />
-          </PanelList>
-        )}
-
-      {!loading &&
-        rows.length > 0 && (
-          <PanelList title="Products Previously Purchased From This Supplier">
+          {loading ? (
+            <LoadingInline />
+          ) : rows.length === 0 ? (
+            <EmptyState text="No products have been purchased from this supplier yet." />
+          ) : filtered.length === 0 ? (
+            <EmptyState text="No catalogue products match your search." />
+          ) : (
             <div className="record-list">
-              {rows.map((row) => (
-                <div
-                  className="record-row static"
-                  key={row.product_id}
-                >
+              {filtered.map((row) => (
+                <div className="record-row static" key={row.product_id}>
                   <div>
-                    <strong>
-                      {row.product_name}
-                    </strong>
-
+                    <strong>{row.product_name}</strong>
                     <span>
-                      {row.composition ||
-                        'Composition not recorded'}
+                      {row.composition || row.generic_display_name || 'Composition not recorded'}
                     </span>
-
                     <span>
-                      {[
-                        row.manufacturer,
-                        row.dosage_form,
-                        row.strength_display,
-                      ]
-                        .filter(Boolean)
-                        .join(' • ')}
+                      {row.manufacturer || 'Manufacturer not recorded'}
+                      {row.dosage_form ? ` • ${row.dosage_form}` : ''}
+                      {row.strength_display ? ` • ${row.strength_display}` : ''}
                     </span>
-
                     <span>
-                      Pack:{' '}
-                      {row.pack_quantity ||
-                        '—'}{' '}
-                      {row.pack_unit ||
-                        ''}
+                      Pack: {row.pack_quantity || '—'} {row.pack_unit || ''}
+                      {' • '}MRP {money(row.last_mrp)}
+                      {' • '}Last purchase {money(row.last_purchase_rate)}
+                      {' • '}GST {safeNumber(row.last_gst_rate)}%
                     </span>
-
                     <span>
-                      Last purchased:{' '}
-                      {dateText(
-                        row.last_purchase_date,
-                      )}
-                    </span>
-
-                    <span>
-                      Last purchase rate:{' '}
-                      {money(
-                        row.last_purchase_rate,
-                      )}
-                    </span>
-
-                    <span>
-                      Last MRP:{' '}
-                      {money(
-                        row.last_mrp,
-                      )}
-                    </span>
-
-                    <span>
-                      GST:{' '}
-                      {row.last_gst_rate ??
-                        '—'}
-                      %
-                    </span>
-
-                    <span>
-                      Purchased{' '}
-                      {row.times_purchased ||
-                        0}{' '}
-                      time(s)
+                      Last purchased: {dateText(row.last_purchase_date)} • {row.times_purchased || 0} purchase(s)
                     </span>
                   </div>
-
-                  <div
-                    style={{
-                      minWidth: 140,
-                    }}
-                  >
-                    <label>
-                      Order quantity
-                      <input
-                        type="number"
-                        min="0"
-                        step="1"
-                        value={
-                          quantities[
-                            row.product_id
-                          ] || ''
-                        }
-                        onChange={(e) =>
-                          updateQuantity(
-                            row.product_id,
-                            e.target.value,
-                          )
-                        }
-                        placeholder="0"
-                      />
-                    </label>
-                  </div>
+                  <label style={{ minWidth: 110 }}>
+                    Order quantity
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={quantities[row.product_id] ?? ''}
+                      onChange={(e) =>
+                        setQuantities((current) => ({
+                          ...current,
+                          [row.product_id]: e.target.value,
+                        }))
+                      }
+                      placeholder="0"
+                    />
+                  </label>
                 </div>
               ))}
             </div>
+          )}
+        </PanelList>
+      )}
 
-            <label>
-              Order notes
-              <textarea
-                value={notes}
-                onChange={(e) =>
-                  setNotes(
-                    e.target.value,
-                  )
-                }
-                rows={3}
-                placeholder="Optional notes for this supplier order"
-              />
-            </label>
+      {supplierId && rows.length > 0 && (
+        <PanelList title="3. Create Supplier Order">
+          <label>
+            Notes for supplier order
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Optional instructions or notes"
+            />
+          </label>
+          <div className="selected-record">
+            <strong>{selectedItems.length} product(s) selected</strong>
+            <span>Quantities are entered manually. Creating this order does not receive stock or change inventory.</span>
+          </div>
+          <button
+            type="button"
+            className="primary-button"
+            disabled={saving || !selectedItems.length}
+            onClick={createOrder}
+          >
+            {saving ? 'Creating order…' : 'Create Supplier Order'}
+          </button>
+        </PanelList>
+      )}
 
-            <div className="button-row">
-              <button
-                type="button"
-                className="primary-button"
-                onClick={createOrder}
-                disabled={saving}
-              >
-                {saving
-                  ? 'Creating order…'
-                  : 'Create Supplier Order'}
-              </button>
-            </div>
-          </PanelList>
-        )}
+      <PanelList title="4. Existing Supplier Orders">
+        <p className="muted">Open Supplier Orders above to view an order and export it as a PDF.</p>
+      </PanelList>
     </div>
   )
 }
-  
-function PurchaseOrders({
-  store,
-}) {
-  const [rows, setRows] =
-    useState([])
-
-  const [selectedOrder, setSelectedOrder] =
-    useState(null)
-
-  const [orderLoading, setOrderLoading] =
-    useState(false)
-
-  const [orderError, setOrderError] =
-    useState('')
-
-  useEffect(() => {
-    if (!store?.id) return
-
-    supabase
-      .from('purchase_orders')
-      .select('*')
-      .eq('store_id', store.id)
-      .order('created_at', {
-        ascending: false,
-      })
-      .limit(100)
-      .then(({ data, error }) => {
-        if (error) {
-          console.error(
-            'Failed to load purchase orders:',
-            error,
-          )
-          return
-        }
-
-        setRows(data || [])
-      })
-  }, [store?.id])
-
-  const openOrder = async (orderId) => {
-    try {
-      setOrderLoading(true)
-      setOrderError('')
-
-      const details =
-        await PharmDeskAPI.getPurchaseOrderDetail(
-          store.id,
-          orderId,
-        )
-
-      setSelectedOrder(details)
-    } catch (error) {
-      console.error(
-        'Failed to load purchase order:',
-        error,
-      )
-
-      setOrderError(
-        error?.message ||
-          'Unable to load purchase order.',
-      )
-    } finally {
-      setOrderLoading(false)
-    }
-  }
-
-  const exportOrderPdf = () => {
-    if (!selectedOrder) return
-
-    const order =
-      selectedOrder
-
-    const items =
-      order.items || []
-
-    const supplier =
-      order.supplier || {}
-
-    const itemRows = items
-      .map(
-        (item, index) => `
-          <tr>
-            <td>${index + 1}</td>
-            <td>
-              ${item.product?.product_name || 'Product'}
-              ${
-                item.product
-                  ?.generic_display_name
-                  ? `<div class="muted">
-                      ${item.product.generic_display_name}
-                    </div>`
-                  : ''
-              }
-            </td>
-            <td>
-              ${
-                item.product
-                  ?.dosage_form || '—'
-              }
-            </td>
-            <td>
-              ${
-                item.product
-                  ?.strength_display || '—'
-              }
-            </td>
-            <td>
-              ${
-                item.product
-                  ?.pack_quantity ??
-                '—'
-              }
-              ${
-                item.product
-                  ?.pack_unit || ''
-              }
-            </td>
-            <td class="right">
-              ${item.quantity || 0}
-            </td>
-          </tr>
-        `,
-      )
-      .join('')
-
-    const printWindow =
-      window.open(
-        '',
-        '_blank',
-        'width=900,height=900',
-      )
-
-    if (!printWindow) {
-      window.alert(
-        'Unable to open the PDF window. Please allow pop-ups for PharmDesk.',
-      )
-      return
-    }
-
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>
-            ${order.order_number || 'Purchase Order'}
-          </title>
-
-          <style>
-            * {
-              box-sizing: border-box;
-            }
-
-            body {
-              font-family:
-                Arial,
-                Helvetica,
-                sans-serif;
-              margin: 0;
-              padding: 32px;
-              color: #111827;
-            }
-
-            .header {
-              display: flex;
-              justify-content: space-between;
-              gap: 24px;
-              margin-bottom: 28px;
-              padding-bottom: 20px;
-              border-bottom: 2px solid #111827;
-            }
-
-            .store-name {
-              font-size: 24px;
-              font-weight: 700;
-              margin-bottom: 8px;
-            }
-
-            .muted {
-              color: #6b7280;
-              font-size: 12px;
-              margin-top: 3px;
-            }
-
-            .order-title {
-              text-align: right;
-            }
-
-            .order-title h1 {
-              margin: 0 0 8px;
-              font-size: 24px;
-            }
-
-            .order-meta {
-              font-size: 13px;
-              line-height: 1.6;
-            }
-
-            .section {
-              margin-bottom: 24px;
-            }
-
-            .section-title {
-              font-size: 13px;
-              font-weight: 700;
-              text-transform: uppercase;
-              margin-bottom: 8px;
-            }
-
-            .supplier-box {
-              border: 1px solid #d1d5db;
-              border-radius: 8px;
-              padding: 14px;
-              line-height: 1.6;
-            }
-
-            table {
-              width: 100%;
-              border-collapse: collapse;
-              margin-top: 12px;
-            }
-
-            th,
-            td {
-              border: 1px solid #d1d5db;
-              padding: 9px;
-              font-size: 12px;
-              text-align: left;
-              vertical-align: top;
-            }
-
-            th {
-              font-weight: 700;
-              background: #f3f4f6;
-            }
-
-            .right {
-              text-align: right;
-            }
-
-            .notes {
-              border: 1px solid #d1d5db;
-              border-radius: 8px;
-              padding: 14px;
-              white-space: pre-wrap;
-              font-size: 13px;
-            }
-
-            .footer {
-              margin-top: 40px;
-              padding-top: 16px;
-              border-top: 1px solid #d1d5db;
-              font-size: 11px;
-              color: #6b7280;
-              text-align: center;
-            }
-
-            @media print {
-              body {
-                padding: 18px;
-              }
-            }
-          </style>
-        </head>
-
-        <body>
-          <div class="header">
-            <div>
-              <div class="store-name">
-                ${
-                  store?.name ||
-                  'PharmDesk Store'
-                }
-              </div>
-
-              ${
-                store?.address
-                  ? `<div>${store.address}</div>`
-                  : ''
-              }
-
-              ${
-                store?.phone
-                  ? `<div>Phone: ${store.phone}</div>`
-                  : ''
-              }
-
-              ${
-                store?.email
-                  ? `<div>Email: ${store.email}</div>`
-                  : ''
-              }
-
-              ${
-                store?.gstin
-                  ? `<div>GSTIN: ${store.gstin}</div>`
-                  : ''
-              }
-
-              ${
-                store?.drug_license_number
-                  ? `<div>
-                      Drug License:
-                      ${store.drug_license_number}
-                    </div>`
-                  : ''
-              }
-            </div>
-
-            <div class="order-title">
-              <h1>PURCHASE ORDER</h1>
-
-              <div class="order-meta">
-                <div>
-                  <strong>Order No:</strong>
-                  ${
-                    order.order_number ||
-                    '—'
-                  }
-                </div>
-
-                <div>
-                  <strong>Date:</strong>
-                  ${
-                    order.order_date ||
-                    '—'
-                  }
-                </div>
-
-                <div>
-                  <strong>Status:</strong>
-                  ${
-                    order.status ||
-                    '—'
-                  }
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="section">
-            <div class="section-title">
-              Supplier
-            </div>
-
-            <div class="supplier-box">
-              <strong>
-                ${
-                  supplier.supplier_name ||
-                  'Supplier'
-                }
-              </strong>
-
-              ${
-                supplier.contact_person
-                  ? `<div>
-                      Contact:
-                      ${supplier.contact_person}
-                    </div>`
-                  : ''
-              }
-
-              ${
-                supplier.phone
-                  ? `<div>
-                      Phone:
-                      ${supplier.phone}
-                    </div>`
-                  : ''
-              }
-
-              ${
-                supplier.email
-                  ? `<div>
-                      Email:
-                      ${supplier.email}
-                    </div>`
-                  : ''
-              }
-
-              ${
-                supplier.address
-                  ? `<div>
-                      Address:
-                      ${supplier.address}
-                    </div>`
-                  : ''
-              }
-
-              ${
-                supplier.gstin
-                  ? `<div>
-                      GSTIN:
-                      ${supplier.gstin}
-                    </div>`
-                  : ''
-              }
-
-              ${
-                supplier.drug_license_number
-                  ? `<div>
-                      Drug License:
-                      ${supplier.drug_license_number}
-                    </div>`
-                  : ''
-              }
-            </div>
-          </div>
-
-          <div class="section">
-            <div class="section-title">
-              Ordered Products
-            </div>
-
-            <table>
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th>Product</th>
-                  <th>Dosage Form</th>
-                  <th>Strength</th>
-                  <th>Pack</th>
-                  <th class="right">
-                    Quantity
-                  </th>
-                </tr>
-              </thead>
-
-              <tbody>
-                ${itemRows}
-              </tbody>
-            </table>
-          </div>
-
-          ${
-            order.notes
-              ? `
-                <div class="section">
-                  <div class="section-title">
-                    Notes
-                  </div>
-
-                  <div class="notes">
-                    ${order.notes}
-                  </div>
-                </div>
-              `
-              : ''
-          }
-
-          <div class="footer">
-            This purchase order represents the
-            quantity requested from the supplier.
-            Actual received quantities are recorded
-            separately during purchase/stock intake.
-          </div>
-        </body>
-      </html>
-    `)
-
-    printWindow.document.close()
-    printWindow.focus()
-
-    setTimeout(() => {
-      printWindow.print()
-    }, 250)
-  }
-
-  return (
-    <>
-      <PanelList title="Purchase Orders">
-        {rows.length === 0 ? (
-          <EmptyState text="No purchase orders yet." />
-        ) : (
-          <div className="record-list">
-            {rows.map((row) => (
-              <button
-                type="button"
-                className="record-row"
-                key={row.id}
-                onClick={() =>
-                  openOrder(row.id)
-                }
-              >
-                <div>
-                  <strong>
-                    {row.order_number ||
-                      row.id.slice(0, 8)}
-                  </strong>
-
-                  <span>
-                    {row.status}
-                  </span>
-                </div>
-
-                <strong>
-                  {money(
-                    row.total_amount,
-                  )}
-                </strong>
-              </button>
-            ))}
-          </div>
-        )}
-      </PanelList>
-
-      {selectedOrder && (
-        <Modal
-          title={
-            selectedOrder.order_number ||
-            'Purchase Order'
-          }
-          onClose={() =>
-            setSelectedOrder(null)
-          }
-        >
-          <div className="button-row">
-            <button
-              type="button"
-              className="primary-button"
-              onClick={
-                exportOrderPdf
-              }
-            >
-              Export PDF
-            </button>
-
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={() =>
-                setSelectedOrder(null)
-              }
-            >
-              Close
-            </button>
-          </div>
-
-          <div className="detail-stack">
-            <div>
-              <strong>
-                Supplier
-              </strong>
-
-              <div>
-                {
-                  selectedOrder
-                    .supplier
-                    ?.supplier_name ||
-                  '—'
-                }
-              </div>
-            </div>
-
-            <div>
-              <strong>
-                Order Date
-              </strong>
-
-              <div>
-                {
-                  selectedOrder.order_date ||
-                  '—'
-                }
-              </div>
-            </div>
-
-            <div>
-              <strong>
-                Status
-              </strong>
-
-              <div>
-                {
-                  selectedOrder.status ||
-                  '—'
-                }
-              </div>
-            </div>
-
-            <div>
-              <strong>
-                Products
-              </strong>
-
-              <div className="record-list">
-                {(
-                  selectedOrder.items ||
-                  []
-                ).map((item) => (
-                  <div
-                    className="record-row static"
-                    key={item.id}
-                  >
-                    <div>
-                      <strong>
-                        {
-                          item.product
-                            ?.product_name ||
-                          'Product'
-                        }
-                      </strong>
-
-                      <span>
-                        {
-                          item.product
-                            ?.generic_display_name ||
-                          ''
-                        }
-                      </span>
-                    </div>
-
-                    <strong>
-                      Qty:{' '}
-                      {item.quantity ||
-                        0}
-                    </strong>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {selectedOrder.notes && (
-              <div>
-                <strong>
-                  Notes
-                </strong>
-
-                <div>
-                  {selectedOrder.notes}
-                </div>
-              </div>
-            )}
-          </div>
-        </Modal>
-      )}
-
-      {orderLoading && (
-        <Modal
-          title="Loading Purchase Order"
-          onClose={() => {}}
-        >
-          <p>
-            Loading purchase order
-            details...
-          </p>
-        </Modal>
-      )}
-
-      {orderError && (
-        <div className="error-message">
-          {orderError}
-        </div>
-      )}
-    </>
-  )
-}
-  
 
 
 function InventoryModule({  
