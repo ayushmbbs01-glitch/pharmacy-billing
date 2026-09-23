@@ -231,10 +231,21 @@ export function PharmDeskApp() {
       result?.data?.session ??
       null
 
-    if (mounted) {
-      setSession(currentSession)
-      setLoading(false)
-    }
+    if (currentSession) {
+  try {
+    await PharmDeskAPI.claimApprovedStoreAccess()
+  } catch (claimError) {
+    console.error(
+      'Failed to claim approved store access:',
+      claimError,
+    )
+  }
+}
+
+if (mounted) {
+  setSession(currentSession)
+  setLoading(false)
+}
   } catch (error) {
     console.error('PharmDesk session initialization failed:', error)
 
