@@ -1300,6 +1300,13 @@ async dashboardSnapshot(storeId, startDate, expiryDays = 90) {
       p_notes: notes,
     })
   },
+  
+  getPurchaseOrderDetail(storeId, orderId) {
+  return call('pharmdesk_purchase_order_detail', {
+    p_store_id: storeId,
+    p_order_id: orderId,
+  })
+},
 
   addCatalogueAlias(storeId, catalogueProductId, productId) {
     return call('pharmdesk_record_catalogue_product_alias', {
