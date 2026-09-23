@@ -199,6 +199,22 @@ export const PharmDeskAPI = {
     return data
   },
 
+async signUp(email, password, ownerName = '') {
+  const { data, error } =
+    await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          owner_name: ownerName,
+        },
+      },
+    })
+
+  if (error) throw error
+  return data
+},
+
   async signOut() {
     const { error } = await supabase.auth.signOut()
     if (error) throw error
