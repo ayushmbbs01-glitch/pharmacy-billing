@@ -17,6 +17,12 @@ const call = async (name, args = {}) => {
 const select = async (table, query = {}) => {
   let q = supabase.from(table).select(query.select || '*')
   for (const [key, value] of Object.entries(query.eq || {})) q = q.eq(key, value)
+  for (const [key, value] of Object.entries(query.neq || {})) q = q.neq(key, value)
+  for (const [key, value] of Object.entries(query.gt || {})) q = q.gt(key, value)
+  for (const [key, value] of Object.entries(query.gte || {})) q = q.gte(key, value)
+  for (const [key, value] of Object.entries(query.lt || {})) q = q.lt(key, value)
+  for (const [key, value] of Object.entries(query.lte || {})) q = q.lte(key, value)
+  for (const [key, value] of Object.entries(query.in || {})) q = q.in(key, value)
   if (query.order) {
     for (const item of query.order) q = q.order(item.column, { ascending: item.ascending !== false })
   }
@@ -24,15 +30,6 @@ const select = async (table, query = {}) => {
   if (query.single) q = q.single()
   else if (query.maybeSingle) q = q.maybeSingle()
   const { data, error } = await q
-  if (error) throw error
-  return data
-}
-
-const invoke = async (name, body, options = {}) => {
-  const { data, error } = await supabase.functions.invoke(name, {
-    body,
-    ...options,
-  })
   if (error) throw error
   return data
 }
@@ -54,86 +51,70 @@ const pharmdeskDb = {
         operation = 'select'
         return builder
       },
-
       eq(column, value) {
         filters.push(['eq', column, value])
         return builder
       },
-
       neq(column, value) {
         filters.push(['neq', column, value])
         return builder
       },
-
       gt(column, value) {
         filters.push(['gt', column, value])
         return builder
       },
-
       gte(column, value) {
         filters.push(['gte', column, value])
         return builder
       },
-
       lt(column, value) {
         filters.push(['lt', column, value])
         return builder
       },
-
       lte(column, value) {
         filters.push(['lte', column, value])
         return builder
       },
-
       in(column, values) {
         filters.push(['in', column, values])
         return builder
       },
-
       order(column, options = {}) {
         orderBy.push([column, options])
         return builder
       },
-
       limit(value) {
         limitValue = value
         return builder
       },
-
       single() {
         singleMode = 'single'
         return builder
       },
-
       maybeSingle() {
         singleMode = 'maybeSingle'
         return builder
       },
-
       insert(values) {
         operation = 'insert'
         payload = values
         return builder
       },
-
       upsert(values, options = {}) {
         operation = 'upsert'
         payload = values
         upsertOptions = options
         return builder
       },
-
       update(values) {
         operation = 'update'
         payload = values
         return builder
       },
-
       delete() {
         operation = 'delete'
         return builder
       },
-
       then(resolve, reject) {
         return execute().then(resolve, reject)
       },
@@ -143,17 +124,11 @@ const pharmdeskDb = {
       try {
         let q = supabase.from(table)
 
-        if (operation === 'select') {
-          q = q.select(selectClause)
-        } else if (operation === 'insert') {
-          q = q.insert(payload).select(selectClause)
-        } else if (operation === 'upsert') {
-          q = q.upsert(payload, upsertOptions).select(selectClause)
-        } else if (operation === 'update') {
-          q = q.update(payload).select(selectClause)
-        } else {
-          q = q.delete()
-        }
+        if (operation === 'select') q = q.select(selectClause)
+        else if (operation === 'insert') q = q.insert(payload).select(selectClause)
+        else if (operation === 'upsert') q = q.upsert(payload, upsertOptions).select(selectClause)
+        else if (operation === 'update') q = q.update(payload).select(selectClause)
+        else q = q.delete()
 
         for (const [kind, column, value] of filters) {
           q = q[kind](column, value)
@@ -163,29 +138,30 @@ const pharmdeskDb = {
           q = q.order(column, options)
         }
 
-        if (limitValue != null) {
-          q = q.limit(limitValue)
-        }
+        if (limitValue != null) q = q.limit(limitValue)
 
-        if (singleMode === 'single') {
-          q = q.single()
-        }
-
-        if (singleMode === 'maybeSingle') {
-          q = q.maybeSingle()
-        }
+        if (singleMode === 'single') q = q.single()
+        if (singleMode === 'maybeSingle') q = q.maybeSingle()
 
         return await q
       } catch (error) {
-        return {
-          data: null,
-          error,
-        }
+        return { data: null, error }
       }
     }
 
     return builder
   },
+}
+
+const invoke = async (name, body, options = {}) => {
+  const { data, error } = await supabase.functions.invoke(name, {
+    body,
+    ...options,
+  })
+
+  if (error) throw error
+
+  return data
 }
 
 export const PharmDeskAPI = {
@@ -194,29 +170,19 @@ export const PharmDeskAPI = {
   // ---------------------------------------------------------------------------
 
   async signIn(email, password) {
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    })
+
     if (error) throw error
+
     return data
   },
 
-async signUp(email, password, ownerName = '') {
-  const { data, error } =
-    await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          owner_name: ownerName,
-        },
-      },
-    })
-
-  if (error) throw error
-  return data
-},
-
   async signOut() {
     const { error } = await supabase.auth.signOut()
+
     if (error) throw error
   },
 
@@ -225,227 +191,78 @@ async signUp(email, password, ownerName = '') {
   },
 
   async getSession() {
-  const { data, error } = await supabase.auth.getSession()
-  if (error) throw error
-  return data
-},
+    const { data, error } = await supabase.auth.getSession()
+
+    if (error) throw error
+
+    return data
+  },
 
   async getUser() {
     const { data, error } = await supabase.auth.getUser()
+
     if (error) throw error
+
     return data.user
   },
 
   userCanAccessStore(storeId) {
-  return call('pharmdesk_user_can_access_store', {
-    p_store_id: storeId,
-  })
-},
-
-async createStoreAccessRequest(storeId, email, role = 'salesperson') {
-  return call('create_store_access_request', {
-    p_store_id: storeId,
-    p_email: email,
-    p_role: role,
-  })
-},
-
-async getStoreAccessRequests(storeId) {
-  return select('store_access_requests', {
-    select: '*',
-    eq: {
-      store_id: storeId,
-    },
-    order: [
-      {
-        column: 'created_at',
-        ascending: false,
-      },
-    ],
-  })
-},
-
-async approveStoreAccessRequest(requestId) {
-  return call('approve_store_access_request', {
-    p_request_id: requestId,
-  })
-},
-
-async rejectStoreAccessRequest(requestId) {
-  return call('reject_store_access_request', {
-    p_request_id: requestId,
-  })
-},
-
-async claimApprovedStoreAccess() {
-  return call('claim_approved_store_access', {})
-},
-
-async isPlatformAdmin() {
-  try {
-    return await call('pharmdesk_is_platform_admin', {})
-  } catch (error) {
-    console.error('Failed to check platform admin status:', error)
-    return false
-  }
-},
-
-async adminListStores() {
-  return call('pharmdesk_admin_list_stores', {})
-},
-
-async adminCreateStore({
-  name,
-  ownerEmail,
-  address = null,
-  phone = null,
-  email = null,
-  gstin = null,
-  drugLicenseNumber = null,
-}) {
-  return call('pharmdesk_admin_create_store', {
-    p_name: name,
-    p_owner_email: ownerEmail,
-    p_address: address,
-    p_phone: phone,
-    p_email: email,
-    p_gstin: gstin,
-    p_drug_license_number: drugLicenseNumber,
-  })
-},
-
-async adminActivateStore(storeId, startDate = null) {
-  return call('pharmdesk_admin_activate_store', {
-    p_store_id: storeId,
-    p_start_date: startDate || new Date().toISOString().slice(0, 10),
-  })
-},
-
-async adminSuspendStore(storeId) {
-  return call('pharmdesk_admin_suspend_store', {
-    p_store_id: storeId,
-  })
-},
-
-async adminReactivateStore(storeId, startDate = null) {
-  return call('pharmdesk_admin_reactivate_store', {
-    p_store_id: storeId,
-    p_start_date: startDate || new Date().toISOString().slice(0, 10),
-  })
-},
-
-async submitStoreApplication({
-  ownerName,
-  storeName,
-  address = null,
-  phone = null,
-  storeEmail = null,
-  gstin = null,
-  drugLicenseNumber = null,
-}) {
-  return call(
-    'pharmdesk_submit_store_application',
-    {
-      p_owner_name: ownerName,
-      p_store_name: storeName,
-      p_address: address,
-      p_phone: phone,
-      p_store_email: storeEmail,
-      p_gstin: gstin,
-      p_drug_license_number:
-        drugLicenseNumber,
-    },
-  )
-},
-
-async getMyStoreApplication(userId) {
-  return select('store_applications', {
-    select: '*',
-    eq: {
-      owner_user_id: userId,
-    },
-    order: [
-      {
-        column: 'created_at',
-        ascending: false,
-      },
-    ],
-  })
-},
-
-async adminListStoreApplications() {
-  return call(
-    'pharmdesk_admin_list_store_applications',
-    {},
-  )
-},
-
-async adminApproveStoreApplication(
-  applicationId,
-  startDate = null,
-) {
-  return call(
-    'pharmdesk_admin_approve_store_application',
-    {
-      p_application_id: applicationId,
-      p_start_date:
-        startDate ||
-        new Date()
-          .toISOString()
-          .slice(0, 10),
-    },
-  )
-},
-
-async adminRejectStoreApplication(
-  applicationId,
-  rejectionReason = null,
-) {
-  return call(
-    'pharmdesk_admin_reject_store_application',
-    {
-      p_application_id: applicationId,
-      p_rejection_reason:
-        rejectionReason,
-    },
-  )
-},
+    return call('pharmdesk_user_can_access_store', {
+      p_store_id: storeId,
+    })
+  },
 
   getStores() {
     return select('stores', {
       select: '*',
-      eq: { is_active: true },
-      order: [{ column: 'name' }],
+      eq: {
+        is_active: true,
+      },
+      order: [
+        {
+          column: 'name',
+        },
+      ],
     })
   },
 
-async getStoresForUser(userId) {
-  const { data, error } = await supabase
-    .from('store_memberships')
-    .select('store_id, stores(*)')
-    .eq('user_id', userId)
-    .eq('is_active', true)
+  async getStoresForUser(userId) {
+    const rows = await select('store_memberships', {
+      select: 'store_id, stores(*)',
+      eq: {
+        user_id: userId,
+        is_active: true,
+      },
+      order: [
+        {
+          column: 'created_at',
+        },
+      ],
+    })
 
-  if (error) throw error
+    return (rows || [])
+      .map((row) => row.stores)
+      .filter(Boolean)
+      .filter((store) => store.is_active !== false)
+  },
 
-  return (data || [])
-    .map((row) => row.stores)
-    .filter(Boolean)
-    .filter((store) => store.is_active !== false)
-},
-
-async getUserProfile(userId) {
-  return select('user_profiles', {
-    select: '*',
-    eq: { id: userId },
-    maybeSingle: true,
-  })
-},
+  async getUserProfile(userId) {
+    return select('user_profiles', {
+      select: '*',
+      eq: {
+        id: userId,
+      },
+      maybeSingle: true,
+    })
+  },
 
   getStoreMembers(storeId) {
     return select('store_memberships', {
       select: '*, user_profiles(id,full_name,phone,is_active)',
-      eq: { store_id: storeId, is_active: true },
+      eq: {
+        store_id: storeId,
+        is_active: true,
+      },
     })
   },
 
@@ -460,69 +277,66 @@ async getUserProfile(userId) {
     })
   },
 
-async dashboardSnapshot(storeId, startDate, expiryDays = 90) {
-  const start = startDate || new Date().toISOString().slice(0, 10)
+  async dashboardSnapshot(storeId, date, expiryDays = 90) {
+    const start = date || new Date().toISOString().slice(0, 10)
 
-  const startDateObj = new Date(`${start}T00:00:00`)
-  const endDateObj = new Date(startDateObj)
-  endDateObj.setDate(
-    endDateObj.getDate() + Number(expiryDays || 90),
-  )
+    const expiryLimit = new Date(`${start}T00:00:00`)
 
-  const end = endDateObj.toISOString().slice(0, 10)
+    expiryLimit.setDate(
+      expiryLimit.getDate() + Number(expiryDays || 90),
+    )
 
-  const [
-    salesResult,
-    purchasesResult,
-    batchesResult,
-    expiryResult,
-  ] = await Promise.all([
-    supabase
-      .from('sales')
-      .select('*')
-      .eq('store_id', storeId)
-      .gte('bill_datetime', `${start}T00:00:00`)
-      .lt('bill_datetime', `${start}T23:59:59.999`),
+    const expiryDate = expiryLimit.toISOString().slice(0, 10)
 
-    supabase
-      .from('purchase_invoices')
-      .select('*')
-      .eq('store_id', storeId)
-      .eq('invoice_date', start),
+    const [sales, purchases, batches, expiry] = await Promise.all([
+      select('sales', {
+        select: 'grand_total',
+        eq: {
+          store_id: storeId,
+          status: 'completed',
+        },
+      }),
 
-    supabase
-      .from('batches')
-      .select('*')
-      .eq('store_id', storeId)
-      .eq('is_active', true)
-      .gt('current_stock_units', 0),
+      select('purchase_invoices', {
+        select: 'total_amount',
+        eq: {
+          store_id: storeId,
+          invoice_date: start,
+        },
+      }),
 
-    supabase
-      .from('batches')
-      .select('*')
-      .eq('store_id', storeId)
-      .eq('is_active', true)
-      .gt('current_stock_units', 0)
-      .gte('expiry_date', start)
-      .lte('expiry_date', end),
-  ])
+      select('batches', {
+        select: 'id',
+        eq: {
+          store_id: storeId,
+        },
+        gt: {
+          current_stock_units: 0,
+        },
+      }),
 
-  for (const result of [
-    salesResult,
-    purchasesResult,
-    batchesResult,
-    expiryResult,
-  ]) {
-    if (result.error) throw result.error
-  }
+      select('batches', {
+        select: 'id',
+        eq: {
+          store_id: storeId,
+        },
+        gt: {
+          current_stock_units: 0,
+        },
+        lte: {
+          expiry_date: expiryDate,
+        },
+      }),
+    ])
 
-  return {
-    sales: salesResult.data || [],
-    purchases: purchasesResult.data || [],
-    batches: batchesResult.data || [],
-    expiry: expiryResult.data || [],
-  }
-},
+    return {
+      sales,
+      purchases,
+      batches: (batches || []).filter(Boolean),
+      expiry: (expiry || []).filter(Boolean),
+      expiryDate,
+    }
+  },
 
   refreshAlerts(storeId) {
     return call('pharmdesk_refresh_stock_alerts', {
@@ -560,12 +374,23 @@ async dashboardSnapshot(storeId, startDate, expiryDays = 90) {
   categories() {
     return select('product_categories', {
       select: '*',
-      eq: { is_active: true },
-      order: [{ column: 'name' }],
+      eq: {
+        is_active: true,
+      },
+      order: [
+        {
+          column: 'name',
+        },
+      ],
     })
   },
 
-  saveCategory(categoryId, name, description, isActive = true) {
+  saveCategory(
+    categoryId,
+    name,
+    description,
+    isActive = true,
+  ) {
     return call('pharmdesk_save_category', {
       p_category_id: categoryId || null,
       p_name: name,
@@ -654,7 +479,11 @@ async dashboardSnapshot(storeId, startDate, expiryDays = 90) {
     })
   },
 
-  productBatches(storeId, productId, includeExpired = false) {
+  productBatches(
+    storeId,
+    productId,
+    includeExpired = false,
+  ) {
     return call('pharmdesk_product_batches', {
       p_store_id: storeId,
       p_product_id: productId,
@@ -662,7 +491,11 @@ async dashboardSnapshot(storeId, startDate, expiryDays = 90) {
     })
   },
 
-  alternativeBrands(storeId, productId, limit = 30) {
+  alternativeBrands(
+    storeId,
+    productId,
+    limit = 30,
+  ) {
     return call('pharmdesk_alternative_brands', {
       p_store_id: storeId,
       p_product_id: productId,
@@ -670,7 +503,12 @@ async dashboardSnapshot(storeId, startDate, expiryDays = 90) {
     })
   },
 
-  savePackagingConfig(productId, configId, configName, levels) {
+  savePackagingConfig(
+    productId,
+    configId,
+    configName,
+    levels,
+  ) {
     return call('pharmdesk_save_packaging_config', {
       p_product_id: productId,
       p_config_id: configId || null,
@@ -688,8 +526,16 @@ async dashboardSnapshot(storeId, startDate, expiryDays = 90) {
   packagingConfigs(productId) {
     return select('product_packaging_configs', {
       select: '*, product_packaging_levels(*)',
-      eq: { product_id: productId, is_active: true },
-      order: [{ column: 'created_at', ascending: true }],
+      eq: {
+        product_id: productId,
+        is_active: true,
+      },
+      order: [
+        {
+          column: 'created_at',
+          ascending: true,
+        },
+      ],
     })
   },
 
@@ -707,7 +553,10 @@ async dashboardSnapshot(storeId, startDate, expiryDays = 90) {
 
     if (search.trim()) {
       const s = search.trim()
-      query = query.or(`name.ilike.%${s}%,phone.ilike.%${s}%`)
+
+      query = query.or(
+        `name.ilike.%${s}%,phone.ilike.%${s}%`,
+      )
     }
 
     return query.then(({ data, error }) => {
@@ -751,7 +600,12 @@ async dashboardSnapshot(storeId, startDate, expiryDays = 90) {
     })
   },
 
-  recordCustomerCreditPayment(storeId, customerId, amount, notes = null) {
+  recordCustomerCreditPayment(
+    storeId,
+    customerId,
+    amount,
+    notes = null,
+  ) {
     return call('pharmdesk_record_customer_credit_payment', {
       p_store_id: storeId,
       p_customer_id: customerId,
@@ -762,9 +616,18 @@ async dashboardSnapshot(storeId, startDate, expiryDays = 90) {
 
   customerSales(storeId, customerId) {
     return select('sales', {
-      select: '*, sale_items(*, products(product_name,generic_display_name)), sale_payments(*)',
-      eq: { store_id: storeId, customer_id: customerId },
-      order: [{ column: 'bill_datetime', ascending: false }],
+      select:
+        '*, sale_items(*, products(product_name,generic_display_name)), sale_payments(*)',
+      eq: {
+        store_id: storeId,
+        customer_id: customerId,
+      },
+      order: [
+        {
+          column: 'bill_datetime',
+          ascending: false,
+        },
+      ],
     })
   },
 
@@ -782,7 +645,10 @@ async dashboardSnapshot(storeId, startDate, expiryDays = 90) {
 
     if (search.trim()) {
       const s = search.trim()
-      query = query.or(`supplier_name.ilike.%${s}%,phone.ilike.%${s}%,gstin.ilike.%${s}%`)
+
+      query = query.or(
+        `supplier_name.ilike.%${s}%,phone.ilike.%${s}%,gstin.ilike.%${s}%`,
+      )
     }
 
     return query.then(({ data, error }) => {
@@ -815,7 +681,11 @@ async dashboardSnapshot(storeId, startDate, expiryDays = 90) {
     })
   },
 
-  supplierProductReport(storeId, supplierId, months = 3) {
+  supplierProductReport(
+    storeId,
+    supplierId,
+    months = 3,
+  ) {
     return call('pharmdesk_supplier_product_report', {
       p_store_id: storeId,
       p_supplier_id: supplierId,
@@ -823,7 +693,11 @@ async dashboardSnapshot(storeId, startDate, expiryDays = 90) {
     })
   },
 
-  supplierOrderCandidates(storeId, supplierId, months = 3) {
+  supplierOrderCandidates(
+    storeId,
+    supplierId,
+    months = 3,
+  ) {
     return call('pharmdesk_supplier_order_candidates', {
       p_store_id: storeId,
       p_supplier_id: supplierId,
@@ -831,16 +705,25 @@ async dashboardSnapshot(storeId, startDate, expiryDays = 90) {
     })
   },
 
-  supplierOrderProducts(storeId, supplierId, view, months = 3) {
+  supplierOrderProducts(
+    storeId,
+    supplierId,
+    view,
+    months = 3,
+  ) {
     return call('pharmdesk_supplier_order_products', {
       p_store_id: storeId,
       p_supplier_id: supplierId,
-      p_view: view, // purchased | catalog
+      p_view: view,
       p_months: months,
     })
   },
 
-  supplierOrderCatalogue(storeId, supplierId, months = 3) {
+  supplierOrderCatalogue(
+    storeId,
+    supplierId,
+    months = 3,
+  ) {
     return call('pharmdesk_get_supplier_order_catalogue', {
       p_store_id: storeId,
       p_supplier_id: supplierId,
@@ -866,14 +749,56 @@ async dashboardSnapshot(storeId, startDate, expiryDays = 90) {
     })
   },
 
-  supplierOrderDetail(storeId, orderId) {
+  supplierOrderDetail(
+    storeId,
+    orderId,
+  ) {
     return call('pharmdesk_supplier_order_detail', {
       p_store_id: storeId,
       p_order_id: orderId,
     })
   },
 
-  updateSupplierOrderStatus(storeId, orderId, status, notes = null) {
+  getSupplierPurchaseCatalogue(
+    storeId,
+    supplierId,
+  ) {
+    return call('pharmdesk_get_supplier_purchase_catalogue', {
+      p_store_id: storeId,
+      p_supplier_id: supplierId,
+    })
+  },
+
+  createPurchaseOrder({
+    storeId,
+    supplierId,
+    items,
+    notes = null,
+  }) {
+    return call('pharmdesk_create_purchase_order', {
+      p_store_id: storeId,
+      p_supplier_id: supplierId,
+      p_items: items,
+      p_notes: notes,
+    })
+  },
+
+  getPurchaseOrderDetail(
+    storeId,
+    orderId,
+  ) {
+    return call('pharmdesk_purchase_order_detail', {
+      p_store_id: storeId,
+      p_order_id: orderId,
+    })
+  },
+
+  updateSupplierOrderStatus(
+    storeId,
+    orderId,
+    status,
+    notes = null,
+  ) {
     return call('pharmdesk_update_supplier_order_status', {
       p_store_id: storeId,
       p_order_id: orderId,
@@ -882,7 +807,12 @@ async dashboardSnapshot(storeId, startDate, expiryDays = 90) {
     })
   },
 
-  supplierPaymentHistory(storeId, supplierId, monthStart, monthEnd) {
+  supplierPaymentHistory(
+    storeId,
+    supplierId,
+    monthStart,
+    monthEnd,
+  ) {
     return call('pharmdesk_supplier_payment_history', {
       p_store_id: storeId,
       p_supplier_id: supplierId,
@@ -981,24 +911,46 @@ async dashboardSnapshot(storeId, startDate, expiryDays = 90) {
     })
   },
 
-  purchaseInvoiceDetail(storeId, invoiceId) {
+  purchaseInvoiceDetail(
+    storeId,
+    invoiceId,
+  ) {
     return call('pharmdesk_purchase_invoice_detail', {
       p_store_id: storeId,
       p_invoice_id: invoiceId,
     })
   },
 
-  purchaseInvoices(storeId, startDate = null, endDate = null, supplierId = null) {
+  purchaseInvoices(
+    storeId,
+    startDate = null,
+    endDate = null,
+    supplierId = null,
+  ) {
     let query = supabase
       .from('purchase_invoices')
-      .select('*, suppliers(supplier_name,phone,gstin,drug_license_number)')
+      .select(
+        '*, suppliers(supplier_name,phone,gstin,drug_license_number)',
+      )
       .eq('store_id', storeId)
-      .order('invoice_date', { ascending: true })
-      .order('invoice_number', { ascending: true })
+      .order('invoice_date', {
+        ascending: true,
+      })
+      .order('invoice_number', {
+        ascending: true,
+      })
 
-    if (startDate) query = query.gte('invoice_date', startDate)
-    if (endDate) query = query.lte('invoice_date', endDate)
-    if (supplierId) query = query.eq('supplier_id', supplierId)
+    if (startDate) {
+      query = query.gte('invoice_date', startDate)
+    }
+
+    if (endDate) {
+      query = query.lte('invoice_date', endDate)
+    }
+
+    if (supplierId) {
+      query = query.eq('supplier_id', supplierId)
+    }
 
     return query.then(({ data, error }) => {
       if (error) throw error
@@ -1006,7 +958,12 @@ async dashboardSnapshot(storeId, startDate, expiryDays = 90) {
     })
   },
 
-  monthlyPurchaseSummary(storeId, monthStart, monthEnd, supplierId = null) {
+  monthlyPurchaseSummary(
+    storeId,
+    monthStart,
+    monthEnd,
+    supplierId = null,
+  ) {
     return call('pharmdesk_monthly_purchase_summary', {
       p_store_id: storeId,
       p_month_start: monthStart,
@@ -1015,14 +972,22 @@ async dashboardSnapshot(storeId, startDate, expiryDays = 90) {
     })
   },
 
-  selectedPurchaseSummary(storeId, invoiceIds) {
+  selectedPurchaseSummary(
+    storeId,
+    invoiceIds,
+  ) {
     return call('pharmdesk_selected_purchase_summary', {
       p_store_id: storeId,
       p_purchase_invoice_ids: invoiceIds,
     })
   },
 
-  monthlyPurchaseGstSummary(storeId, monthStart, monthEnd, supplierId = null) {
+  monthlyPurchaseGstSummary(
+    storeId,
+    monthStart,
+    monthEnd,
+    supplierId = null,
+  ) {
     return call('pharmdesk_monthly_purchase_gst_summary', {
       p_store_id: storeId,
       p_month_start: monthStart,
@@ -1077,15 +1042,34 @@ async dashboardSnapshot(storeId, startDate, expiryDays = 90) {
     })
   },
 
-  sales(storeId, startDate = null, endDate = null) {
+  sales(
+    storeId,
+    startDate = null,
+    endDate = null,
+  ) {
     let query = supabase
       .from('sales')
-      .select('*, customers(name,phone), sale_items(*,products(product_name,generic_display_name),batches(batch_number,expiry_date)), sale_payments(*)')
+      .select(
+        '*, customers(name,phone), sale_items(*,products(product_name,generic_display_name),batches(batch_number,expiry_date)), sale_payments(*)',
+      )
       .eq('store_id', storeId)
-      .order('bill_datetime', { ascending: false })
+      .order('bill_datetime', {
+        ascending: false,
+      })
 
-    if (startDate) query = query.gte('bill_datetime', `${startDate}T00:00:00`)
-    if (endDate) query = query.lt('bill_datetime', `${endDate}T23:59:59.999`)
+    if (startDate) {
+      query = query.gte(
+        'bill_datetime',
+        `${startDate}T00:00:00`,
+      )
+    }
+
+    if (endDate) {
+      query = query.lt(
+        'bill_datetime',
+        `${endDate}T23:59:59.999`,
+      )
+    }
 
     return query.then(({ data, error }) => {
       if (error) throw error
@@ -1115,7 +1099,12 @@ async dashboardSnapshot(storeId, startDate, expiryDays = 90) {
   // Drafts
   // ---------------------------------------------------------------------------
 
-  saveDraft(storeId, saleId, payload, deviceLabel = null) {
+  saveDraft(
+    storeId,
+    saleId,
+    payload,
+    deviceLabel = null,
+  ) {
     return call('pharmdesk_save_draft_bill', {
       p_store_id: storeId,
       p_sale_id: saleId || null,
@@ -1134,23 +1123,40 @@ async dashboardSnapshot(storeId, startDate, expiryDays = 90) {
   // Inventory / reconciliation
   // ---------------------------------------------------------------------------
 
-  inventory(storeId, { activeOnly = true } = {}) {
+  inventory(
+    storeId,
+    { activeOnly = true } = {},
+  ) {
     let query = supabase
       .from('store_products')
       .select(`
         *,
         products(
-          id,product_name,generic_display_name,category_id,composition_id,
-          manufacturer,dosage_form,strength_display,pack_quantity,pack_unit,
-          hsn_code,gst_rate,is_active,
+          id,
+          product_name,
+          generic_display_name,
+          category_id,
+          composition_id,
+          manufacturer,
+          dosage_form,
+          strength_display,
+          pack_quantity,
+          pack_unit,
+          hsn_code,
+          gst_rate,
+          is_active,
           product_categories(id,name),
           compositions(id,name,dosage_form,is_verified)
         )
       `)
       .eq('store_id', storeId)
-      .order('created_at', { ascending: false })
+      .order('created_at', {
+        ascending: false,
+      })
 
-    if (activeOnly) query = query.eq('is_active', true)
+    if (activeOnly) {
+      query = query.eq('is_active', true)
+    }
 
     return query.then(({ data, error }) => {
       if (error) throw error
@@ -1158,15 +1164,24 @@ async dashboardSnapshot(storeId, startDate, expiryDays = 90) {
     })
   },
 
-  batches(storeId, productId = null) {
+  batches(
+    storeId,
+    productId = null,
+  ) {
     let query = supabase
       .from('batches')
-      .select('*,products(product_name,generic_display_name)')
+      .select(
+        '*,products(product_name,generic_display_name)',
+      )
       .eq('store_id', storeId)
       .eq('is_active', true)
-      .order('expiry_date', { ascending: true })
+      .order('expiry_date', {
+        ascending: true,
+      })
 
-    if (productId) query = query.eq('product_id', productId)
+    if (productId) {
+      query = query.eq('product_id', productId)
+    }
 
     return query.then(({ data, error }) => {
       if (error) throw error
@@ -1174,7 +1189,12 @@ async dashboardSnapshot(storeId, startDate, expiryDays = 90) {
     })
   },
 
-  adjustStock(storeId, batchId, physicalStockUnits, reason = null) {
+  adjustStock(
+    storeId,
+    batchId,
+    physicalStockUnits,
+    reason = null,
+  ) {
     return call('pharmdesk_adjust_stock', {
       p_store_id: storeId,
       p_batch_id: batchId,
@@ -1183,15 +1203,28 @@ async dashboardSnapshot(storeId, startDate, expiryDays = 90) {
     })
   },
 
-  stockMovements(storeId, productId = null, batchId = null) {
+  stockMovements(
+    storeId,
+    productId = null,
+    batchId = null,
+  ) {
     let query = supabase
       .from('stock_movements')
-      .select('*,products(product_name),batches(batch_number,expiry_date)')
+      .select(
+        '*,products(product_name),batches(batch_number,expiry_date)',
+      )
       .eq('store_id', storeId)
-      .order('created_at', { ascending: false })
+      .order('created_at', {
+        ascending: false,
+      })
 
-    if (productId) query = query.eq('product_id', productId)
-    if (batchId) query = query.eq('batch_id', batchId)
+    if (productId) {
+      query = query.eq('product_id', productId)
+    }
+
+    if (batchId) {
+      query = query.eq('batch_id', batchId)
+    }
 
     return query.then(({ data, error }) => {
       if (error) throw error
@@ -1199,14 +1232,23 @@ async dashboardSnapshot(storeId, startDate, expiryDays = 90) {
     })
   },
 
-  stockReconciliations(storeId, productId = null) {
+  stockReconciliations(
+    storeId,
+    productId = null,
+  ) {
     let query = supabase
       .from('stock_reconciliations')
-      .select('*,products(product_name),batches(batch_number,expiry_date)')
+      .select(
+        '*,products(product_name),batches(batch_number,expiry_date)',
+      )
       .eq('store_id', storeId)
-      .order('created_at', { ascending: false })
+      .order('created_at', {
+        ascending: false,
+      })
 
-    if (productId) query = query.eq('product_id', productId)
+    if (productId) {
+      query = query.eq('product_id', productId)
+    }
 
     return query.then(({ data, error }) => {
       if (error) throw error
@@ -1218,13 +1260,21 @@ async dashboardSnapshot(storeId, startDate, expiryDays = 90) {
   // Supplier catalogue
   // ---------------------------------------------------------------------------
 
-  startSupplierCatalogueImport(storeId, supplierId, filename, sourceType) {
-    return call('pharmdesk_start_supplier_catalogue_import', {
-      p_store_id: storeId,
-      p_supplier_id: supplierId,
-      p_source_filename: filename,
-      p_source_type: sourceType,
-    })
+  startSupplierCatalogueImport(
+    storeId,
+    supplierId,
+    filename,
+    sourceType,
+  ) {
+    return call(
+      'pharmdesk_start_supplier_catalogue_import',
+      {
+        p_store_id: storeId,
+        p_supplier_id: supplierId,
+        p_source_filename: filename,
+        p_source_type: sourceType,
+      },
+    )
   },
 
   saveSupplierCataloguePreview({
@@ -1236,117 +1286,156 @@ async dashboardSnapshot(storeId, startDate, expiryDays = 90) {
     effectiveDate,
     rows,
   }) {
-    return call('pharmdesk_save_supplier_catalogue_preview', {
-      p_store_id: storeId,
-      p_supplier_id: supplierId,
-      p_import_id: importId,
-      p_catalogue_name: catalogueName,
-      p_catalogue_version: catalogueVersion,
-      p_effective_date: effectiveDate,
-      p_rows: rows,
-    })
+    return call(
+      'pharmdesk_save_supplier_catalogue_preview',
+      {
+        p_store_id: storeId,
+        p_supplier_id: supplierId,
+        p_import_id: importId,
+        p_catalogue_name: catalogueName,
+        p_catalogue_version: catalogueVersion,
+        p_effective_date: effectiveDate,
+        p_rows: rows,
+      },
+    )
   },
 
-  approveSupplierCatalogue(storeId, supplierId, importId, catalogueId) {
-    return call('pharmdesk_approve_supplier_catalogue', {
-      p_store_id: storeId,
-      p_supplier_id: supplierId,
-      p_import_id: importId,
-      p_catalogue_id: catalogueId,
-    })
-  },
-
-  matchSupplierCatalogueProducts(storeId, supplierId, catalogueId) {
-    return call('pharmdesk_match_supplier_catalogue_products', {
-      p_store_id: storeId,
-      p_supplier_id: supplierId,
-      p_catalogue_id: catalogueId,
-    })
-  },
-
-  supplierCatalogueReview(storeId, catalogueId) {
-    return call('pharmdesk_supplier_catalogue_review', {
-      p_store_id: storeId,
-      p_catalogue_id: catalogueId,
-    })
-  },
-
-  saveCatalogueMatch(storeId, catalogueProductId, productId, status) {
-    return call('pharmdesk_save_catalogue_match', {
-      p_store_id: storeId,
-      p_catalogue_product_id: catalogueProductId,
-      p_product_id: productId || null,
-      p_status: status,
-    })
-  },
-
-  getSupplierPurchaseCatalogue(storeId, supplierId) {
-    return call('pharmdesk_get_supplier_purchase_catalogue', {
-      p_store_id: storeId,
-      p_supplier_id: supplierId,
-    })
-  },
-
-  createPurchaseOrder({
+  approveSupplierCatalogue(
     storeId,
     supplierId,
-    items,
-    notes = null,
-  }) {
-    return call('pharmdesk_create_purchase_order', {
-      p_store_id: storeId,
-      p_supplier_id: supplierId,
-      p_items: items,
-      p_notes: notes,
-    })
-  },
-  
-  getPurchaseOrderDetail(storeId, orderId) {
-  return call('pharmdesk_purchase_order_detail', {
-    p_store_id: storeId,
-    p_order_id: orderId,
-  })
-},
-
-  addCatalogueAlias(storeId, catalogueProductId, productId) {
-    return call('pharmdesk_record_catalogue_product_alias', {
-      p_store_id: storeId,
-      p_catalogue_product_id: catalogueProductId,
-      p_product_id: productId,
-    })
+    importId,
+    catalogueId,
+  ) {
+    return call(
+      'pharmdesk_approve_supplier_catalogue',
+      {
+        p_store_id: storeId,
+        p_supplier_id: supplierId,
+        p_import_id: importId,
+        p_catalogue_id: catalogueId,
+      },
+    )
   },
 
-  extractSupplierCatalogue(file, storeId, supplierId) {
+  matchSupplierCatalogueProducts(
+    storeId,
+    supplierId,
+    catalogueId,
+  ) {
+    return call(
+      'pharmdesk_match_supplier_catalogue_products',
+      {
+        p_store_id: storeId,
+        p_supplier_id: supplierId,
+        p_catalogue_id: catalogueId,
+      },
+    )
+  },
+
+  supplierCatalogueReview(
+    storeId,
+    catalogueId,
+  ) {
+    return call(
+      'pharmdesk_supplier_catalogue_review',
+      {
+        p_store_id: storeId,
+        p_catalogue_id: catalogueId,
+      },
+    )
+  },
+
+  saveCatalogueMatch(
+    storeId,
+    catalogueProductId,
+    productId,
+    status,
+  ) {
+    return call(
+      'pharmdesk_save_catalogue_match',
+      {
+        p_store_id: storeId,
+        p_catalogue_product_id: catalogueProductId,
+        p_product_id: productId || null,
+        p_status: status,
+      },
+    )
+  },
+
+  addCatalogueAlias(
+    storeId,
+    catalogueProductId,
+    productId,
+  ) {
+    return call(
+      'pharmdesk_record_catalogue_product_alias',
+      {
+        p_store_id: storeId,
+        p_catalogue_product_id: catalogueProductId,
+        p_product_id: productId,
+      },
+    )
+  },
+
+  extractSupplierCatalogue(
+    file,
+    storeId,
+    supplierId,
+  ) {
     const form = new FormData()
+
     form.append('file', file)
     form.append('store_id', storeId)
     form.append('supplier_id', supplierId)
-    return invoke('ai-supplier-catalogue-extract', form)
+
+    return invoke(
+      'ai-supplier-catalogue-extract',
+      form,
+    )
   },
 
   // ---------------------------------------------------------------------------
   // AI invoice / recommendations
   // ---------------------------------------------------------------------------
 
-  extractInvoice(file, storeId, supplierId = null) {
+  extractInvoice(
+    file,
+    storeId,
+    supplierId = null,
+  ) {
     const form = new FormData()
+
     form.append('file', file)
     form.append('store_id', storeId)
-    if (supplierId) form.append('supplier_id', supplierId)
-    return invoke('ai-invoice-extract', form)
+
+    if (supplierId) {
+      form.append('supplier_id', supplierId)
+    }
+
+    return invoke(
+      'ai-invoice-extract',
+      form,
+    )
   },
 
   generatePurchaseRecommendations(storeId) {
-    return invoke('ai-purchase-recommendation', {
-      store_id: storeId,
-    })
+    return invoke(
+      'ai-purchase-recommendation',
+      {
+        store_id: storeId,
+      },
+    )
   },
 
   // ---------------------------------------------------------------------------
   // Reports
   // ---------------------------------------------------------------------------
 
-  reports(storeId, startDate, endDate) {
+  reports(
+    storeId,
+    startDate,
+    endDate,
+  ) {
     return call('pharmdesk_reports', {
       p_store_id: storeId,
       p_start_date: startDate,
@@ -1354,27 +1443,64 @@ async dashboardSnapshot(storeId, startDate, expiryDays = 90) {
     })
   },
 
-  salesReport(storeId, startDate, endDate) {
-    return this.sales(storeId, startDate, endDate)
+  salesReport(
+    storeId,
+    startDate,
+    endDate,
+  ) {
+    return this.sales(
+      storeId,
+      startDate,
+      endDate,
+    )
   },
 
-  purchaseReport(storeId, startDate, endDate, supplierId = null) {
-    return this.purchaseInvoices(storeId, startDate, endDate, supplierId)
+  purchaseReport(
+    storeId,
+    startDate,
+    endDate,
+    supplierId = null,
+  ) {
+    return this.purchaseInvoices(
+      storeId,
+      startDate,
+      endDate,
+      supplierId,
+    )
   },
 
   inventoryReport(storeId) {
     return this.inventory(storeId)
   },
 
-  auditTrail(storeId, startDate = null, endDate = null) {
+  auditTrail(
+    storeId,
+    startDate = null,
+    endDate = null,
+  ) {
     let query = supabase
       .from('audit_logs')
-      .select('*, user_profiles(full_name,phone)')
+      .select(
+        '*, user_profiles(full_name,phone)',
+      )
       .eq('store_id', storeId)
-      .order('created_at', { ascending: false })
+      .order('created_at', {
+        ascending: false,
+      })
 
-    if (startDate) query = query.gte('created_at', `${startDate}T00:00:00`)
-    if (endDate) query = query.lt('created_at', `${endDate}T23:59:59.999`)
+    if (startDate) {
+      query = query.gte(
+        'created_at',
+        `${startDate}T00:00:00`,
+      )
+    }
+
+    if (endDate) {
+      query = query.lt(
+        'created_at',
+        `${endDate}T23:59:59.999`,
+      )
+    }
 
     return query.then(({ data, error }) => {
       if (error) throw error
@@ -1386,14 +1512,24 @@ async dashboardSnapshot(storeId, startDate, expiryDays = 90) {
   // Day closing
   // ---------------------------------------------------------------------------
 
-  dayClosingPreview(storeId, date) {
-    return call('pharmdesk_day_closing_preview', {
-      p_store_id: storeId,
-      p_date: date,
-    })
+  dayClosingPreview(
+    storeId,
+    date,
+  ) {
+    return call(
+      'pharmdesk_day_closing_preview',
+      {
+        p_store_id: storeId,
+        p_date: date,
+      },
+    )
   },
 
-  closeDay(storeId, date, notes = null) {
+  closeDay(
+    storeId,
+    date,
+    notes = null,
+  ) {
     return call('pharmdesk_close_day', {
       p_store_id: storeId,
       p_date: date,
@@ -1401,15 +1537,32 @@ async dashboardSnapshot(storeId, startDate, expiryDays = 90) {
     })
   },
 
-  dayClosings(storeId, startDate = null, endDate = null) {
+  dayClosings(
+    storeId,
+    startDate = null,
+    endDate = null,
+  ) {
     let query = supabase
       .from('day_closings')
       .select('*')
       .eq('store_id', storeId)
-      .order('closing_date', { ascending: false })
+      .order('closing_date', {
+        ascending: false,
+      })
 
-    if (startDate) query = query.gte('closing_date', startDate)
-    if (endDate) query = query.lte('closing_date', endDate)
+    if (startDate) {
+      query = query.gte(
+        'closing_date',
+        startDate,
+      )
+    }
+
+    if (endDate) {
+      query = query.lte(
+        'closing_date',
+        endDate,
+      )
+    }
 
     return query.then(({ data, error }) => {
       if (error) throw error
@@ -1424,7 +1577,9 @@ async dashboardSnapshot(storeId, startDate, expiryDays = 90) {
   getStoreSettings(storeId) {
     return select('store_settings', {
       select: '*',
-      eq: { store_id: storeId },
+      eq: {
+        store_id: storeId,
+      },
       maybeSingle: true,
     })
   },
@@ -1432,7 +1587,9 @@ async dashboardSnapshot(storeId, startDate, expiryDays = 90) {
   getStore(storeId) {
     return select('stores', {
       select: '*',
-      eq: { id: storeId },
+      eq: {
+        id: storeId,
+      },
       maybeSingle: true,
     })
   },
@@ -1440,7 +1597,10 @@ async dashboardSnapshot(storeId, startDate, expiryDays = 90) {
   updateStore(storeId, patch) {
     return supabase
       .from('stores')
-      .update({ ...patch, updated_at: new Date().toISOString() })
+      .update({
+        ...patch,
+        updated_at: new Date().toISOString(),
+      })
       .eq('id', storeId)
       .select()
       .single()
@@ -1453,7 +1613,11 @@ async dashboardSnapshot(storeId, startDate, expiryDays = 90) {
   updateStoreSettings(storeId, patch) {
     return supabase
       .from('store_settings')
-      .upsert({ store_id: storeId, ...patch, updated_at: new Date().toISOString() })
+      .upsert({
+        store_id: storeId,
+        ...patch,
+        updated_at: new Date().toISOString(),
+      })
       .select()
       .single()
       .then(({ data, error }) => {
@@ -1467,32 +1631,71 @@ async dashboardSnapshot(storeId, startDate, expiryDays = 90) {
   // These still respect RLS.
   // ---------------------------------------------------------------------------
 
-  async saleDetail(storeId, saleId) {
-    const [sale, items, payments, returns] = await Promise.all([
+  async saleDetail(
+    storeId,
+    saleId,
+  ) {
+    const [
+      sale,
+      items,
+      payments,
+      returns,
+    ] = await Promise.all([
       select('sales', {
-        select: '*,customers(name,phone,address,referred_doctor_name,referred_doctor_address)',
-        eq: { id: saleId, store_id: storeId },
+        select:
+          '*,customers(name,phone,address,referred_doctor_name,referred_doctor_address)',
+        eq: {
+          id: saleId,
+          store_id: storeId,
+        },
         maybeSingle: true,
       }),
+
       select('sale_items', {
-        select: '*,products(product_name,generic_display_name,manufacturer,dosage_form,strength_display),batches(batch_number,expiry_date,units_per_pack)',
-        eq: { sale_id: saleId },
+        select:
+          '*,products(product_name,generic_display_name,manufacturer,dosage_form,strength_display),batches(batch_number,expiry_date,units_per_pack)',
+        eq: {
+          sale_id: saleId,
+        },
       }),
+
       select('sale_payments', {
         select: '*',
-        eq: { sale_id: saleId },
-        order: [{ column: 'created_at' }],
+        eq: {
+          sale_id: saleId,
+        },
+        order: [
+          {
+            column: 'created_at',
+          },
+        ],
       }),
+
       select('sales_returns', {
         select: '*,sales_return_items(*)',
-        eq: { original_sale_id: saleId },
-        order: [{ column: 'created_at' }],
+        eq: {
+          original_sale_id: saleId,
+        },
+        order: [
+          {
+            column: 'created_at',
+          },
+        ],
       }),
     ])
-    return { sale, items, payments, returns }
+
+    return {
+      sale,
+      items,
+      payments,
+      returns,
+    }
   },
 
-  supplierOutstanding(storeId, supplierId = null) {
+  supplierOutstanding(
+    storeId,
+    supplierId = null,
+  ) {
     return this.monthlyPurchaseSummary(
       storeId,
       '2000-01-01',
@@ -1506,7 +1709,7 @@ export {
   call as pharmdeskRpc,
   select as pharmdeskSelect,
   invoke as pharmdeskInvoke,
-  pharmdeskDb
+  pharmdeskDb,
 }
 
 export default PharmDeskAPI
