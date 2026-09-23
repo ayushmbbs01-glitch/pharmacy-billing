@@ -364,10 +364,11 @@ function LoginScreen() {
 
   try {
     const signupResult =
-      await PharmDeskAPI.signUp(
-        email.trim(),
-        password,
-      )
+  await PharmDeskAPI.signUp(
+    email.trim(),
+    password,
+    ownerName.trim(),
+  )
 
     const signupSession =
       signupResult?.session ??
@@ -401,195 +402,120 @@ function LoginScreen() {
     resetMessages()
   }
 
-  if (mode === 'signup') {
-    return (
-      <div className="auth-screen">
-        <form
-          className="auth-card"
-          onSubmit={signup}
-        >
-          <div className="brand-mark">
-            P
-          </div>
+ if (mode === 'signup') {
+  return (
+    <div className="auth-screen">
+      <form
+        className="auth-card"
+        onSubmit={signup}
+      >
+        <div className="brand-mark">
+          P
+        </div>
 
-          <h1>Create your PharmDesk account</h1>
+        <h1>Create your PharmDesk account</h1>
 
-          <p>
-            Register your medical store and submit
-            it for approval.
-          </p>
+        <p>
+          Create your account first. After
+          verifying your email, you can sign in
+          and complete your medical store
+          application.
+        </p>
 
-          <div className="form-stack">
-            <label>
-              Owner name
-              <input
-                type="text"
-                placeholder="Full name"
-                value={ownerName}
-                onChange={(e) =>
-                  setOwnerName(e.target.value)
-                }
-                required
-              />
-            </label>
-
-            <label>
-              Email
-              <input
-                type="email"
-                placeholder="Owner email"
-                value={email}
-                onChange={(e) =>
-                  setEmail(e.target.value)
-                }
-                required
-              />
-            </label>
-
-            <label>
-              Password
-              <input
-                type="password"
-                placeholder="Create a password"
-                value={password}
-                onChange={(e) =>
-                  setPassword(e.target.value)
-                }
-                minLength={6}
-                required
-              />
-            </label>
-
-            <label>
-              Confirm password
-              <input
-                type="password"
-                placeholder="Re-enter password"
-                value={confirmPassword}
-                onChange={(e) =>
-                  setConfirmPassword(
-                    e.target.value,
-                  )
-                }
-                minLength={6}
-                required
-              />
-            </label>
-
-            <label>
-              Medical store name
-              <input
-                type="text"
-                placeholder="Registered store name"
-                value={storeName}
-                onChange={(e) =>
-                  setStoreName(e.target.value)
-                }
-                required
-              />
-            </label>
-
-            <label>
-              Store address
-              <textarea
-                placeholder="Complete store address"
-                value={address}
-                onChange={(e) =>
-                  setAddress(e.target.value)
-                }
-                rows={3}
-              />
-            </label>
-
-            <label>
-              Phone number
-              <input
-                type="tel"
-                placeholder="Store / owner phone number"
-                value={phone}
-                onChange={(e) =>
-                  setPhone(e.target.value)
-                }
-                required
-              />
-            </label>
-
-            <label>
-              Store email
-              <input
-                type="email"
-                placeholder="Store email, if different"
-                value={storeEmail}
-                onChange={(e) =>
-                  setStoreEmail(e.target.value)
-                }
-              />
-            </label>
-
-            <label>
-              GSTIN
-              <input
-                type="text"
-                placeholder="GST identification number"
-                value={gstin}
-                onChange={(e) =>
-                  setGstin(e.target.value)
-                }
-              />
-            </label>
-
-            <label>
-              Drug License Number
-              <input
-                type="text"
-                placeholder="Drug license number"
-                value={drugLicenseNumber}
-                onChange={(e) =>
-                  setDrugLicenseNumber(
-                    e.target.value,
-                  )
-                }
-                required
-              />
-            </label>
-
-            {error && (
-              <div className="error-box">
-                {error}
-              </div>
-            )}
-
-            {success && (
-              <div className="success-box">
-                {success}
-              </div>
-            )}
-
-            <button
-              type="submit"
-              disabled={busy}
-              className="primary-button"
-            >
-              {busy
-                ? 'Submitting application…'
-                : 'Create account & apply'}
-            </button>
-
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={() =>
-                switchMode('login')
+        <div className="form-stack">
+          <label>
+            Owner name
+            <input
+              type="text"
+              placeholder="Full name"
+              value={ownerName}
+              onChange={(e) =>
+                setOwnerName(e.target.value)
               }
-              disabled={busy}
-            >
-              Already have an account? Sign in
-            </button>
-          </div>
-        </form>
-      </div>
-    )
-  }
+              required
+            />
+          </label>
+
+          <label>
+            Email
+            <input
+              type="email"
+              placeholder="Owner email"
+              value={email}
+              onChange={(e) =>
+                setEmail(e.target.value)
+              }
+              required
+            />
+          </label>
+
+          <label>
+            Password
+            <input
+              type="password"
+              placeholder="Create a password"
+              value={password}
+              onChange={(e) =>
+                setPassword(e.target.value)
+              }
+              minLength={6}
+              required
+            />
+          </label>
+
+          <label>
+            Confirm password
+            <input
+              type="password"
+              placeholder="Re-enter password"
+              value={confirmPassword}
+              onChange={(e) =>
+                setConfirmPassword(
+                  e.target.value,
+                )
+              }
+              minLength={6}
+              required
+            />
+          </label>
+
+          {error && (
+            <div className="error-box">
+              {error}
+            </div>
+          )}
+
+          {success && (
+            <div className="success-box">
+              {success}
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={busy}
+            className="primary-button"
+          >
+            {busy
+              ? 'Creating account…'
+              : 'Create account'}
+          </button>
+
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() =>
+              switchMode('login')
+            }
+            disabled={busy}
+          >
+            Already have an account? Sign in
+          </button>
+        </div>
+      </form>
+    </div>
+  )
+}
 
   return (
     <div className="auth-screen">
