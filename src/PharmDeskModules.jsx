@@ -4429,16 +4429,21 @@ function PurchasesModule({ store }) {
         />  
       )}  
   
-      {tab === 'Supplier Orders' && (  
-        <PurchaseOrders store={store} />  
-      )}  
-  
-      {tab ===  
-        'AI Recommendations' && (  
-        <AIRecommendations  
-          store={store}  
-        />  
-      )}  
+    {tab === 'Supplier Orders' && (
+  <PurchaseOrders store={store} />
+)}
+
+{tab === 'Catalogue & Orders' && (
+  <SupplierPurchaseCatalogue
+    store={store}
+  />
+)}
+
+{tab === 'AI Recommendations' && (
+  <AIRecommendations
+    store={store}
+  />
+)}  
     </div>  
   )  
 }  
@@ -6340,6 +6345,350 @@ function PendingSupplierPayments({
     </PanelList>  
   )  
 }  
+
+function SupplierPurchaseCatalogue({ store }) {
+  const [suppliers, setSuppliers] = useState([])
+  const [supplierId, setSupplierId] = useState('')
+  const [rows, setRows] = useState([])
+  const [quantities, setQuantities] = useState({})
+  const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [message, setMessage] = useState('')
+  const [notes, setNotes] = useState('')
+
+  useEffect(() => {
+    if (!store?.id) return
+
+    const loadSuppliers = async () => {
+      const { data, error: loadError } =
+        await supabase
+          .from('suppliers')
+          .select('id, supplier_name')
+          .eq('store_id', store.id)
+          .eq('is_active', true)
+          .order('supplier_name')
+
+      if (loadError) {
+        setError(loadError.message)
+        return
+      }
+
+      setSuppliers(data || [])
+    }
+
+    loadSuppliers()
+  }, [store?.id])
+
+  const loadCatalogue = async (nextSupplierId) => {
+    setSupplierId(nextSupplierId)
+    setRows([])
+    setQuantities({})
+    setError('')
+    setMessage('')
+
+    if (!nextSupplierId) return
+
+    setLoading(true)
+
+    try {
+      const result =
+        await PharmDeskAPI.getSupplierPurchaseCatalogue(
+          store.id,
+          nextSupplierId,
+        )
+
+      setRows(
+        Array.isArray(result)
+          ? result
+          : [],
+      )
+    } catch (loadError) {
+      console.error(
+        'Failed to load supplier purchase catalogue:',
+        loadError,
+      )
+
+      setError(
+        loadError?.message ||
+          'Unable to load purchase history for this supplier.',
+      )
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const updateQuantity = (
+    productId,
+    value,
+  ) => {
+    setQuantities((current) => ({
+      ...current,
+      [productId]: value,
+    }))
+  }
+
+  const createOrder = async () => {
+    setError('')
+    setMessage('')
+
+    const items = rows
+      .map((row) => ({
+        product_id: row.product_id,
+        quantity: safeNumber(
+          quantities[row.product_id],
+        ),
+      }))
+      .filter(
+        (item) =>
+          item.quantity > 0,
+      )
+
+    if (!supplierId) {
+      setError('Select a supplier first.')
+      return
+    }
+
+    if (!items.length) {
+      setError(
+        'Enter a quantity for at least one product.',
+      )
+      return
+    }
+
+    setSaving(true)
+
+    try {
+      const orderId =
+        await PharmDeskAPI.createPurchaseOrder({
+          storeId: store.id,
+          supplierId,
+          items,
+          notes: notes.trim() || null,
+        })
+
+      setMessage(
+        `Purchase order created successfully: ${orderId}`,
+      )
+
+      setQuantities({})
+      setNotes('')
+    } catch (saveError) {
+      console.error(
+        'Failed to create purchase order:',
+        saveError,
+      )
+
+      setError(
+        saveError?.message ||
+          'Unable to create purchase order.',
+      )
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div>
+      <ModuleHeader
+        title="Supplier Catalogue & Orders"
+        subtitle="Choose a supplier, review products previously purchased from them, enter quantities manually and create an order."
+      />
+
+      <PanelList title="Supplier">
+        <label>
+          Select supplier
+          <select
+            value={supplierId}
+            onChange={(e) =>
+              loadCatalogue(
+                e.target.value,
+              )
+            }
+          >
+            <option value="">
+              Select supplier
+            </option>
+
+            {suppliers.map(
+              (supplier) => (
+                <option
+                  key={supplier.id}
+                  value={supplier.id}
+                >
+                  {supplier.supplier_name}
+                </option>
+              ),
+            )}
+          </select>
+        </label>
+      </PanelList>
+
+      {error && (
+        <div className="error-box">
+          {error}
+        </div>
+      )}
+
+      {message && (
+        <div className="success-box">
+          {message}
+        </div>
+      )}
+
+      {loading && (
+        <PanelList title="Supplier Products">
+          <div className="message-box">
+            Loading products previously
+            purchased from this supplier…
+          </div>
+        </PanelList>
+      )}
+
+      {!loading &&
+        supplierId &&
+        rows.length === 0 && (
+          <PanelList title="Supplier Products">
+            <EmptyState
+              text="No previous purchase history was found for this supplier."
+            />
+          </PanelList>
+        )}
+
+      {!loading &&
+        rows.length > 0 && (
+          <PanelList title="Products Previously Purchased From This Supplier">
+            <div className="record-list">
+              {rows.map((row) => (
+                <div
+                  className="record-row static"
+                  key={row.product_id}
+                >
+                  <div>
+                    <strong>
+                      {row.product_name}
+                    </strong>
+
+                    <span>
+                      {row.composition ||
+                        'Composition not recorded'}
+                    </span>
+
+                    <span>
+                      {[
+                        row.manufacturer,
+                        row.dosage_form,
+                        row.strength_display,
+                      ]
+                        .filter(Boolean)
+                        .join(' • ')}
+                    </span>
+
+                    <span>
+                      Pack:{' '}
+                      {row.pack_quantity ||
+                        '—'}{' '}
+                      {row.pack_unit ||
+                        ''}
+                    </span>
+
+                    <span>
+                      Last purchased:{' '}
+                      {dateText(
+                        row.last_purchase_date,
+                      )}
+                    </span>
+
+                    <span>
+                      Last purchase rate:{' '}
+                      {money(
+                        row.last_purchase_rate,
+                      )}
+                    </span>
+
+                    <span>
+                      Last MRP:{' '}
+                      {money(
+                        row.last_mrp,
+                      )}
+                    </span>
+
+                    <span>
+                      GST:{' '}
+                      {row.last_gst_rate ??
+                        '—'}
+                      %
+                    </span>
+
+                    <span>
+                      Purchased{' '}
+                      {row.times_purchased ||
+                        0}{' '}
+                      time(s)
+                    </span>
+                  </div>
+
+                  <div
+                    style={{
+                      minWidth: 140,
+                    }}
+                  >
+                    <label>
+                      Order quantity
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={
+                          quantities[
+                            row.product_id
+                          ] || ''
+                        }
+                        onChange={(e) =>
+                          updateQuantity(
+                            row.product_id,
+                            e.target.value,
+                          )
+                        }
+                        placeholder="0"
+                      />
+                    </label>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <label>
+              Order notes
+              <textarea
+                value={notes}
+                onChange={(e) =>
+                  setNotes(
+                    e.target.value,
+                  )
+                }
+                rows={3}
+                placeholder="Optional notes for this supplier order"
+              />
+            </label>
+
+            <div className="button-row">
+              <button
+                type="button"
+                className="primary-button"
+                onClick={createOrder}
+                disabled={saving}
+              >
+                {saving
+                  ? 'Creating order…'
+                  : 'Create Supplier Order'}
+              </button>
+            </div>
+          </PanelList>
+        )}
+    </div>
+  )
+}
   
 function PurchaseOrders({  
   store,  
