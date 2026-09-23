@@ -273,7 +273,7 @@ if (mounted) {
   if (loading) return <LoadingScreen />  
   if (!session) return <LoginScreen />  
   
-  return <PharmacyApp session={session} />  
+  return <StoreApplicationGate session={session} />
 }  
   
 /* =========================================================  
@@ -593,6 +593,309 @@ function LoginScreen() {
             New medical store? Sign up
           </button>
         </div>
+      </form>
+    </div>
+  )
+}
+  
+  function StoreApplicationGate({ session }) {
+  const [application, setApplication] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [busy, setBusy] = useState(false)
+
+  const [ownerName, setOwnerName] = useState(
+    session?.user?.user_metadata?.owner_name || '',
+  )
+  const [storeName, setStoreName] = useState('')
+  const [address, setAddress] = useState('')
+  const [phone, setPhone] = useState('')
+  const [storeEmail, setStoreEmail] = useState('')
+  const [gstin, setGstin] = useState('')
+  const [drugLicenseNumber, setDrugLicenseNumber] =
+    useState('')
+
+  const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
+
+  const loadApplication = async () => {
+    setLoading(true)
+    setError('')
+
+    try {
+      const stores =
+        await PharmDeskAPI.getStoresForUser(
+          session.user.id,
+        )
+
+      if (stores?.length) {
+        setApplication({
+          approved_store: true,
+        })
+        return
+      }
+
+      const applications =
+        await PharmDeskAPI.getMyStoreApplication(
+          session.user.id,
+        )
+
+      setApplication(applications?.[0] || null)
+    } catch (loadError) {
+      console.error(
+        'Failed to load store application:',
+        loadError,
+      )
+
+      setError(
+        loadError.message ||
+          'Unable to load your store application.',
+      )
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadApplication()
+  }, [session.user.id])
+
+  const submitApplication = async (e) => {
+    e.preventDefault()
+
+    setBusy(true)
+    setError('')
+    setSuccess('')
+
+    if (!ownerName.trim()) {
+      setError('Please enter the owner name.')
+      setBusy(false)
+      return
+    }
+
+    if (!storeName.trim()) {
+      setError('Please enter the medical store name.')
+      setBusy(false)
+      return
+    }
+
+    if (!drugLicenseNumber.trim()) {
+      setError(
+        'Please enter the drug license number.',
+      )
+      setBusy(false)
+      return
+    }
+
+    try {
+      await PharmDeskAPI.submitStoreApplication({
+        ownerName: ownerName.trim(),
+        storeName: storeName.trim(),
+        address: address.trim() || null,
+        phone: phone.trim() || null,
+        storeEmail: storeEmail.trim() || null,
+        gstin: gstin.trim() || null,
+        drugLicenseNumber:
+          drugLicenseNumber.trim(),
+      })
+
+      setSuccess(
+        'Your application has been submitted successfully.',
+      )
+
+      await loadApplication()
+    } catch (submitError) {
+      console.error(
+        'Failed to submit store application:',
+        submitError,
+      )
+
+      setError(
+        submitError.message ||
+          'Unable to submit your application.',
+      )
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (loading) {
+    return <LoadingScreen />
+  }
+
+  if (application?.approved_store) {
+    return <PharmacyApp session={session} />
+  }
+
+  if (application?.status === 'pending') {
+    return (
+      <div className="auth-screen">
+        <div className="auth-card">
+          <h1>Application Pending</h1>
+
+          <p>
+            Thank you for applying to use PharmDesk.
+          </p>
+
+          <p>
+            Your medical store application is currently
+            being reviewed by our administration team.
+          </p>
+
+          <p>
+            You will be contacted within 24 hours regarding
+            the approval of your account.
+          </p>
+
+          <div className="success-box">
+            Application submitted for:
+            <br />
+            <strong>
+              {application.store_name}
+            </strong>
+          </div>
+
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => PharmDeskAPI.signOut()}
+          >
+            Sign out
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="auth-screen">
+      <form
+        className="auth-card"
+        onSubmit={submitApplication}
+      >
+        <h1>Medical Store Application</h1>
+
+        <p>
+          Complete your store details to apply for access
+          to PharmDesk.
+        </p>
+
+        <input
+          type="text"
+          placeholder="Owner name"
+          value={ownerName}
+          onChange={(e) =>
+            setOwnerName(e.target.value)
+          }
+          required
+        />
+
+        <input
+          type="text"
+          placeholder="Medical store name"
+          value={storeName}
+          onChange={(e) =>
+            setStoreName(e.target.value)
+          }
+          required
+        />
+
+        <textarea
+          placeholder="Store address"
+          value={address}
+          onChange={(e) =>
+            setAddress(e.target.value)
+          }
+          rows={3}
+        />
+
+        <input
+          type="tel"
+          placeholder="Phone number"
+          value={phone}
+          onChange={(e) =>
+            setPhone(e.target.value)
+          }
+        />
+
+        <input
+          type="email"
+          placeholder="Store email"
+          value={storeEmail}
+          onChange={(e) =>
+            setStoreEmail(e.target.value)
+          }
+        />
+
+        <input
+          type="text"
+          placeholder="GSTIN"
+          value={gstin}
+          onChange={(e) =>
+            setGstin(e.target.value)
+          }
+        />
+
+        <input
+          type="text"
+          placeholder="Drug license number"
+          value={drugLicenseNumber}
+          onChange={(e) =>
+            setDrugLicenseNumber(e.target.value)
+          }
+          required
+        />
+
+        {error && (
+          <div className="error-box">
+            {error}
+          </div>
+        )}
+
+        {success && (
+          <div className="success-box">
+            {success}
+          </div>
+        )}
+
+        {application?.status === 'rejected' && (
+          <div className="error-box">
+            <strong>
+              Your previous application was rejected.
+            </strong>
+
+            {application.rejection_reason && (
+              <>
+                <br />
+                Reason:{' '}
+                {application.rejection_reason}
+              </>
+            )}
+
+            <br />
+            <br />
+            You can correct your details and submit a new
+            application.
+          </div>
+        )}
+
+        <button
+          type="submit"
+          disabled={busy}
+          className="primary-button"
+        >
+          {busy
+            ? 'Submitting…'
+            : 'Submit Application'}
+        </button>
+
+        <button
+          type="button"
+          className="secondary-button"
+          onClick={() => PharmDeskAPI.signOut()}
+          disabled={busy}
+        >
+          Sign out
+        </button>
       </form>
     </div>
   )
