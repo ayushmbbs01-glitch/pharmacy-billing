@@ -9142,6 +9142,15 @@ const [adminLoading, setAdminLoading] =
 
 const [adminMessage, setAdminMessage] =
   useState('')
+  
+  const [adminApplications, setAdminApplications] =
+  useState([])
+
+const [applicationLoading, setApplicationLoading] =
+  useState(false)
+
+const [applicationMessage, setApplicationMessage] =
+  useState('')
 
 const [newStore, setNewStore] =
   useState({
@@ -9181,6 +9190,33 @@ const loadAdminStores = async () => {
   }
 }
 
+const loadAdminApplications = async () => {
+  try {
+    setApplicationLoading(true)
+
+    const result =
+      await PharmDeskAPI.adminListStoreApplications()
+
+    setAdminApplications(
+      Array.isArray(result)
+        ? result
+        : [],
+    )
+  } catch (error) {
+    console.error(
+      'Failed to load store applications:',
+      error,
+    )
+
+    setApplicationMessage(
+      error?.message ||
+        'Failed to load store applications.',
+    )
+  } finally {
+    setApplicationLoading(false)
+  }
+}
+
 useEffect(() => {
   let mounted = true
 
@@ -9196,7 +9232,10 @@ useEffect(() => {
 
         setIsPlatformAdmin(true)
 
-        await loadAdminStores()
+await Promise.all([
+  loadAdminStores(),
+  loadAdminApplications(),
+])
       } catch (error) {
         console.error(
           'Platform admin check failed:',
@@ -9366,6 +9405,80 @@ const reactivateAdminStore = async (
     )
   } finally {
     setAdminLoading(false)
+  }
+}
+
+const approveStoreApplication = async (
+  applicationId,
+) => {
+  try {
+    setApplicationLoading(true)
+    setApplicationMessage('')
+
+    await PharmDeskAPI.adminApproveStoreApplication(
+      applicationId,
+    )
+
+    setApplicationMessage(
+      'Application approved. The store has been activated for 1 year.',
+    )
+
+    await Promise.all([
+      loadAdminApplications(),
+      loadAdminStores(),
+    ])
+  } catch (error) {
+    console.error(
+      'Failed to approve store application:',
+      error,
+    )
+
+    setApplicationMessage(
+      error?.message ||
+        'Failed to approve store application.',
+    )
+  } finally {
+    setApplicationLoading(false)
+  }
+}
+
+const rejectStoreApplication = async (
+  applicationId,
+) => {
+  const reason = window.prompt(
+    'Enter a rejection reason (optional):',
+  )
+
+  if (reason === null) {
+    return
+  }
+
+  try {
+    setApplicationLoading(true)
+    setApplicationMessage('')
+
+    await PharmDeskAPI.adminRejectStoreApplication(
+      applicationId,
+      reason.trim() || null,
+    )
+
+    setApplicationMessage(
+      'Store application rejected.',
+    )
+
+    await loadAdminApplications()
+  } catch (error) {
+    console.error(
+      'Failed to reject store application:',
+      error,
+    )
+
+    setApplicationMessage(
+      error?.message ||
+        'Failed to reject store application.',
+    )
+  } finally {
+    setApplicationLoading(false)
   }
 }
 
@@ -10283,6 +10396,148 @@ const reactivateAdminStore = async (
           : 'Add Medical Store'}
       </button>
     </div>
+
+<PanelList title="Pending Store Applications">
+  {applicationLoading &&
+    adminApplications.length === 0 && (
+      <div className="message-box">
+        Loading applications...
+      </div>
+    )}
+
+  {!applicationLoading &&
+    adminApplications.length === 0 && (
+      <div className="message-box">
+        No store applications found.
+      </div>
+    )}
+
+  {adminApplications.map(
+    (application) => (
+      <div
+        key={application.id}
+        className="history-item"
+      >
+        <div className="history-header">
+          <div>
+            <strong>
+              {application.store_name}
+            </strong>
+
+            <span>
+              Owner:{' '}
+              {application.owner_name}
+            </span>
+          </div>
+
+          <strong>
+            {application.status.toUpperCase()}
+          </strong>
+        </div>
+
+        <div className="history-header">
+          <span>
+            Email:{' '}
+            {application.owner_email}
+          </span>
+
+          <span>
+            Phone:{' '}
+            {application.phone ||
+              'Not provided'}
+          </span>
+        </div>
+
+        <div className="history-header">
+          <span>
+            GSTIN:{' '}
+            {application.gstin ||
+              'Not provided'}
+          </span>
+
+          <span>
+            Drug License:{' '}
+            {application.drug_license_number ||
+              'Not provided'}
+          </span>
+        </div>
+
+        <div>
+          <span>
+            Address:{' '}
+            {application.address ||
+              'Not provided'}
+          </span>
+        </div>
+
+        <div className="history-header">
+          <span>
+            Store email:{' '}
+            {application.store_email ||
+              'Not provided'}
+          </span>
+
+          <span>
+            Applied:{' '}
+            {application.created_at
+              ? new Date(
+                  application.created_at,
+                ).toLocaleString()
+              : 'Unknown'}
+          </span>
+        </div>
+
+        {application.status ===
+          'rejected' &&
+          application.rejection_reason && (
+            <div className="error-box">
+              Rejection reason:{' '}
+              {application.rejection_reason}
+            </div>
+          )}
+
+        {application.status ===
+          'pending' && (
+          <div className="button-row">
+            <button
+              className="primary-button"
+              onClick={() =>
+                approveStoreApplication(
+                  application.id,
+                )
+              }
+              disabled={
+                applicationLoading
+              }
+            >
+              Approve & Start 1-Year Service
+            </button>
+
+            <button
+              className="secondary-button"
+              onClick={() =>
+                rejectStoreApplication(
+                  application.id,
+                )
+              }
+              disabled={
+                applicationLoading
+              }
+            >
+              Reject
+            </button>
+          </div>
+        )}
+      </div>
+    ),
+  )}
+
+  {applicationMessage && (
+    <div className="message-box">
+      {applicationMessage}
+    </div>
+  )}
+</PanelList>
 
     <div className="settings-section">
       <h3>
