@@ -1121,6 +1121,34 @@ export const PharmDeskAPI = {
   },
 
   // ---------------------------------------------------------------------------
+  // Archive / historical data
+  // ---------------------------------------------------------------------------
+
+  archivePreview(storeId) {
+    return call('pharmdesk_archive_preview', {
+      p_store_id: storeId,
+    })
+  },
+
+  searchArchive(
+    storeId,
+    query = null,
+    customerId = null,
+    supplierId = null,
+    recordType = null,
+    limit = 50,
+  ) {
+    return call('pharmdesk_search_archive', {
+      p_store_id: storeId,
+      p_query: query || null,
+      p_customer_id: customerId || null,
+      p_supplier_id: supplierId || null,
+      p_record_type: recordType || null,
+      p_limit: limit,
+    })
+  },
+
+  // ---------------------------------------------------------------------------
   // Settings
   // ---------------------------------------------------------------------------
 
