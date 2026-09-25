@@ -12092,8 +12092,8 @@ const rejectStoreApplication = async (
               </strong>
 
               <span>
-                {archivePreviewData.database_size_mb ??
-                  '—'} MB
+                {archivePreviewData.database?.size_mb ??
+  '—'} MB
               </span>
             </div>
 
@@ -12109,8 +12109,8 @@ const rejectStoreApplication = async (
                 </div>
 
                 <span>
-                  {archivePreviewData.capacity_mb ??
-                    '—'} MB
+                 {archivePreviewData.database?.capacity_mb_reference ??
+  '—'} MB
                 </span>
               </div>
 
@@ -12125,8 +12125,8 @@ const rejectStoreApplication = async (
                 </div>
 
                 <span>
-                  {archivePreviewData.usage_percent ??
-                    '—'}%
+                 {archivePreviewData.database?.usage_percent ??
+  '—'}%
                 </span>
               </div>
 
@@ -12142,8 +12142,8 @@ const rejectStoreApplication = async (
                 </div>
 
                 <span>
-                  {archivePreviewData.normal_cutoff ??
-                    '—'}
+                 {archivePreviewData.settings?.normal_cutoff_date ??
+  '—'}
                 </span>
               </div>
 
@@ -12159,8 +12159,8 @@ const rejectStoreApplication = async (
                 </div>
 
                 <span>
-                  {archivePreviewData.emergency_cutoff ??
-                    '—'}
+                 {archivePreviewData.settings?.emergency_cutoff_date ??
+  '—'}
                 </span>
               </div>
 
@@ -12176,9 +12176,9 @@ const rejectStoreApplication = async (
                 </div>
 
                 <span>
-                  {archivePreviewData.emergency_active
-                    ? 'Active'
-                    : 'Normal'}
+                 {archivePreviewData.emergency_active
+  ? 'Active'
+  : 'Normal'}
                 </span>
               </div>
 
@@ -12193,8 +12193,8 @@ const rejectStoreApplication = async (
                 </div>
 
                 <span>
-                  {archivePreviewData.eligible_sales ??
-                    0}
+                {archivePreviewData.normal_eligible?.sales ??
+  0}
                 </span>
               </div>
 
@@ -12209,8 +12209,8 @@ const rejectStoreApplication = async (
                 </div>
 
                 <span>
-                  {archivePreviewData.eligible_purchases ??
-                    0}
+                {archivePreviewData.normal_eligible?.purchases ??
+  0}
                 </span>
               </div>
 
@@ -12226,8 +12226,8 @@ const rejectStoreApplication = async (
                 </div>
 
                 <span>
-                  {archivePreviewData.blocked_unpaid_purchases ??
-                    0}
+               {archivePreviewData.blocked?.unpaid_or_partially_paid_purchases ??
+  0}
                 </span>
               </div>
 
@@ -12242,8 +12242,8 @@ const rejectStoreApplication = async (
                 </div>
 
                 <span>
-                  {archivePreviewData.blocked_sales_with_due ??
-                    0}
+                {archivePreviewData.blocked?.sales_with_outstanding_due ??
+  0}
                 </span>
               </div>
             </div>
