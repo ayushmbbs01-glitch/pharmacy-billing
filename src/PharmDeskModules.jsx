@@ -10784,6 +10784,30 @@ function SettingsModule({
   const [message, setMessage] =
     useState('')
 
+  // ---------------------------------------------------------------------------
+  // Archive / Storage
+  // ---------------------------------------------------------------------------
+
+  const [archiveSettings, setArchiveSettings] =
+    useState({
+      retention_months: 12,
+      emergency_threshold_percent: 90,
+      emergency_enabled: true,
+      auto_archive_enabled: false,
+    })
+
+  const [archivePreviewData, setArchivePreviewData] =
+    useState(null)
+
+  const [archiveLoading, setArchiveLoading] =
+    useState(false)
+
+  const [archiveSaving, setArchiveSaving] =
+    useState(false)
+
+  const [archiveMessage, setArchiveMessage] =
+    useState('')
+
   const [currentPassword, setCurrentPassword] =
     useState('')
   const [newPassword, setNewPassword] =
@@ -11295,6 +11319,75 @@ const rejectStoreApplication = async (
     }
   }, [store?.id])
 
+  useEffect(() => {
+    if (!store?.id) return
+
+    let mounted = true
+
+    const loadArchiveData = async () => {
+      setArchiveLoading(true)
+      setArchiveMessage('')
+
+      try {
+        const [settings, preview] =
+          await Promise.all([
+            PharmDeskAPI.getArchiveSettings(
+              store.id,
+            ),
+            PharmDeskAPI.archivePreview(
+              store.id,
+            ),
+          ])
+
+        if (!mounted) return
+
+        setArchiveSettings({
+          retention_months:
+            settings?.retention_months ??
+            12,
+
+          emergency_threshold_percent:
+            settings?.emergency_threshold_percent ??
+            90,
+
+          emergency_enabled:
+            settings?.emergency_enabled ??
+            true,
+
+          auto_archive_enabled:
+            settings?.auto_archive_enabled ??
+            false,
+        })
+
+        setArchivePreviewData(
+          preview || null,
+        )
+      } catch (error) {
+        if (!mounted) return
+
+        console.error(
+          'Failed to load archive settings:',
+          error,
+        )
+
+        setArchiveMessage(
+          error?.message ||
+            'Unable to load archive information.',
+        )
+      } finally {
+        if (mounted) {
+          setArchiveLoading(false)
+        }
+      }
+    }
+
+    loadArchiveData()
+
+    return () => {
+      mounted = false
+    }
+  }, [store?.id])
+
   const refreshAccessRequests =
     async () => {
       if (!store?.id) return
@@ -11529,6 +11622,107 @@ const rejectStoreApplication = async (
         setAccessLoading(false)
       }
     }
+
+  const saveArchiveSettings = async () => {
+    if (!store?.id) {
+      setArchiveMessage(
+        'No store is currently selected.',
+      )
+      return
+    }
+
+    setArchiveSaving(true)
+    setArchiveMessage('')
+
+    try {
+      await PharmDeskAPI.updateArchiveSettings(
+        store.id,
+        {
+          retention_months:
+            Math.max(
+              12,
+              Number(
+                archiveSettings.retention_months,
+              ) || 12,
+            ),
+
+          emergency_threshold_percent:
+            Number(
+              archiveSettings.emergency_threshold_percent,
+            ) || 90,
+
+          emergency_enabled:
+            Boolean(
+              archiveSettings.emergency_enabled,
+            ),
+
+          auto_archive_enabled:
+            Boolean(
+              archiveSettings.auto_archive_enabled,
+            ),
+        },
+      )
+
+      const preview =
+        await PharmDeskAPI.archivePreview(
+          store.id,
+        )
+
+      setArchivePreviewData(
+        preview || null,
+      )
+
+      setArchiveMessage(
+        'Archive settings saved successfully.',
+      )
+    } catch (error) {
+      console.error(
+        'Failed to save archive settings:',
+        error,
+      )
+
+      setArchiveMessage(
+        error?.message ||
+          'Unable to save archive settings.',
+      )
+    } finally {
+      setArchiveSaving(false)
+    }
+  }
+
+  const refreshArchivePreview = async () => {
+    if (!store?.id) return
+
+    setArchiveLoading(true)
+    setArchiveMessage('')
+
+    try {
+      const preview =
+        await PharmDeskAPI.archivePreview(
+          store.id,
+        )
+
+      setArchivePreviewData(
+        preview || null,
+      )
+
+      setArchiveMessage(
+        'Archive information refreshed.',
+      )
+    } catch (error) {
+      console.error(
+        'Failed to refresh archive preview:',
+        error,
+      )
+
+      setArchiveMessage(
+        error?.message ||
+          'Unable to refresh archive information.',
+      )
+    } finally {
+      setArchiveLoading(false)
+    }
+  }
 
   const save = async () => {
     setMessage('')
@@ -11799,6 +11993,301 @@ const rejectStoreApplication = async (
         >
           Save Settings
         </button>
+      </PanelList>
+
+      <PanelList title="Archive & Storage">
+        <div className="form-grid">
+          <label>
+            Normal retention period (months)
+            <input
+              type="number"
+              min="12"
+              max="120"
+              value={
+                archiveSettings.retention_months
+              }
+              onChange={(e) =>
+                setArchiveSettings(
+                  (current) => ({
+                    ...current,
+                    retention_months:
+                      e.target.value,
+                  }),
+                )
+              }
+            />
+          </label>
+
+          <label>
+            Emergency database threshold (%)
+            <input
+              type="number"
+              min="70"
+              max="99"
+              value={
+                archiveSettings.emergency_threshold_percent
+              }
+              onChange={(e) =>
+                setArchiveSettings(
+                  (current) => ({
+                    ...current,
+                    emergency_threshold_percent:
+                      e.target.value,
+                  }),
+                )
+              }
+            />
+          </label>
+        </div>
+
+        <ToggleRow
+          label="Enable emergency archive protection"
+          checked={
+            Boolean(
+              archiveSettings.emergency_enabled,
+            )
+          }
+          onChange={(checked) =>
+            setArchiveSettings(
+              (current) => ({
+                ...current,
+                emergency_enabled:
+                  checked,
+              }),
+            )
+          }
+        />
+
+        <ToggleRow
+          label="Enable automatic archiving"
+          checked={
+            Boolean(
+              archiveSettings.auto_archive_enabled,
+            )
+          }
+          onChange={(checked) =>
+            setArchiveSettings(
+              (current) => ({
+                ...current,
+                auto_archive_enabled:
+                  checked,
+              }),
+            )
+          }
+        />
+
+        {archiveLoading ? (
+          <div className="message-box">
+            Loading archive information...
+          </div>
+        ) : archivePreviewData ? (
+          <div
+            style={{
+              marginTop: '16px',
+            }}
+          >
+            <div className="history-header">
+              <strong>
+                Database Storage
+              </strong>
+
+              <span>
+                {archivePreviewData.database_size_mb ??
+                  '—'} MB
+              </span>
+            </div>
+
+            <div className="record-list">
+              <div className="record-row static">
+                <div>
+                  <strong>
+                    Capacity reference
+                  </strong>
+                  <span>
+                    Current database capacity reference
+                  </span>
+                </div>
+
+                <span>
+                  {archivePreviewData.capacity_mb ??
+                    '—'} MB
+                </span>
+              </div>
+
+              <div className="record-row static">
+                <div>
+                  <strong>
+                    Database usage
+                  </strong>
+                  <span>
+                    Current percentage of capacity
+                  </span>
+                </div>
+
+                <span>
+                  {archivePreviewData.usage_percent ??
+                    '—'}%
+                </span>
+              </div>
+
+              <div className="record-row static">
+                <div>
+                  <strong>
+                    Normal archive cutoff
+                  </strong>
+                  <span>
+                    Transactions older than the
+                    retention period
+                  </span>
+                </div>
+
+                <span>
+                  {archivePreviewData.normal_cutoff ??
+                    '—'}
+                </span>
+              </div>
+
+              <div className="record-row static">
+                <div>
+                  <strong>
+                    Emergency archive cutoff
+                  </strong>
+                  <span>
+                    Used only when emergency
+                    protection is triggered
+                  </span>
+                </div>
+
+                <span>
+                  {archivePreviewData.emergency_cutoff ??
+                    '—'}
+                </span>
+              </div>
+
+              <div className="record-row static">
+                <div>
+                  <strong>
+                    Emergency status
+                  </strong>
+                  <span>
+                    Whether the database is currently
+                    above the emergency threshold
+                  </span>
+                </div>
+
+                <span>
+                  {archivePreviewData.emergency_active
+                    ? 'Active'
+                    : 'Normal'}
+                </span>
+              </div>
+
+              <div className="record-row static">
+                <div>
+                  <strong>
+                    Eligible sales
+                  </strong>
+                  <span>
+                    Closed sales eligible for archival
+                  </span>
+                </div>
+
+                <span>
+                  {archivePreviewData.eligible_sales ??
+                    0}
+                </span>
+              </div>
+
+              <div className="record-row static">
+                <div>
+                  <strong>
+                    Eligible purchases
+                  </strong>
+                  <span>
+                    Closed purchases eligible for archival
+                  </span>
+                </div>
+
+                <span>
+                  {archivePreviewData.eligible_purchases ??
+                    0}
+                </span>
+              </div>
+
+              <div className="record-row static">
+                <div>
+                  <strong>
+                    Blocked unpaid purchases
+                  </strong>
+                  <span>
+                    Purchases that must remain active
+                    because payment is pending
+                  </span>
+                </div>
+
+                <span>
+                  {archivePreviewData.blocked_unpaid_purchases ??
+                    0}
+                </span>
+              </div>
+
+              <div className="record-row static">
+                <div>
+                  <strong>
+                    Sales with outstanding amount
+                  </strong>
+                  <span>
+                    Sales that cannot yet be archived
+                  </span>
+                </div>
+
+                <span>
+                  {archivePreviewData.blocked_sales_with_due ??
+                    0}
+                </span>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="message-box">
+            Archive information is not available yet.
+          </div>
+        )}
+
+        {archiveMessage && (
+          <div
+            className="message-box"
+            style={{
+              marginTop: '12px',
+            }}
+          >
+            {archiveMessage}
+          </div>
+        )}
+
+        <div className="search-row">
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={refreshArchivePreview}
+            disabled={archiveLoading}
+          >
+            {archiveLoading
+              ? 'Refreshing...'
+              : 'Refresh Archive Information'}
+          </button>
+
+          <button
+            type="button"
+            className="primary-button"
+            onClick={saveArchiveSettings}
+            disabled={archiveSaving}
+          >
+            {archiveSaving
+              ? 'Saving...'
+              : 'Save Archive Settings'}
+          </button>
+        </div>
       </PanelList>
 
       <PanelList title="Security">
