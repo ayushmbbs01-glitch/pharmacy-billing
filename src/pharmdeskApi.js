@@ -1193,6 +1193,30 @@ export const PharmDeskAPI = {
       })
   },
 
+  getArchiveSettings(storeId) {
+    return select('archive_settings', {
+      select: '*',
+      eq: { store_id: storeId },
+      maybeSingle: true,
+    })
+  },
+
+  updateArchiveSettings(storeId, patch) {
+    return supabase
+      .from('archive_settings')
+      .upsert({
+        store_id: storeId,
+        ...patch,
+        updated_at: new Date().toISOString(),
+      })
+      .select()
+      .single()
+      .then(({ data, error }) => {
+        if (error) throw error
+        return data
+      })
+  },
+
   // ---------------------------------------------------------------------------
   // Generic direct reads for screens that need richer drill-down data.
   // These still respect RLS.
