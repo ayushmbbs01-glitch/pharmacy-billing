@@ -12130,20 +12130,62 @@ const rejectStoreApplication = async (
                 </span>
               </div>
 
-              <div className="record-row static">
+                          <div className="record-row static">
                 <div>
                   <strong>
-                    Normal archive cutoff
+                    Archive system started
                   </strong>
                   <span>
-                    Transactions older than the
-                    retention period
+                    Date from which PharmDesk begins
+                    tracking archive eligibility
                   </span>
                 </div>
 
                 <span>
-                 {archivePreviewData.settings?.normal_cutoff_date ??
-  '—'}
+                  {archivePreviewData.settings?.archive_start_date
+                    ? dateText(
+                        archivePreviewData.settings.archive_start_date,
+                      )
+                    : '—'}
+                </span>
+              </div>
+
+              <div className="record-row static">
+                <div>
+                  <strong>
+                    Normal retention
+                  </strong>
+                  <span>
+                    Transactions remain active for
+                    the configured retention period
+                  </span>
+                </div>
+
+                <span>
+                  {archivePreviewData.settings?.retention_months ??
+                    '—'}{' '}
+                  months
+                </span>
+              </div>
+
+              <div className="record-row static">
+                <div>
+                  <strong>
+                    First normal archive eligibility
+                  </strong>
+                  <span>
+                    First date on which normal archival
+                    can begin for this store
+                  </span>
+                </div>
+
+                <span>
+                  {archivePreviewData.settings?.first_normal_archive_date
+                    ? dateText(
+                        archivePreviewData.settings
+                          .first_normal_archive_date,
+                      )
+                    : '—'}
                 </span>
               </div>
 
@@ -12175,11 +12217,11 @@ const rejectStoreApplication = async (
                   </span>
                 </div>
 
-                <span>
-                 {archivePreviewData.emergency_active
-  ? 'Active'
-  : 'Normal'}
-                </span>
+               <span>
+  {archivePreviewData.database?.emergency_active
+    ? 'Active'
+    : 'Normal'}
+</span>
               </div>
 
               <div className="record-row static">
