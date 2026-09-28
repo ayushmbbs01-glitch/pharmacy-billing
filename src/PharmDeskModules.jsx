@@ -215,64 +215,109 @@ const paymentLabel = (value) => {
    APP  
 ========================================================= */  
   
-export function PharmDeskApp() {  
-  const [session, setSession] = useState(null)  
-  const [loading, setLoading] = useState(true)  
-  
-  useEffect(() => {  
-    let mounted = true  
-  
-  const init = async () => {
-  try {
-    const result = await PharmDeskAPI.getSession()
+export function PharmDeskApp() {
+  const [session, setSession] = useState(null)
+  const [loading, setLoading] = useState(true)
 
-    const currentSession =
-      result?.session ??
-      result?.data?.session ??
-      null
+  useEffect(() => {
+    let mounted = true
 
-    if (currentSession) {
-  try {
-    await PharmDeskAPI.claimApprovedStoreAccess()
-  } catch (claimError) {
-    console.error(
-      'Failed to claim approved store access:',
-      claimError,
-    )
-  }
-}
+    const init = async () => {
+      try {
+        const pathname =
+          window.location.pathname.replace(/\/+$/, '') || '/'
 
-if (mounted) {
-  setSession(currentSession)
-  setLoading(false)
-}
-  } catch (error) {
-    console.error('PharmDesk session initialization failed:', error)
+        const isLoginEntry =
+          pathname === '/login' ||
+          pathname === '/signin'
 
-    if (mounted) {
-      setSession(null)
-      setLoading(false)
+        /*
+          /login and /signin are public authentication entry points.
+
+          If somebody opens the shared login link while another
+          PharmDesk account is already stored in this browser,
+          remove that existing session first.
+        */
+        if (isLoginEntry) {
+          try {
+            await PharmDeskAPI.signOut()
+          } catch (signOutError) {
+            console.warn(
+              'Unable to clear existing session at login entry:',
+              signOutError,
+            )
+          }
+
+          if (mounted) {
+            setSession(null)
+            setLoading(false)
+          }
+
+          return
+        }
+
+        const result =
+          await PharmDeskAPI.getSession()
+
+        const currentSession =
+          result?.session ??
+          result?.data?.session ??
+          null
+
+        if (currentSession) {
+          try {
+            await PharmDeskAPI.claimApprovedStoreAccess()
+          } catch (claimError) {
+            console.error(
+              'Failed to claim approved store access:',
+              claimError,
+            )
+          }
+        }
+
+        if (mounted) {
+          setSession(currentSession)
+          setLoading(false)
+        }
+      } catch (error) {
+        console.error(
+          'PharmDesk session initialization failed:',
+          error,
+        )
+
+        if (mounted) {
+          setSession(null)
+          setLoading(false)
+        }
+      }
     }
+
+    init()
+
+    const {
+      data: { subscription },
+    } = PharmDeskAPI.onAuthStateChange(
+      (_event, nextSession) => {
+        if (mounted) {
+          setSession(nextSession || null)
+        }
+      },
+    )
+
+    return () => {
+      mounted = false
+      subscription.unsubscribe()
+    }
+  }, [])
+
+  if (loading) {
+    return <LoadingScreen />
   }
-}
-  
-    init()  
-  
-    const {  
-      data: { subscription },  
-    } = PharmDeskAPI.onAuthStateChange((_event, nextSession) => {  
-      setSession(nextSession || null)  
-    })  
-  
-    return () => {  
-      mounted = false  
-      subscription.unsubscribe()  
-    }  
-  }, [])  
-  
-  if (loading) return <LoadingScreen />  
-  if (!session) return <LoginScreen />  
-  
+
+  if (!session) {
+    return <LoginScreen />
+  }
+
   return <StoreApplicationGate session={session} />
 }  
   
@@ -280,16 +325,16 @@ if (mounted) {
    AUTH  
 ========================================================= */  
   
-function LoadingScreen() {  
-  return (  
-    <div className="loading-screen">  
-      <div className="loading-card">  
-        <h2>PharmDesk</h2>  
-        <p>Loading LABDHI PHARMA…</p>  
-      </div>  
-    </div>  
-  )  
-}  
+function LoadingScreen() {
+  return (
+    <div className="loading-screen">
+      <div className="loading-card">
+        <h2>PharmDesk</h2>
+        <p>Loading…</p>
+      </div>
+    </div>
+  )
+}
   
 function LoginScreen() {
   const [mode, setMode] = useState(() =>
