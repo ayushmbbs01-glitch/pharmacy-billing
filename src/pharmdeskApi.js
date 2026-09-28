@@ -128,6 +128,21 @@ export const PharmDeskAPI = {
     return data.user
   },
 
+  async signUp(email, password, ownerName = '') {
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          owner_name: ownerName || null,
+          full_name: ownerName || null,
+        },
+      },
+    })
+    if (error) throw error
+    return data
+  },
+
   async sendPasswordResetOtp(email, redirectTo) {
     const { data, error } =
       await supabase.auth.resetPasswordForEmail(
@@ -152,16 +167,25 @@ export const PharmDeskAPI = {
   },
 
   async updatePassword(newPassword, currentPassword = null) {
-    const payload = {
-      password: newPassword,
-    }
-
     if (currentPassword) {
-      payload.current_password = currentPassword
+      const user = await this.getUser()
+      const email = user?.email
+
+      if (!email) {
+        throw new Error('Unable to determine the current account email.')
+      }
+
+      const { error: verifyError } =
+        await supabase.auth.signInWithPassword({
+          email,
+          password: currentPassword,
+        })
+
+      if (verifyError) throw verifyError
     }
 
     const { data, error } =
-      await supabase.auth.updateUser(payload)
+      await supabase.auth.updateUser({ password: newPassword })
 
     if (error) throw error
     return data
@@ -193,6 +217,137 @@ export const PharmDeskAPI = {
       select: '*',
       eq: { id: userId },
       maybeSingle: true,
+    })
+  },
+
+  async getMyStoreApplication(userId = null) {
+    const resolvedUserId = userId || (await this.getUser())?.id
+    if (!resolvedUserId) return null
+
+    return select('store_applications', {
+      select: '*',
+      eq: { owner_user_id: resolvedUserId },
+      order: [{ column: 'created_at', ascending: false }],
+      limit: 1,
+      maybeSingle: true,
+    })
+  },
+
+  claimApprovedStoreAccess() {
+    return call('claim_approved_store_access')
+  },
+
+  submitStoreApplication({
+    ownerName,
+    storeName,
+    address = null,
+    phone = null,
+    storeEmail = null,
+    gstin = null,
+    drugLicenseNumber = null,
+  }) {
+    return call('pharmdesk_submit_store_application', {
+      p_owner_name: ownerName,
+      p_store_name: storeName,
+      p_address: address,
+      p_phone: phone,
+      p_store_email: storeEmail,
+      p_gstin: gstin,
+      p_drug_license_number: drugLicenseNumber,
+    })
+  },
+
+  isPlatformAdmin() {
+    return call('pharmdesk_is_platform_admin')
+  },
+
+  adminListStores() {
+    return call('pharmdesk_admin_list_stores')
+  },
+
+  adminListStoreApplications() {
+    return call('pharmdesk_admin_list_store_applications')
+  },
+
+  adminCreateStore({
+    name,
+    ownerEmail,
+    address = null,
+    phone = null,
+    email = null,
+    gstin = null,
+    drugLicenseNumber = null,
+  }) {
+    return call('pharmdesk_admin_create_store', {
+      p_name: name,
+      p_owner_email: ownerEmail,
+      p_address: address,
+      p_phone: phone,
+      p_email: email,
+      p_gstin: gstin,
+      p_drug_license_number: drugLicenseNumber,
+    })
+  },
+
+  adminActivateStore(storeId, startDate = null) {
+    return call('pharmdesk_admin_activate_store', {
+      p_store_id: storeId,
+      ...(startDate ? { p_start_date: startDate } : {}),
+    })
+  },
+
+  adminSuspendStore(storeId) {
+    return call('pharmdesk_admin_suspend_store', {
+      p_store_id: storeId,
+    })
+  },
+
+  adminReactivateStore(storeId, startDate = null) {
+    return call('pharmdesk_admin_reactivate_store', {
+      p_store_id: storeId,
+      ...(startDate ? { p_start_date: startDate } : {}),
+    })
+  },
+
+  adminApproveStoreApplication(applicationId, startDate = null) {
+    return call('pharmdesk_admin_approve_store_application', {
+      p_application_id: applicationId,
+      ...(startDate ? { p_start_date: startDate } : {}),
+    })
+  },
+
+  adminRejectStoreApplication(applicationId, rejectionReason = null) {
+    return call('pharmdesk_admin_reject_store_application', {
+      p_application_id: applicationId,
+      p_rejection_reason: rejectionReason,
+    })
+  },
+
+  getStoreAccessRequests(storeId) {
+    return select('store_access_requests', {
+      select: '*',
+      eq: { store_id: storeId },
+      order: [{ column: 'created_at', ascending: false }],
+    })
+  },
+
+  createStoreAccessRequest(storeId, email, role = 'salesperson') {
+    return call('create_store_access_request', {
+      p_store_id: storeId,
+      p_email: email,
+      p_role: role,
+    })
+  },
+
+  approveStoreAccessRequest(requestId) {
+    return call('approve_store_access_request', {
+      p_request_id: requestId,
+    })
+  },
+
+  rejectStoreAccessRequest(requestId) {
+    return call('reject_store_access_request', {
+      p_request_id: requestId,
     })
   },
 
@@ -1117,6 +1272,7 @@ export const PharmDeskAPI = {
 
     return query.then(({ data, error }) => {
       if (error) throw error
+      return data
     })
   },
 
@@ -1127,6 +1283,46 @@ export const PharmDeskAPI = {
   archivePreview(storeId) {
     return call('pharmdesk_archive_preview', {
       p_store_id: storeId,
+    })
+  },
+
+  archiveCandidatePreview(storeId, limit = 25) {
+    return call('pharmdesk_archive_candidate_preview', {
+      p_store_id: storeId,
+      p_limit: limit,
+    })
+  },
+
+  archiveTransactionStatus(storeId, recordType, recordId) {
+    return call('pharmdesk_archive_transaction_status', {
+      p_store_id: storeId,
+      p_record_type: recordType,
+      p_record_id: recordId,
+    })
+  },
+
+  prepareArchive(storeId, recordType, recordId) {
+    return call('pharmdesk_prepare_archive', {
+      p_store_id: storeId,
+      p_record_type: recordType,
+      p_record_id: recordId,
+    })
+  },
+
+  buildArchivePackage(storeId, recordType, recordId) {
+    return call('pharmdesk_build_archive_package', {
+      p_store_id: storeId,
+      p_record_type: recordType,
+      p_record_id: recordId,
+    })
+  },
+
+  finalizeArchive(archiveId, sha256, packageBytes, storageKey) {
+    return call('pharmdesk_finalize_archive', {
+      p_archive_id: archiveId,
+      p_sha256: sha256,
+      p_package_bytes: packageBytes,
+      p_storage_key: storageKey,
     })
   },
 
