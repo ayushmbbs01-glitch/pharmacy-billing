@@ -225,6 +225,47 @@ const paymentLabel = (value) => {
   return map[value] || value || '—'  
 }  
   
+const customerLedgerVisual = (type) => {  
+  const map = {  
+    credit_sale: {  
+      label: 'Credit sale',  
+      background: '#fff1f2',  
+      border: '#ef4444',  
+      text: '#b91c1c',  
+    },  
+    paid_sale: {  
+      label: 'Paid on the spot',  
+      background: '#eff6ff',  
+      border: '#3b82f6',  
+      text: '#1d4ed8',  
+    },  
+    payment: {  
+      label: 'Payment received',  
+      background: '#ecfdf5',  
+      border: '#22c55e',  
+      text: '#15803d',  
+    },  
+    adjustment: {  
+      label: 'Adjustment',  
+      background: '#fffbeb',  
+      border: '#f59e0b',  
+      text: '#b45309',  
+    },  
+    refund: {  
+      label: 'Refund',  
+      background: '#f5f3ff',  
+      border: '#8b5cf6',  
+      text: '#6d28d9',  
+    },  
+  }  
+  return map[type] || {  
+    label: 'Account entry',  
+    background: '#ffffff',  
+    border: '#d1d5db',  
+    text: '#374151',  
+  }  
+}  
+  
 /* =========================================================  
    APP  
 ========================================================= */  
@@ -2802,10 +2843,27 @@ function CustomerHistoryList({ store }) {
             key={customer.id}  
           >  
             <div>  
-              <strong>  
+              <button  
+                type="button"  
+                onClick={() => setSelected(customer)}  
+                style={{  
+                  border: 0,  
+                  background: 'transparent',  
+                  padding: 0,  
+                  margin: 0,  
+                  font: 'inherit',  
+                  fontWeight: 700,  
+                  color: '#0a5bd3',  
+                  textAlign: 'left',  
+                  textDecoration: 'underline',  
+                  textUnderlineOffset: '3px',  
+                  cursor: 'pointer',  
+                }}  
+                title="Open customer account"  
+              >  
                 {customer.name ||  
                   'Walk-in Customer'}  
-              </strong>  
+              </button>  
   
               <span>  
                 {customer.phone ||  
@@ -2815,21 +2873,13 @@ function CustomerHistoryList({ store }) {
   
             <div className="record-right">  
               <button  
+                type="button"  
                 className="secondary-button"  
                 onClick={() =>  
                   setEditing(customer)  
                 }  
               >  
                 Edit  
-              </button>  
-  
-              <button  
-                className="secondary-button"  
-                onClick={() =>  
-                  setSelected(customer)  
-                }  
-              >  
-                History  
               </button>  
             </div>  
           </div>  
@@ -3029,12 +3079,18 @@ function CustomerHistoryModal({
     const entries = []
 
     activeSales.forEach((sale) => {
+      const saleAmount = safeNumber(sale.grand_total)
+      const salePaid = safeNumber(sale.amount_paid)
+      const saleDue = safeNumber(sale.amount_due)
+      const isCreditSale = saleDue > 0.009 && salePaid < saleAmount - 0.009
+
       entries.push({
         id: `invoice-${sale.id}`,
         reference: sale.invoice_number || `Invoice ${String(sale.id).slice(0, 8).toUpperCase()}`,
         date: sale.bill_datetime,
-        debit: safeNumber(sale.grand_total),
+        debit: saleAmount,
         credit: 0,
+        entryType: isCreditSale ? 'credit_sale' : 'paid_sale',
         sortDate: new Date(sale.bill_datetime || 0).getTime(),
       })
     })
@@ -3048,9 +3104,11 @@ function CustomerHistoryModal({
           reference:
             payment.payment_reference ||
             `Receipt RCP-${String(payment.id || '').slice(0, 8).toUpperCase()}`,
+          paymentMode: payment.payment_method ? paymentLabel(payment.payment_method) : '',
           date: payment.created_at || sale?.bill_datetime,
           debit: 0,
           credit: safeNumber(payment.amount),
+          entryType: 'payment',
           sortDate: new Date(payment.created_at || sale?.bill_datetime || 0).getTime(),
         })
       })
@@ -3060,12 +3118,15 @@ function CustomerHistoryModal({
       if (entry.sale_id && !sale) return
 
       if (entry.transaction_type === 'credit_payment') {
+        const paymentModeMatch = String(entry.notes || '').match(/Payment mode:\s*([^\n]+)/i)
         entries.push({
           id: `credit-payment-${entry.id}`,
           reference: `Receipt RCP-${String(entry.id || '').slice(0, 8).toUpperCase()}`,
+          paymentMode: paymentModeMatch ? paymentModeMatch[1].trim() : '',
           date: entry.created_at,
           debit: 0,
           credit: safeNumber(entry.amount),
+          entryType: 'payment',
           sortDate: new Date(entry.created_at || 0).getTime(),
         })
       } else if (entry.transaction_type === 'credit_adjustment') {
@@ -3076,6 +3137,7 @@ function CustomerHistoryModal({
           date: entry.created_at,
           debit: amount > 0 ? amount : 0,
           credit: amount < 0 ? Math.abs(amount) : 0,
+          entryType: 'adjustment',
           sortDate: new Date(entry.created_at || 0).getTime(),
         })
       } else if (entry.transaction_type === 'credit_refund') {
@@ -3085,6 +3147,7 @@ function CustomerHistoryModal({
           date: entry.created_at,
           debit: 0,
           credit: safeNumber(entry.amount),
+          entryType: 'refund',
           sortDate: new Date(entry.created_at || 0).getTime(),
         })
       }
@@ -3187,38 +3250,157 @@ function CustomerHistoryModal({
 
           {!ledgerError && accountLedger.length > 0 && (
             <>
-              <div className="record-list">
-                <div className="record-row static" style={{ fontWeight: 700 }}>
-                  <div>Reference</div>
-                  <div className="record-right" style={{ minWidth: 260 }}>
-                    <span>Date</span>
-                    <span>Debit</span>
-                    <span>Credit</span>
-                  </div>
-                </div>
-
-                {accountLedger.map((entry) => (
-                  <div className="record-row static" key={entry.id}>
-                    <div>
-                      <strong>{entry.reference}</strong>
-                    </div>
-                    <div className="record-right" style={{ minWidth: 260 }}>
-                      <span>{dateTimeText(entry.date)}</span>
-                      <span>{entry.debit > 0 ? money(entry.debit) : '—'}</span>
-                      <span>{entry.credit > 0 ? money(entry.credit) : '—'}</span>
-                    </div>
-                  </div>
-                ))}
+              <div
+                style={{
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  gap: 10,
+                  alignItems: 'center',
+                  marginBottom: 12,
+                  padding: '10px 12px',
+                  border: '1px solid #d1d5db',
+                  borderRadius: 12,
+                  background: '#f8fafc',
+                }}
+              >
+                <strong style={{ marginRight: 4 }}>Ledger guide:</strong>
+                {[
+                  ['credit_sale', 'Credit sale'],
+                  ['paid_sale', 'Paid on the spot'],
+                  ['payment', 'Payment received'],
+                ].map(([type, label]) => {
+                  const visual = customerLedgerVisual(type)
+                  return (
+                    <span
+                      key={type}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 7,
+                        fontSize: 13,
+                        fontWeight: 600,
+                        color: visual.text,
+                      }}
+                    >
+                      <span
+                        aria-hidden="true"
+                        style={{
+                          width: 12,
+                          height: 12,
+                          borderRadius: 3,
+                          background: visual.border,
+                          display: 'inline-block',
+                        }}
+                      />
+                      {label}
+                    </span>
+                  )
+                })}
               </div>
 
-              <div className="record-row static" style={{ marginTop: 12, fontWeight: 700 }}>
-                <div>
-                  <strong>Totals</strong>
+              <div
+                style={{
+                  overflowX: 'auto',
+                  border: '1px solid #c7cbd1',
+                  borderRadius: 14,
+                  background: '#fff',
+                }}
+              >
+                <div
+                  style={{
+                    minWidth: 720,
+                    display: 'grid',
+                    gridTemplateColumns: '1.35fr 1fr 1fr 1fr',
+                    background: '#eef0f4',
+                    borderBottom: '1px solid #c7cbd1',
+                    fontWeight: 700,
+                  }}
+                >
+                  <div style={{ padding: '16px 20px' }}>Reference</div>
+                  <div style={{ padding: '16px 20px' }}>Date</div>
+                  <div style={{ padding: '16px 20px', textAlign: 'right' }}>Debit</div>
+                  <div style={{ padding: '16px 20px', textAlign: 'right' }}>Credit</div>
                 </div>
-                <div className="record-right" style={{ minWidth: 260 }}>
-                  <span>Outstanding: {money(ledgerOutstanding)}</span>
-                  <span>{money(totalDebit)}</span>
-                  <span>{money(totalCredit)}</span>
+
+                {accountLedger.map((entry) => {
+                  const visual = customerLedgerVisual(entry.entryType)
+                  return (
+                    <div
+                      className="customer-ledger-row"
+                      key={entry.id}
+                      style={{
+                        minWidth: 720,
+                        display: 'grid',
+                        gridTemplateColumns: '1.35fr 1fr 1fr 1fr',
+                        borderBottom: '1px solid #d9dce1',
+                        borderLeft: `5px solid ${visual.border}`,
+                        background: visual.background,
+                      }}
+                    >
+                      <div style={{ padding: '16px 20px' }}>
+                        <strong style={{ color: visual.text }}>{entry.reference}</strong>
+                        <span
+                          style={{
+                            display: 'block',
+                            marginTop: 4,
+                            color: visual.text,
+                            fontSize: 12,
+                            fontWeight: 700,
+                          }}
+                        >
+                          {visual.label}
+                        </span>
+                        {entry.paymentMode && (
+                          <span style={{ display: 'block', marginTop: 3, color: '#6b7280', fontSize: 13 }}>
+                            Mode: {entry.paymentMode}
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ padding: '16px 20px' }}>
+                        {dateTimeText(entry.date)}
+                      </div>
+                      <div
+                        style={{
+                          padding: '16px 20px',
+                          textAlign: 'right',
+                          color: entry.debit > 0 ? visual.text : '#374151',
+                          fontWeight: entry.debit > 0 ? 700 : 400,
+                        }}
+                      >
+                        {entry.debit > 0 ? money(entry.debit) : '—'}
+                      </div>
+                      <div
+                        style={{
+                          padding: '16px 20px',
+                          textAlign: 'right',
+                          color: entry.credit > 0 ? '#15803d' : '#374151',
+                          fontWeight: entry.credit > 0 ? 700 : 400,
+                        }}
+                      >
+                        {entry.credit > 0 ? money(entry.credit) : '—'}
+                      </div>
+                    </div>
+                  )
+                })}
+
+                <div
+                  style={{
+                    minWidth: 720,
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 1fr 1.2fr',
+                    background: '#e6e9ef',
+                    fontWeight: 700,
+                  }}
+                >
+                  <div style={{ padding: '18px 20px' }}>
+                    Total Debit: {money(totalDebit)}
+                  </div>
+                  <div style={{ padding: '18px 20px' }}>
+                    Total Credit: {money(totalCredit)}
+                  </div>
+                  <div style={{ padding: '18px 20px', textAlign: 'right' }}>
+                    Outstanding Balance: {money(ledgerOutstanding)}
+                  </div>
                 </div>
               </div>
             </>
@@ -4913,14 +5095,24 @@ function CustomerCredit({ store }) {
       ) : (
         <div className="record-list">
           {filtered.map((row) => (
-            <div className="record-row static" key={row.customer_id}>
+            <div
+              className="record-row static"
+              key={row.customer_id}
+              style={{
+                background: '#fff1f2',
+                borderLeft: '5px solid #ef4444',
+              }}
+            >
               <div>
-                <strong>{row.name || 'Walk-in Customer'}</strong>
+                <strong style={{ color: '#b91c1c', fontSize: 16 }}>
+                  {row.name || 'Walk-in Customer'}
+                </strong>
                 <span>{row.phone || 'No phone'}</span>
-                {row.last_bill_at && <span>Last credit: {dateTimeText(row.last_bill_at)}</span>}
+                <span style={{ color: '#b91c1c', fontWeight: 600 }}>Outstanding customer credit</span>
+                {row.last_bill_at && <span>Last credit sale: {dateTimeText(row.last_bill_at)}</span>}
               </div>
               <div className="record-right">
-                <strong>Outstanding: {money(row.outstanding_credit)}</strong>
+                <strong style={{ color: '#b91c1c' }}>Outstanding: {money(row.outstanding_credit)}</strong>
                 <button
                   type="button"
                   className="primary-button"
@@ -4963,6 +5155,7 @@ function CustomerSettlementModal({
 }) {
   const outstanding = safeNumber(customer?.outstanding_credit)
   const [amount, setAmount] = useState(String(outstanding || ''))
+  const [paymentMethod, setPaymentMethod] = useState('cash')
   const [notes, setNotes] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -4983,7 +5176,7 @@ function CustomerSettlementModal({
           p_store_id: store.id,
           p_customer_id: customer.id,
           p_amount: paid,
-          p_notes: notes.trim() || null,
+          p_notes: `Payment mode: ${paymentLabel(paymentMethod)}${notes.trim() ? `\n${notes.trim()}` : ''}`,
         },
       )
       if (rpcError) throw rpcError
@@ -4995,6 +5188,7 @@ function CustomerSettlementModal({
         phone: customer.phone || '',
         amount: paid,
         remaining,
+        paymentMethod,
         date: new Date().toISOString(),
         notes: notes.trim(),
       })
@@ -5040,6 +5234,7 @@ function CustomerSettlementModal({
           <div class="row"><span>Customer</span><strong>${safe(receipt.customerName)}</strong></div>
           <div class="row"><span>Phone</span><span>${safe(receipt.phone || '—')}</span></div>
           <div class="row"><span>Date</span><span>${safe(dateTimeText(receipt.date))}</span></div>
+          <div class="row"><span>Payment mode</span><strong>${safe(paymentLabel(receipt.paymentMethod))}</strong></div>
           <div class="row total"><span>Amount paid</span><span>${safe(money(receipt.amount))}</span></div>
           <div class="row"><span>Remaining credit</span><strong>${safe(money(receipt.remaining))}</strong></div>
           ${receipt.notes ? `<p><strong>Notes:</strong> ${safe(receipt.notes)}</p>` : ''}
@@ -5061,6 +5256,7 @@ function CustomerSettlementModal({
             <strong>{receipt.customerName}</strong>
             <span>Receipt {receipt.id}</span>
             <span>{dateTimeText(receipt.date)}</span>
+            <span>Payment mode: {paymentLabel(receipt.paymentMethod)}</span>
           </div>
           <div className="record-right"><strong>{money(receipt.amount)}</strong></div>
         </div>
@@ -5087,6 +5283,21 @@ function CustomerSettlementModal({
             onChange={(e) => setAmount(e.target.value)}
             required
           />
+        </label>
+        <label>
+          Mode of payment
+          <select
+            value={paymentMethod}
+            onChange={(e) => setPaymentMethod(e.target.value)}
+            required
+          >
+            <option value="cash">Cash</option>
+            <option value="upi">UPI</option>
+            <option value="card">Card</option>
+            <option value="bank_transfer">Bank transfer</option>
+            <option value="cheque">Cheque</option>
+            <option value="other">Other</option>
+          </select>
         </label>
         <label>
           Notes
@@ -9442,8 +9653,10 @@ function CustomersModule({
                       margin: 0,
                       font: 'inherit',
                       fontWeight: 700,
-                      color: 'inherit',
+                      color: '#0a5bd3',
                       textAlign: 'left',
+                      textDecoration: 'underline',
+                      textUnderlineOffset: '3px',
                       cursor: 'pointer',
                     }}
                     title="Open customer account"
