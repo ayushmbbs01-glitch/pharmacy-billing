@@ -7091,6 +7091,8 @@ function SupplierHistoryModal({
     useState([])  
   const [items, setItems] =  
     useState([])  
+  const [payments, setPayments] =  
+    useState([])  
   const [loading, setLoading] =  
     useState(true)  
   
@@ -7134,6 +7136,27 @@ function SupplierHistoryModal({
       setInvoices(  
         invoiceRows || [],  
       )  
+  
+      const {  
+        data: paymentRows,  
+      } = await supabase  
+        .from('supplier_payment_transactions')  
+        .select(`  
+          id,  
+          purchase_invoice_id,  
+          amount,  
+          payment_date,  
+          payment_method,  
+          reference_number,  
+          notes  
+        `)  
+        .eq('store_id', store.id)  
+        .eq('supplier_id', supplier.id)  
+        .order('payment_date', {  
+          ascending: false,  
+        })  
+  
+      setPayments(paymentRows || [])  
   
       if (  
         invoiceRows?.length  
@@ -7389,6 +7412,51 @@ function SupplierHistoryModal({
           </div>  
   
           <h3>  
+            Supplier payment history  
+          </h3>  
+  
+          {payments.length === 0 ? (  
+            <EmptyState text="No supplier payments recorded yet." />  
+          ) : (  
+            <div className="record-list">  
+              {payments.map((payment) => {  
+                const invoice = invoices.find(  
+                  (row) =>  
+                    row.id ===  
+                    payment.purchase_invoice_id,  
+                )  
+  
+                return (  
+                  <div  
+                    className="record-row static"  
+                    key={payment.id}  
+                  >  
+                    <div>  
+                      <strong>  
+                        {invoice?.invoice_number ||  
+                          'Supplier payment'}  
+                      </strong>  
+                      <span>  
+                        Paid on {dateText(  
+                          payment.payment_date,  
+                        )}  
+                      </span>  
+                      {payment.payment_method && (  
+                        <span>  
+                          {payment.payment_method}  
+                        </span>  
+                      )}  
+                    </div>  
+                    <strong>  
+                      {money(payment.amount)}  
+                    </strong>  
+                  </div>  
+                )  
+              })}  
+            </div>  
+          )}  
+  
+          <h3>  
             Previous invoices  
           </h3>  
   
@@ -7438,93 +7506,406 @@ function SupplierHistoryModal({
   )  
 }  
   
-function PendingSupplierPayments({  
-  store,  
-}) {  
-  const [rows, setRows] =  
-    useState([])  
-  
-  useEffect(() => {  
-    if (!store?.id) return  
-  
-    supabase  
-      .from(  
-        'purchase_invoices',  
-      )  
-      .select(`  
-        *,  
-        suppliers (  
-          supplier_name  
-        )  
-      `)  
-      .eq(  
-        'store_id',  
-        store.id,  
-      )  
-      .in(  
-        'payment_status',  
-        [  
-          'unpaid',  
-          'pending',  
-          'partial',  
-          'due',  
-        ],  
-      )  
-      .order(  
-        'invoice_date',  
-        {  
-          ascending: true,  
-        },  
-      )  
-      .then(({ data }) =>  
-        setRows(  
-          data || [],  
-        ),  
-      )  
-  }, [store?.id])  
-  
-  return (  
-    <PanelList title="Pending Supplier Payments">  
-      {rows.length ===  
-      0 ? (  
-        <EmptyState text="No pending supplier payments." />  
-      ) : (  
-        <div className="record-list">  
-          {rows.map(  
-            (row) => (  
-              <div  
-                className="record-row static"  
-                key={row.id}  
-              >  
-                <div>  
-                  <strong>  
-                    {  
-                      row.suppliers  
-                        ?.supplier_name ||  
-                      'Supplier'  
-                    }  
-                  </strong>  
-  
-                  <span>  
-                    {  
-                      row.invoice_number  
-                    }  
-                  </span>  
-                </div>  
-  
-                <strong>  
-                  {money(  
-                    row.total_amount,  
-                  )}  
-                </strong>  
-              </div>  
-            ),  
-          )}  
-        </div>  
-      )}  
-    </PanelList>  
-  )  
-}  
+function PendingSupplierPayments({
+  store,
+}) {
+  const [rows, setRows] = useState([])
+  const [suppliers, setSuppliers] = useState([])
+  const [supplierFilter, setSupplierFilter] = useState('')
+  const [selectedIds, setSelectedIds] = useState([])
+  const [paymentDate, setPaymentDate] = useState(() => {
+    const now = new Date()
+    const year = now.getFullYear()
+    const month = String(now.getMonth() + 1).padStart(2, '0')
+    const day = String(now.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  })
+  const [paymentMethod, setPaymentMethod] = useState('Cash')
+  const [notes, setNotes] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [message, setMessage] = useState('')
+
+  const load = async () => {
+    if (!store?.id) return
+
+    setLoading(true)
+    setError('')
+
+    const [{ data: invoiceRows, error: invoiceError }, { data: supplierRows, error: supplierError }] =
+      await Promise.all([
+        supabase
+          .from('purchase_invoices')
+          .select(`
+            *,
+            suppliers (
+              id,
+              supplier_name
+            )
+          `)
+          .eq('store_id', store.id)
+          .in('payment_status', [
+            'unpaid',
+            'pending',
+            'partial',
+            'due',
+          ])
+          .order('invoice_date', { ascending: true }),
+        supabase
+          .from('suppliers')
+          .select('id, supplier_name')
+          .eq('store_id', store.id)
+          .eq('is_active', true)
+          .order('supplier_name'),
+      ])
+
+    if (invoiceError || supplierError) {
+      setError(
+        invoiceError?.message ||
+          supplierError?.message ||
+          'Unable to load pending supplier payments.',
+      )
+      setRows([])
+      setSuppliers([])
+      setLoading(false)
+      return
+    }
+
+    setRows(invoiceRows || [])
+    setSuppliers(supplierRows || [])
+    setSelectedIds([])
+    setLoading(false)
+  }
+
+  useEffect(() => {
+    load()
+  }, [store?.id])
+
+  const filteredRows = useMemo(() => {
+    if (!supplierFilter) return rows
+    return rows.filter(
+      (row) => row.supplier_id === supplierFilter,
+    )
+  }, [rows, supplierFilter])
+
+  const selectedRows = useMemo(
+    () =>
+      rows.filter((row) =>
+        selectedIds.includes(row.id),
+      ),
+    [rows, selectedIds],
+  )
+
+  const selectedTotal = selectedRows.reduce(
+    (sum, row) => sum + safeNumber(row.total_amount),
+    0,
+  )
+
+  const toggleRow = (id) => {
+    setSelectedIds((current) =>
+      current.includes(id)
+        ? current.filter((value) => value !== id)
+        : [...current, id],
+    )
+    setMessage('')
+    setError('')
+  }
+
+  const toggleAllFiltered = () => {
+    const filteredIds = filteredRows
+      .filter((row) => row.payment_status !== 'partial')
+      .map((row) => row.id)
+    const allSelected = filteredIds.every((id) =>
+      selectedIds.includes(id),
+    )
+
+    setSelectedIds((current) =>
+      allSelected
+        ? current.filter(
+            (id) => !filteredIds.includes(id),
+          )
+        : Array.from(
+            new Set([...current, ...filteredIds]),
+          ),
+    )
+    setMessage('')
+    setError('')
+  }
+
+  const markSelectedAsPaid = async () => {
+    if (!selectedIds.length) {
+      setError('Select at least one bill to pay.')
+      return
+    }
+
+    if (!paymentDate) {
+      setError('Select the date on which the payment was made.')
+      return
+    }
+
+    const confirmed = window.confirm(
+      `Mark ${selectedIds.length} selected bill${selectedIds.length === 1 ? '' : 's'} as paid for ${money(selectedTotal)}?`,
+    )
+
+    if (!confirmed) return
+
+    setSaving(true)
+    setError('')
+    setMessage('')
+
+    try {
+      const { error: paymentError } = await supabase.rpc(
+        'pharmdesk_mark_supplier_invoices_paid',
+        {
+          p_store_id: store.id,
+          p_invoice_ids: selectedIds,
+          p_payment_date: paymentDate,
+          p_payment_method: paymentMethod,
+          p_notes: notes,
+        },
+      )
+
+      if (paymentError) {
+        throw paymentError
+      }
+
+      setSelectedIds([])
+      setNotes('')
+      setMessage(
+        `${money(selectedTotal)} marked as paid on ${dateText(paymentDate)}.`,
+      )
+      await load()
+    } catch (paymentError) {
+      console.error(
+        'Failed to record supplier payment:',
+        paymentError,
+      )
+      setError(
+        paymentError?.message ||
+          'Unable to record supplier payment.',
+      )
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <PanelList title="Pending Supplier Payments">
+      <div
+        style={{
+          display: 'grid',
+          gap: 12,
+          marginBottom: 14,
+        }}
+      >
+        <label>
+          Supplier / Party
+          <select
+            value={supplierFilter}
+            onChange={(e) => {
+              setSupplierFilter(e.target.value)
+              setSelectedIds([])
+            }}
+          >
+            <option value="">All suppliers</option>
+            {suppliers.map((supplier) => (
+              <option
+                key={supplier.id}
+                value={supplier.id}
+              >
+                {supplier.supplier_name}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <div
+          style={{
+            display: 'flex',
+            gap: 8,
+            alignItems: 'center',
+            flexWrap: 'wrap',
+          }}
+        >
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={toggleAllFiltered}
+            disabled={!filteredRows.some((row) => row.payment_status !== 'partial')}
+          >
+            {filteredRows.length > 0 &&
+            filteredRows.every((row) =>
+              selectedIds.includes(row.id),
+            )
+              ? 'Unselect all'
+              : 'Select all shown'}
+          </button>
+
+          <span>
+            {selectedIds.length} bill
+            {selectedIds.length === 1 ? '' : 's'} selected
+          </span>
+        </div>
+      </div>
+
+      {error && (
+        <div className="error-text">
+          {error}
+        </div>
+      )}
+
+      {message && (
+        <div className="success-text">
+          {message}
+        </div>
+      )}
+
+      {loading ? (
+        <LoadingInline />
+      ) : filteredRows.length === 0 ? (
+        <EmptyState text="No pending supplier payments." />
+      ) : (
+        <div className="record-list">
+          {filteredRows.map((row) => {
+            const selected = selectedIds.includes(
+              row.id,
+            )
+
+            return (
+              <label
+                className="record-row"
+                key={row.id}
+                style={{
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 12,
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={selected}
+                  disabled={row.payment_status === 'partial'}
+                  onChange={() =>
+                    toggleRow(row.id)
+                  }
+                  style={{
+                    width: 20,
+                    height: 20,
+                    flex: '0 0 auto',
+                  }}
+                />
+
+                <div style={{ flex: 1 }}>
+                  <strong>
+                    {row.invoice_number}
+                  </strong>
+                  <span>
+                    {row.suppliers
+                      ?.supplier_name ||
+                      'Supplier'}
+                  </span>
+                  <span>
+                    {dateText(row.invoice_date)}
+                  </span>
+                </div>
+
+                <div className="record-right">
+                  <span>
+                    {row.payment_status === 'partial'
+                      ? 'partial — settle separately'
+                      : row.payment_status}
+                  </span>
+                  <strong>
+                    {money(row.total_amount)}
+                  </strong>
+                </div>
+              </label>
+            )
+          })}
+        </div>
+      )}
+
+      {selectedIds.length > 0 && (
+        <div
+          style={{
+            marginTop: 16,
+            padding: 14,
+            border: '1px solid var(--border, #ddd)',
+            borderRadius: 10,
+            display: 'grid',
+            gap: 12,
+          }}
+        >
+          <strong>
+            Total selected: {money(selectedTotal)}
+          </strong>
+
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns:
+                'repeat(auto-fit, minmax(160px, 1fr))',
+              gap: 10,
+            }}
+          >
+            <label>
+              Payment date
+              <input
+                type="date"
+                value={paymentDate}
+                onChange={(e) =>
+                  setPaymentDate(e.target.value)
+                }
+              />
+            </label>
+
+            <label>
+              Payment method
+              <select
+                value={paymentMethod}
+                onChange={(e) =>
+                  setPaymentMethod(e.target.value)
+                }
+              >
+                <option>Cash</option>
+                <option>UPI</option>
+                <option>Card</option>
+                <option>Bank transfer</option>
+                <option>Cheque</option>
+                <option>Other</option>
+              </select>
+            </label>
+          </div>
+
+          <label>
+            Notes (optional)
+            <input
+              type="text"
+              value={notes}
+              onChange={(e) =>
+                setNotes(e.target.value)
+              }
+              placeholder="Payment reference or note"
+            />
+          </label>
+
+          <button
+            type="button"
+            className="primary-button"
+            onClick={markSelectedAsPaid}
+            disabled={saving}
+          >
+            {saving
+              ? 'Recording payment…'
+              : `Mark selected as paid · ${money(selectedTotal)}`}
+          </button>
+        </div>
+      )}
+    </PanelList>
+  )
+}
 
 function SupplierPurchaseCatalogue({ store }) {
   const [suppliers, setSuppliers] = useState([])
@@ -9894,7 +10275,7 @@ function StockReconciliation({
             {safeNumber(physical) || 0}
             {' · '}
             Physical stock after reconciliation: {
-              systemStock +
+              safeNumber(selected.current_stock_units) +
               adjustmentSign *
                 (safeNumber(physical) || 0)
             }
