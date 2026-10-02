@@ -2888,6 +2888,7 @@ function CustomerHistoryList({ store }) {
   
       {selected && (  
         <CustomerHistoryModal  
+          store={store}  
           customer={selected}  
           onClose={() =>  
             setSelected(null)  
@@ -2922,7 +2923,143 @@ function CustomerHistoryList({ store }) {
   )  
 }  
   
+function CustomerLedgerReceiptModal({
+  store,
+  customer,
+  entry,
+  onClose,
+}) {
+  const [details, setDetails] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    if (entry.sourceType === 'sale_payment' && entry.payment) {
+      const sale = entry.sale
+      setDetails({
+        receiptId: entry.reference,
+        customerName: customer.name || 'Walk-in Customer',
+        phone: customer.phone || '',
+        invoiceNumber: sale?.invoice_number || '—',
+        date: entry.payment.created_at || sale?.bill_datetime,
+        amount: safeNumber(entry.payment.amount),
+        paymentMethod: paymentLabel(entry.payment.payment_method),
+        paymentReference: entry.payment.payment_reference || '',
+        notes: entry.payment.notes || '',
+      })
+      setLoading(false)
+      return
+    }
+
+    const transaction = entry.creditTransaction
+    const paymentModeMatch = String(transaction?.notes || '').match(/Payment mode:\s*([^\n]+)/i)
+    const notes = String(transaction?.notes || '')
+      .replace(/Payment mode:\s*[^\n]+\n?/i, '')
+      .trim()
+
+    setDetails({
+      receiptId: entry.reference,
+      customerName: customer.name || 'Walk-in Customer',
+      phone: customer.phone || '',
+      invoiceNumber: 'Customer credit settlement',
+      date: transaction?.created_at || entry.date,
+      amount: safeNumber(transaction?.amount),
+      paymentMethod: paymentModeMatch ? paymentModeMatch[1].trim() : '—',
+      paymentReference: '',
+      notes,
+    })
+    setLoading(false)
+  }, [entry, customer])
+
+  const printReceipt = () => {
+    if (!details) return
+    const printWindow = window.open('', '_blank', 'width=480,height=720')
+    if (!printWindow) return
+    const safe = (value) =>
+      String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;')
+    printWindow.document.write(`
+      <!doctype html>
+      <html>
+        <head>
+          <meta name="viewport" content="width=device-width,initial-scale=1" />
+          <title>${safe(details.receiptId)}</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 24px; max-width: 420px; margin: auto; }
+            h1 { font-size: 20px; margin-bottom: 18px; }
+            .row { display: flex; justify-content: space-between; gap: 16px; padding: 7px 0; }
+            .total { border-top: 1px solid #ccc; margin-top: 10px; padding-top: 12px; font-size: 18px; font-weight: 700; }
+          </style>
+        </head>
+        <body>
+          <h1>Payment Receipt</h1>
+          <div class="row"><span>Receipt</span><strong>${safe(details.receiptId)}</strong></div>
+          <div class="row"><span>Customer</span><strong>${safe(details.customerName)}</strong></div>
+          <div class="row"><span>Date</span><span>${safe(dateTimeText(details.date))}</span></div>
+          <div class="row"><span>Payment mode</span><strong>${safe(details.paymentMethod)}</strong></div>
+          <div class="row"><span>Invoice / reference</span><span>${safe(details.invoiceNumber)}</span></div>
+          ${details.paymentReference ? `<div class="row"><span>Payment reference</span><span>${safe(details.paymentReference)}</span></div>` : ''}
+          <div class="row total"><span>Amount</span><span>${safe(money(details.amount))}</span></div>
+          ${details.notes ? `<p><strong>Notes:</strong> ${safe(details.notes)}</p>` : ''}
+        </body>
+      </html>
+    `)
+    printWindow.document.close()
+    printWindow.focus()
+    setTimeout(() => printWindow.print(), 250)
+  }
+
+  return (
+    <Modal title={`Receipt ${details?.receiptId || ''}`} onClose={onClose}>
+      {loading ? (
+        <LoadingInline />
+      ) : !details ? (
+        <EmptyState text="Unable to load this receipt." />
+      ) : (
+        <>
+          <div className="history-header">
+            <div>
+              <strong>{details.receiptId}</strong>
+              <span>{details.customerName}</span>
+              <span>{dateTimeText(details.date)}</span>
+            </div>
+            <div className="button-row">
+              <button type="button" className="secondary-button" onClick={printReceipt}>
+                Print Receipt
+              </button>
+              <button type="button" className="primary-button" onClick={onClose}>
+                Back to Account
+              </button>
+            </div>
+          </div>
+
+          <div className="stats-grid">
+            <StatCard title="Amount" value={money(details.amount)} />
+            <StatCard title="Payment Mode" value={details.paymentMethod} />
+            <StatCard title="Invoice / Reference" value={details.invoiceNumber} />
+          </div>
+
+          {details.paymentReference && (
+            <div className="info-box">
+              Payment reference: <strong>{details.paymentReference}</strong>
+            </div>
+          )}
+          {details.notes && (
+            <div className="info-box">
+              Notes: {details.notes}
+            </div>
+          )}
+        </>
+      )}
+    </Modal>
+  )
+}
+
 function CustomerHistoryModal({
+  store,
   customer,
   onClose,
   onEdit,
@@ -2935,6 +3072,7 @@ function CustomerHistoryModal({
   const [creditSummary, setCreditSummary] = useState(null)
   const [loading, setLoading] = useState(true)
   const [ledgerError, setLedgerError] = useState('')
+  const [selectedLedgerEntry, setSelectedLedgerEntry] = useState(null)
 
   useEffect(() => {
     loadHistory()
@@ -3091,6 +3229,9 @@ function CustomerHistoryModal({
         debit: saleAmount,
         credit: 0,
         entryType: isCreditSale ? 'credit_sale' : 'paid_sale',
+        sourceType: 'invoice',
+        saleId: sale.id,
+        sale,
         sortDate: new Date(sale.bill_datetime || 0).getTime(),
       })
     })
@@ -3109,6 +3250,10 @@ function CustomerHistoryModal({
           debit: 0,
           credit: safeNumber(payment.amount),
           entryType: 'payment',
+          sourceType: 'sale_payment',
+          saleId: payment.sale_id,
+          payment,
+          sale,
           sortDate: new Date(payment.created_at || sale?.bill_datetime || 0).getTime(),
         })
       })
@@ -3127,6 +3272,8 @@ function CustomerHistoryModal({
           debit: 0,
           credit: safeNumber(entry.amount),
           entryType: 'payment',
+          sourceType: 'credit_payment',
+          creditTransaction: entry,
           sortDate: new Date(entry.created_at || 0).getTime(),
         })
       } else if (entry.transaction_type === 'credit_adjustment') {
@@ -3226,7 +3373,26 @@ function CustomerHistoryModal({
                 return (
                   <div className="record-row static" key={sale.id}>
                     <div>
-                      <strong>{sale.invoice_number || 'Bill'}</strong>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedLedgerEntry({ kind: 'invoice', sale })}
+                        style={{
+                          border: 0,
+                          background: 'transparent',
+                          padding: 0,
+                          margin: 0,
+                          font: 'inherit',
+                          fontWeight: 700,
+                          color: '#0a5bd3',
+                          textAlign: 'left',
+                          textDecoration: 'underline',
+                          textUnderlineOffset: '3px',
+                          cursor: 'pointer',
+                        }}
+                        title="Open invoice"
+                      >
+                        {sale.invoice_number || 'Bill'}
+                      </button>
                       <span>{dateTimeText(sale.bill_datetime)}</span>
                       <span>{due > 0.009 ? 'Outstanding' : 'Paid'}</span>
                     </div>
@@ -3302,6 +3468,7 @@ function CustomerHistoryModal({
                 style={{
                   overflowX: 'auto',
                   border: '1px solid #c7cbd1',
+                  fontFamily: 'inherit',
                   borderRadius: 14,
                   background: '#fff',
                 }}
@@ -3338,7 +3505,32 @@ function CustomerHistoryModal({
                       }}
                     >
                       <div style={{ padding: '16px 20px' }}>
-                        <strong style={{ color: visual.text }}>{entry.reference}</strong>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (entry.sourceType === 'invoice' && entry.sale) {
+                              setSelectedLedgerEntry({ kind: 'invoice', sale: entry.sale })
+                            } else if (entry.sourceType === 'sale_payment' || entry.sourceType === 'credit_payment') {
+                              setSelectedLedgerEntry({ kind: 'receipt', entry })
+                            }
+                          }}
+                          style={{
+                            border: 0,
+                            background: 'transparent',
+                            padding: 0,
+                            margin: 0,
+                            font: 'inherit',
+                            fontWeight: 700,
+                            color: visual.text,
+                            textAlign: 'left',
+                            textDecoration: 'underline',
+                            textUnderlineOffset: '3px',
+                            cursor: 'pointer',
+                          }}
+                          title={entry.sourceType === 'invoice' ? 'Open invoice' : 'Open receipt'}
+                        >
+                          {entry.reference}
+                        </button>
                         <span
                           style={{
                             display: 'block',
@@ -3404,6 +3596,27 @@ function CustomerHistoryModal({
                 </div>
               </div>
             </>
+          )}
+
+          {selectedLedgerEntry?.kind === 'invoice' && selectedLedgerEntry.sale && (
+            <SaleBillModal
+              store={store}
+              sale={selectedLedgerEntry.sale}
+              onClose={() => setSelectedLedgerEntry(null)}
+              onUpdated={() => {
+                setSelectedLedgerEntry(null)
+                loadHistory()
+              }}
+            />
+          )}
+
+          {selectedLedgerEntry?.kind === 'receipt' && (
+            <CustomerLedgerReceiptModal
+              store={store}
+              customer={customer}
+              entry={selectedLedgerEntry.entry}
+              onClose={() => setSelectedLedgerEntry(null)}
+            />
           )}
 
           <h3>Products Previously Purchased</h3>
@@ -5108,8 +5321,8 @@ function CustomerCredit({ store }) {
                   {row.name || 'Walk-in Customer'}
                 </strong>
                 <span>{row.phone || 'No phone'}</span>
-                <span style={{ color: '#b91c1c', fontWeight: 600 }}>Outstanding customer credit</span>
-                {row.last_bill_at && <span>Last credit sale: {dateTimeText(row.last_bill_at)}</span>}
+                <span style={{ color: '#b91c1c', fontWeight: 600 }}>Outstanding balance</span>
+                {row.last_bill_at && <span>Last bill: {dateTimeText(row.last_bill_at)}</span>
               </div>
               <div className="record-right">
                 <strong style={{ color: '#b91c1c' }}>Outstanding: {money(row.outstanding_credit)}</strong>
@@ -9713,6 +9926,7 @@ function CustomersModule({
 
       {history && (
         <CustomerHistoryModal
+          store={store}
           customer={history}
           onClose={() => setHistory(null)}
           onEdit={(customer) => {
