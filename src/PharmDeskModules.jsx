@@ -5322,7 +5322,7 @@ function CustomerCredit({ store }) {
                 </strong>
                 <span>{row.phone || 'No phone'}</span>
                 <span style={{ color: '#b91c1c', fontWeight: 600 }}>Outstanding balance</span>
-                {row.last_bill_at && <span>Last bill: {dateTimeText(row.last_bill_at)}</span>
+                {row.last_bill_at && <span>Last bill: {dateTimeText(row.last_bill_at)}</span>}
               </div>
               <div className="record-right">
                 <strong style={{ color: '#b91c1c' }}>Outstanding: {money(row.outstanding_credit)}</strong>
