@@ -7690,6 +7690,11 @@ function PendingSupplierPayments({
     }
   }
 
+  const supplierSelected = Boolean(supplierFilter)
+  const billGridColumns = supplierSelected
+    ? '46px minmax(190px, 1.25fr) minmax(150px, 1fr) minmax(140px, 0.8fr)'
+    : '46px minmax(190px, 1.1fr) minmax(170px, 1fr) minmax(150px, 0.9fr) minmax(140px, 0.8fr)'
+
   return (
     <PanelList title="Pending Supplier Payments">
       <div
@@ -7766,64 +7771,150 @@ function PendingSupplierPayments({
       ) : filteredRows.length === 0 ? (
         <EmptyState text="No pending supplier payments." />
       ) : (
-        <div className="record-list">
-          {filteredRows.map((row) => {
-            const selected = selectedIds.includes(
-              row.id,
-            )
-
-            return (
-              <label
-                className="record-row"
-                key={row.id}
-                style={{
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 12,
-                }}
-              >
+        <div
+          style={{
+            overflowX: 'auto',
+            border: '1px solid #dfe5ec',
+            borderRadius: 16,
+            background: '#fff',
+          }}
+        >
+          <div style={{ minWidth: supplierSelected ? 640 : 820 }}>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: billGridColumns,
+                alignItems: 'center',
+                minHeight: 64,
+                padding: '0 16px',
+                background: '#12345b',
+                color: '#fff',
+                borderRadius: '16px 16px 0 0',
+                fontWeight: 700,
+                fontSize: 16,
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'center' }}>
                 <input
                   type="checkbox"
-                  checked={selected}
-                  disabled={row.payment_status === 'partial'}
-                  onChange={() =>
-                    toggleRow(row.id)
+                  aria-label="Select all pending supplier bills"
+                  checked={
+                    filteredRows.filter((row) => row.payment_status !== 'partial').length > 0 &&
+                    filteredRows
+                      .filter((row) => row.payment_status !== 'partial')
+                      .every((row) => selectedIds.includes(row.id))
                   }
+                  onChange={toggleAllFiltered}
+                  disabled={!filteredRows.some((row) => row.payment_status !== 'partial')}
                   style={{
-                    width: 20,
-                    height: 20,
-                    flex: '0 0 auto',
+                    width: 22,
+                    height: 22,
+                    margin: 0,
                   }}
                 />
+              </div>
 
-                <div style={{ flex: 1 }}>
-                  <strong>
-                    {row.invoice_number}
-                  </strong>
-                  <span>
-                    {row.suppliers
-                      ?.supplier_name ||
-                      'Supplier'}
-                  </span>
-                  <span>
+              <div>Invoice No.</div>
+
+              {!supplierSelected && <div>Supplier</div>}
+
+              <div>Date</div>
+
+              <div style={{ textAlign: 'right' }}>Amount</div>
+            </div>
+
+            {filteredRows.map((row, index) => {
+              const selected = selectedIds.includes(row.id)
+              const disabled = row.payment_status === 'partial'
+
+              return (
+                <label
+                  key={row.id}
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: billGridColumns,
+                    alignItems: 'center',
+                    minHeight: 82,
+                    padding: '0 16px',
+                    borderBottom:
+                      index === filteredRows.length - 1
+                        ? 'none'
+                        : '1px solid #e3e8ee',
+                    background: selected ? '#f4f8ff' : '#fff',
+                    cursor: disabled ? 'default' : 'pointer',
+                    opacity: disabled ? 0.72 : 1,
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'center' }}>
+                    <input
+                      type="checkbox"
+                      checked={selected}
+                      disabled={disabled}
+                      onChange={() => toggleRow(row.id)}
+                      style={{
+                        width: 22,
+                        height: 22,
+                        margin: 0,
+                      }}
+                    />
+                  </div>
+
+                  <div>
+                    <span
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        padding: '8px 14px',
+                        borderRadius: 10,
+                        background: '#e6f0ff',
+                        color: '#12345b',
+                        fontWeight: 800,
+                        fontSize: 17,
+                        lineHeight: 1.1,
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {row.invoice_number}
+                    </span>
+                  </div>
+
+                  {!supplierSelected && (
+                    <div
+                      style={{
+                        fontWeight: 600,
+                        color: '#27364a',
+                        paddingRight: 12,
+                      }}
+                    >
+                      {row.suppliers?.supplier_name || 'Supplier'}
+                    </div>
+                  )}
+
+                  <div
+                    style={{
+                      color: '#566173',
+                      fontSize: 16,
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
                     {dateText(row.invoice_date)}
-                  </span>
-                </div>
+                  </div>
 
-                <div className="record-right">
-                  <span>
-                    {row.payment_status === 'partial'
-                      ? 'partial — settle separately'
-                      : row.payment_status}
-                  </span>
-                  <strong>
+                  <div
+                    style={{
+                      textAlign: 'right',
+                      fontWeight: 800,
+                      color: '#10233d',
+                      fontSize: 17,
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
                     {money(row.total_amount)}
-                  </strong>
-                </div>
-              </label>
-            )
-          })}
+                  </div>
+                </label>
+              )
+            })}
+          </div>
         </div>
       )}
 
