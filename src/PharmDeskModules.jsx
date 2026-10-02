@@ -10492,14 +10492,23 @@ function CustomersModule({
     const customers = data || []
     setRows(customers)
 
-    const { data: creditRows } = await pharmdeskDb.rpc(
-      'pharmdesk_customer_credit_report',
-      { p_store_id: store.id },
-    )
+    // Use the same per-invoice amount_due field that the detailed
+    // customer history uses. This keeps the customer-list status
+    // consistent with the actual bill-level outstanding balance.
+    const { data: salesRows } = await pharmdeskDb
+      .from('sales')
+      .select('customer_id, amount_due')
+      .eq('store_id', store.id)
+      .not('customer_id', 'is', null)
 
     const creditMap = {}
-    ;(creditRows || []).forEach((row) => {
-      creditMap[row.customer_id] = safeNumber(row.outstanding_credit)
+    ;(salesRows || []).forEach((sale) => {
+      const customerId = sale.customer_id
+      if (!customerId) return
+      const due = safeNumber(sale.amount_due)
+      if (due <= 0.009) return
+      creditMap[customerId] =
+        safeNumber(creditMap[customerId]) + due
     })
     setCreditByCustomer(creditMap)
   }
