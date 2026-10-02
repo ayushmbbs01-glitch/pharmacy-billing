@@ -2605,20 +2605,21 @@ function SaleItemRow({
             </select>  
           </label>  
   
-          <label>  
-            Quantity  
-            <input  
-              type="number"  
-              min="0.01"  
-              value={item.quantity}  
-              onChange={(e) =>  
-                onChange({  
-                  quantity:  
-                    e.target.value,  
-                })  
-              }  
-            />  
-          </label>  
+         <label>
+  Quantity
+  <input
+    type="number"
+    min="0.01"
+    step="0.01"
+    value={item.quantity}
+    onChange={(e) =>
+      onChange({
+        quantity:
+          e.target.value,
+      })
+    }
+  />
+</label>
   
           <label>  
             Selling price  
@@ -4432,25 +4433,26 @@ function SaleEditModal({
                 </select>  
               </label>  
   
-              <label>  
-                Quantity  
-                <input  
-                  type="number"  
-                  min="0.01"  
-                  value={  
-                    item.quantity_entered  
-                  }  
-                  onChange={(e) =>  
-                    updateItem(  
-                      item.id,  
-                      {  
-                        quantity_entered:  
-                          e.target.value,  
-                      },  
-                    )  
-                  }  
-                />  
-              </label>  
+            <label>
+  Quantity
+  <input
+    type="number"
+    min="0.01"
+    step="0.01"
+    value={
+      item.quantity_entered
+    }
+    onChange={(e) =>
+      updateItem(
+        item.id,
+        {
+          quantity_entered:
+            e.target.value,
+        },
+      )
+    }
+  />
+</label>
   
               <label>  
                 Selling price  
