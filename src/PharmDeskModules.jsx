@@ -1696,6 +1696,7 @@ function SalesModule({ store, session }) {
 function NewSale({ store }) {  
   const [customers, setCustomers] = useState([])  
   const [products, setProducts] = useState([])  
+  const [stockByProduct, setStockByProduct] = useState({})  
   const [customerQuery, setCustomerQuery] = useState('')  
   const [productQuery, setProductQuery] = useState('')  
   const [selectedCustomer, setSelectedCustomer] =  
@@ -1750,7 +1751,7 @@ function NewSale({ store }) {
       .eq('store_id', store.id)  
       .eq('is_active', true)  
   
-    setProducts(  
+    const nextProducts =  
       (data || [])  
         .filter((x) => x.products?.is_active !== false)  
         .map((x) => ({  
@@ -1762,8 +1763,25 @@ function NewSale({ store }) {
             x.default_discount_percent,  
           minimum_stock: x.minimum_stock,  
           reorder_level: x.reorder_level,  
-        })),  
-    )  
+        }))  
+  
+    setProducts(nextProducts)  
+  
+    const { data: stockRows } = await supabase  
+      .from('batches')  
+      .select('product_id, current_stock_units')  
+      .eq('store_id', store.id)  
+      .eq('is_active', true)  
+      .gt('current_stock_units', 0)  
+  
+    const stockTotals = {}  
+    ;(stockRows || []).forEach((row) => {  
+      stockTotals[row.product_id] =  
+        (stockTotals[row.product_id] || 0) +  
+        safeNumber(row.current_stock_units)  
+    })  
+  
+    setStockByProduct(stockTotals)  
   }  
   
   const filteredCustomers = useMemo(  
@@ -2181,15 +2199,42 @@ function NewSale({ store }) {
                         chooseProduct(product)  
                       }  
                     >  
-                      <strong>  
-                        {product.product_name}  
-                      </strong>  
-                      <span>  
-                        {product.generic_display_name ||  
-                          product.manufacturer ||  
-                          product.dosage_form ||  
-                          ''}  
-                      </span>  
+                      <div  
+                        style={{  
+                          display: 'flex',  
+                          alignItems: 'center',  
+                          justifyContent: 'space-between',  
+                          gap: '12px',  
+                          width: '100%',  
+                        }}  
+                      >  
+                        <div  
+                          style={{  
+                            minWidth: 0,  
+                            display: 'flex',  
+                            flexDirection: 'column',  
+                            alignItems: 'flex-start',  
+                          }}  
+                        >  
+                          <strong>  
+                            {product.product_name}  
+                          </strong>  
+                          <span>  
+                            {product.generic_display_name ||  
+                              product.manufacturer ||  
+                              product.dosage_form ||  
+                              ''}  
+                          </span>  
+                        </div>  
+                        <strong  
+                          style={{  
+                            flex: '0 0 auto',  
+                            whiteSpace: 'nowrap',  
+                          }}  
+                        >  
+                          Stock: {stockByProduct[product.id] ?? 0}  
+                        </strong>  
+                      </div>  
                     </button>  
                   ),  
                 )}  
@@ -2539,7 +2584,7 @@ function SaleItemRow({
       {item.product && (  
         <div className="item-grid">  
           <label>  
-            Batch  
+            Batch number  
             <select  
               value={item.batch?.id || ''}  
               onChange={(e) => {  
@@ -2571,18 +2616,33 @@ function SaleItemRow({
                     key={batch.id}  
                     value={batch.id}  
                   >  
-                    {batch.batch_number} • Exp{' '}  
-                    {dateText(  
-                      batch.expiry_date,  
-                    )}{' '}  
-                    • Stock{' '}  
-                    {  
-                      batch.current_stock_units  
-                    }  
+                    {batch.batch_number}  
                   </option>  
                 ),  
               )}  
             </select>  
+          </label>  
+  
+          <label>  
+            Expiry  
+            <input  
+              value={  
+                item.batch?.expiry_date  
+                  ? dateText(item.batch.expiry_date)  
+                  : ''  
+              }  
+              readOnly  
+            />  
+          </label>  
+  
+          <label>  
+            Current stock  
+            <input  
+              value={  
+                item.batch?.current_stock_units ?? ''  
+              }  
+              readOnly  
+            />  
           </label>  
   
           <label>  
@@ -2605,21 +2665,21 @@ function SaleItemRow({
             </select>  
           </label>  
   
-         <label>
-  Quantity
-  <input
-    type="number"
-    min="0.01"
-    step="0.01"
-    value={item.quantity}
-    onChange={(e) =>
-      onChange({
-        quantity:
-          e.target.value,
-      })
-    }
-  />
-</label>
+          <label>  
+            Quantity  
+            <input  
+              type="number"  
+              min="0.01"  
+              step="any"  
+              value={item.quantity}  
+              onChange={(e) =>  
+                onChange({  
+                  quantity:  
+                    e.target.value,  
+                })  
+              }  
+            />  
+          </label>  
   
           <label>  
             Selling price  
@@ -4433,26 +4493,26 @@ function SaleEditModal({
                 </select>  
               </label>  
   
-            <label>
-  Quantity
-  <input
-    type="number"
-    min="0.01"
-    step="0.01"
-    value={
-      item.quantity_entered
-    }
-    onChange={(e) =>
-      updateItem(
-        item.id,
-        {
-          quantity_entered:
-            e.target.value,
-        },
-      )
-    }
-  />
-</label>
+              <label>  
+                Quantity  
+                <input  
+                  type="number"  
+                  min="0.01"  
+                  step="any"  
+                  value={  
+                    item.quantity_entered  
+                  }  
+                  onChange={(e) =>  
+                    updateItem(  
+                      item.id,  
+                      {  
+                        quantity_entered:  
+                          e.target.value,  
+                      },  
+                    )  
+                  }  
+                />  
+              </label>  
   
               <label>  
                 Selling price  
