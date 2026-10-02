@@ -7292,17 +7292,17 @@ function SupplierPurchaseCatalogue({ store }) {
               ))}
             </div>
 
-            <div className=\"button-row\" style={{ flexWrap: 'wrap', marginBottom: '12px' }}>
+            <div className="button-row" style={{ flexWrap: 'wrap', marginBottom: '12px' }}>
               <button
-                type=\"button\"
-                className=\"secondary-button\"
+                type="button"
+                className="secondary-button"
                 onClick={exportSupplierCatalogueExcel}
               >
                 Export Excel
               </button>
               <button
-                type=\"button\"
-                className=\"secondary-button\"
+                type="button"
+                className="secondary-button"
                 onClick={exportSupplierCataloguePdf}
               >
                 Export PDF
