@@ -6747,7 +6747,7 @@ function PendingSupplierPayments({
         <EmptyState text="No pending supplier payments." />  
       ) : (  
         <div className="record-list">  
-          {rows.map(  
+          {filtered.map(  
             (row) => (  
               <div  
                 className="record-row static"  
@@ -8017,6 +8017,8 @@ function BatchesInventory({
 }) {  
   const [rows, setRows] =  
     useState([])  
+  const [query, setQuery] =  
+    useState('')  
   
   useEffect(() => {  
     if (!store?.id) return  
@@ -8026,7 +8028,10 @@ function BatchesInventory({
       .select(`  
         *,  
         products (  
-          product_name  
+          product_name,  
+          generic_display_name,  
+          manufacturer,  
+          strength_display  
         )  
       `)  
       .eq(  
@@ -8043,10 +8048,33 @@ function BatchesInventory({
       )  
   }, [store?.id])  
   
+  const filtered =  
+    rows.filter((row) =>  
+      matchesSearch(  
+        query,  
+        row.batch_number,  
+        row.products?.product_name,  
+        row.products?.generic_display_name,  
+        row.products?.manufacturer,  
+        row.products?.strength_display,  
+        dateText(row.expiry_date),  
+      ),  
+    )  
+  
   return (  
     <PanelList title="Batches">  
+      <div className="search-row">  
+        <input  
+          placeholder="Search product, batch number, manufacturer or expiry"  
+          value={query}  
+          onChange={(e) =>  
+            setQuery(e.target.value)  
+          }  
+        />  
+      </div>  
+
       <div className="record-list">  
-        {rows.map(  
+        {filtered.map(  
           (row) => (  
             <div  
               className="record-row static"  
@@ -8097,6 +8125,8 @@ function ExpiryInventory({
 }) {  
   const [rows, setRows] =  
     useState([])  
+  const [query, setQuery] =  
+    useState('')  
   
   useEffect(() => {  
     if (!store?.id) return  
@@ -8114,7 +8144,10 @@ function ExpiryInventory({
       .select(`  
         *,  
         products (  
-          product_name  
+          product_name,  
+          generic_display_name,  
+          manufacturer,  
+          strength_display  
         )  
       `)  
       .eq(  
@@ -8144,10 +8177,33 @@ function ExpiryInventory({
       )  
   }, [store?.id])  
   
+  const filtered =  
+    rows.filter((row) =>  
+      matchesSearch(  
+        query,  
+        row.batch_number,  
+        row.products?.product_name,  
+        row.products?.generic_display_name,  
+        row.products?.manufacturer,  
+        row.products?.strength_display,  
+        dateText(row.expiry_date),  
+      ),  
+    )  
+  
   return (  
     <PanelList title="Expiry">  
+      <div className="search-row">  
+        <input  
+          placeholder="Search product, batch number, manufacturer or expiry"  
+          value={query}  
+          onChange={(e) =>  
+            setQuery(e.target.value)  
+          }  
+        />  
+      </div>  
+
       <div className="record-list">  
-        {rows.map(  
+        {filtered.map(  
           (row) => (  
             <div  
               className="record-row static"  
@@ -8195,6 +8251,8 @@ function LowStockInventory({
 }) {  
   const [rows, setRows] =  
     useState([])  
+  const [query, setQuery] =  
+    useState('')  
   
   useEffect(() => {  
     if (!store?.id) return  
@@ -8281,14 +8339,37 @@ function LowStockInventory({
     load()  
   }, [store?.id])  
   
+  const filtered =  
+    rows.filter((row) =>  
+      matchesSearch(  
+        query,  
+        row.products?.product_name,  
+        row.products?.generic_display_name,  
+        row.products?.manufacturer,  
+        row.products?.strength_display,  
+        row.minimum_stock,  
+        row.stock,  
+      ),  
+    )  
+  
   return (  
     <PanelList title="Low Stock">  
-      {rows.length ===  
+      <div className="search-row">  
+        <input  
+          placeholder="Search product, manufacturer or stock"  
+          value={query}  
+          onChange={(e) =>  
+            setQuery(e.target.value)  
+          }  
+        />  
+      </div>  
+
+      {filtered.length ===  
       0 ? (  
         <EmptyState text="No products currently below minimum stock." />  
       ) : (  
         <div className="record-list">  
-          {rows.map(  
+          {filtered.map(  
             (row) => (  
               <div  
                 className="record-row static"  
@@ -8327,6 +8408,8 @@ function DeadStockInventory({
 }) {  
   const [rows, setRows] =  
     useState([])  
+  const [query, setQuery] =  
+    useState('')  
   
   useEffect(() => {  
     if (!store?.id) return  
@@ -8357,14 +8440,35 @@ function DeadStockInventory({
       )  
   }, [store?.id])  
   
+  const filtered =  
+    rows.filter((row) =>  
+      matchesSearch(  
+        query,  
+        row.product_name,  
+        row.product_id,  
+        row.current_stock_units,  
+        row.created_at,  
+      ),  
+    )  
+  
   return (  
     <PanelList title="Dead Stock">  
-      {rows.length ===  
+      <div className="search-row">  
+        <input  
+          placeholder="Search dead stock"  
+          value={query}  
+          onChange={(e) =>  
+            setQuery(e.target.value)  
+          }  
+        />  
+      </div>  
+
+      {filtered.length ===  
       0 ? (  
         <EmptyState text="No dead-stock snapshots available." />  
       ) : (  
         <div className="record-list">  
-          {rows.map(  
+          {filtered.map(  
             (row) => (  
               <div  
                 className="record-row static"  
@@ -8404,6 +8508,8 @@ function StockReconciliation({
   const [batches, setBatches] =  
     useState([])  
   const [selectedBatch, setSelectedBatch] =  
+    useState('')  
+  const [batchQuery, setBatchQuery] =  
     useState('')  
   const [physical, setPhysical] =  
     useState('')  
@@ -8448,6 +8554,32 @@ function StockReconciliation({
         x.id ===  
         selectedBatch,  
     )  
+
+  const batchSuggestions = useMemo(() => {  
+    const q = String(batchQuery || '').trim()  
+    if (!q) return []  
+
+    return batches  
+      .map((batch) => ({  
+        batch,  
+        score: fuzzyScore(  
+          q,  
+          [  
+            batch.batch_number,  
+            batch.products?.product_name,  
+            batch.products?.generic_display_name,  
+            batch.products?.manufacturer,  
+            batch.products?.strength_display,  
+            dateText(batch.expiry_date),  
+            batch.current_stock_units,  
+          ].filter(Boolean).join(' '),  
+        ),  
+      }))  
+      .filter((x) => x.score > 0)  
+      .sort((a, b) => b.score - a.score)  
+      .slice(0, 8)  
+      .map((x) => x.batch)  
+  }, [batchQuery, batches])  
   
   const save = async () => {  
     setMessage('')  
@@ -8514,42 +8646,50 @@ function StockReconciliation({
     <PanelList title="Stock Reconciliation">  
       <label>  
         Batch  
-        <select  
-          value={  
-            selectedBatch  
-          }  
-          onChange={(e) =>  
-            setSelectedBatch(  
-              e.target.value,  
-            )  
-          }  
-        >  
-          <option value="">  
-            Select batch  
-          </option>  
-  
-          {batches.map(  
-            (batch) => (  
-              <option  
-                key={batch.id}  
-                value={batch.id}  
-              >  
-                {  
-                  batch.products  
-                    ?.product_name  
-                }{' '}  
-                •{' '}  
-                {  
-                  batch.batch_number  
-                }{' '}  
-                • Stock{' '}  
-                {  
-                  batch.current_stock_units  
-                }  
-              </option>  
-            ),  
+        <div style={{ position: 'relative' }}>  
+          <input  
+            placeholder="Type product name or batch number..."  
+            value={batchQuery}  
+            onChange={(e) => {  
+              setBatchQuery(e.target.value)  
+              setSelectedBatch('')  
+            }}  
+          />  
+
+          {batchQuery && batchSuggestions.length > 0 && (  
+            <div  
+              className="suggestion-list"  
+              style={{  
+                position: 'absolute',  
+                left: 0,  
+                right: 0,  
+                top: '100%',  
+                zIndex: 20,  
+              }}  
+            >  
+              {batchSuggestions.map((batch) => (  
+                <button  
+                  type="button"  
+                  className="suggestion"  
+                  key={batch.id}  
+                  onClick={() => {  
+                    setSelectedBatch(batch.id)  
+                    setBatchQuery(  
+                      `${batch.products?.product_name || ''} • ${batch.batch_number || ''}`.trim(),  
+                    )  
+                  }}  
+                >  
+                  <strong>  
+                    {batch.products?.product_name || 'Product'}  
+                  </strong>  
+                  <span>  
+                    Batch {batch.batch_number || '—'} • Exp {dateText(batch.expiry_date)} • Stock {batch.current_stock_units ?? 0}  
+                  </span>  
+                </button>  
+              ))}  
+            </div>  
           )}  
-        </select>  
+        </div>  
       </label>  
   
       <label>  
