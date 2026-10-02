@@ -6252,6 +6252,33 @@ function SupplierInvoices({
     useState([])  
   const [selected, setSelected] =  
     useState(null)  
+  const [searchQuery, setSearchQuery] =  
+    useState('')  
+
+  const filteredRows = useMemo(() => {  
+    const q = String(searchQuery || '').trim()  
+
+    if (!q) return rows  
+
+    return rows  
+      .map((row) => ({  
+        row,  
+        score: fuzzyScore(  
+          q,  
+          [  
+            row.invoice_number,  
+            row.suppliers?.supplier_name,  
+            row.invoice_date,  
+            row.total_amount,  
+          ]  
+            .filter((value) => value !== null && value !== undefined)  
+            .join(' '),  
+        ),  
+      }))  
+      .filter((entry) => entry.score > 0)  
+      .sort((a, b) => b.score - a.score)  
+      .map((entry) => entry.row)  
+  }, [rows, searchQuery])  
   
   const load = async () => {  
     const { data } =  
@@ -6284,8 +6311,29 @@ function SupplierInvoices({
   
   return (  
     <PanelList title="Supplier Invoices">  
-      <div className="record-list">  
-        {rows.map((row) => (  
+      <div style={{ marginBottom: '12px' }}>  
+        <input  
+          type="search"  
+          value={searchQuery}  
+          onChange={(e) =>  
+            setSearchQuery(e.target.value)  
+          }  
+          placeholder="Search invoice number or supplier…"  
+          aria-label="Search supplier invoices"  
+        />  
+      </div>  
+
+      {!filteredRows.length ? (  
+        <EmptyState  
+          text={  
+            searchQuery.trim()  
+              ? 'No supplier invoices match your search.'  
+              : 'No supplier invoices found.'  
+          }  
+        />  
+      ) : (  
+        <div className="record-list">  
+          {filteredRows.map((row) => (  
           <button  
             className="record-row"  
             key={row.id}  
@@ -6323,8 +6371,9 @@ function SupplierInvoices({
               </strong>  
             </div>  
           </button>  
-        ))}  
-      </div>  
+          ))}  
+        </div>  
+      )}  
   
       {selected && (  
         <SupplierHistoryModal  
@@ -6865,6 +6914,154 @@ function SupplierPurchaseCatalogue({ store }) {
     }))
   }
 
+  const exportSupplierCatalogueExcel = () => {
+    if (!supplierId || !rows.length) {
+      setError('Select a supplier with products before exporting.')
+      return
+    }
+
+    const supplierName =
+      suppliers.find((supplier) => supplier.id === supplierId)?.supplier_name ||
+      'Supplier'
+
+    const xmlEscape = (value) =>
+      String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/\"/g, '&quot;')
+        .replace(/'/g, '&apos;')
+
+    const cell = (value, type = 'String') =>
+      `<Cell><Data ss:Type=\"${type}\">${xmlEscape(value)}</Data></Cell>`
+
+    const rowsXml = [
+      ['Product', 'Composition', 'Manufacturer', 'Dosage Form', 'Strength', 'Pack', 'Last Purchased', 'Last Purchase Rate', 'Last MRP', 'GST', 'Purchased Times', 'Order Quantity'],
+      ...rows.map((row) => [
+        row.product_name,
+        row.composition || '',
+        row.manufacturer || '',
+        row.dosage_form || '',
+        row.strength_display || '',
+        `${row.pack_quantity || '—'} ${row.pack_unit || ''}`.trim(),
+        dateText(row.last_purchase_date),
+        money(row.last_purchase_rate),
+        money(row.last_mrp),
+        row.last_gst_rate == null ? '' : `${row.last_gst_rate}%`,
+        row.times_purchased || 0,
+        '',
+      ]),
+    ]
+      .map((row) =>
+        `<Row>${row.map((value, index) => cell(value, index === 10 ? 'Number' : 'String')).join('')}</Row>`,
+      )
+      .join('')
+
+    const workbook = `<?xml version=\"1.0\"?>
+<?mso-application progid=\"Excel.Sheet\"?>
+<Workbook xmlns=\"urn:schemas-microsoft-com:office:spreadsheet\" xmlns:o=\"urn:schemas-microsoft-com:office:office\" xmlns:x=\"urn:schemas-microsoft-com:office:excel\" xmlns:ss=\"urn:schemas-microsoft-com:office:spreadsheet\">
+  <Worksheet ss:Name=\"Supplier Catalogue\">
+    <Table>${rowsXml}</Table>
+  </Worksheet>
+</Workbook>`
+
+    const blob = new Blob([workbook], {
+      type: 'application/vnd.ms-excel',
+    })
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = `${supplierName.replace(/[^a-z0-9]+/gi, '_')}_Supplier_Catalogue.xls`
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+    URL.revokeObjectURL(url)
+  }
+
+  const exportSupplierCataloguePdf = () => {
+    if (!supplierId || !rows.length) {
+      setError('Select a supplier with products before exporting.')
+      return
+    }
+
+    const supplierName =
+      suppliers.find((supplier) => supplier.id === supplierId)?.supplier_name ||
+      'Supplier'
+
+    const htmlEscape = (value) =>
+      String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/\"/g, '&quot;')
+        .replace(/'/g, '&#39;')
+
+    const tableRows = rows
+      .map((row) => `
+        <tr>
+          <td>${htmlEscape(row.product_name)}</td>
+          <td>${htmlEscape(row.composition || '—')}</td>
+          <td>${htmlEscape(row.manufacturer || '—')}</td>
+          <td>${htmlEscape(row.dosage_form || '—')}</td>
+          <td>${htmlEscape(row.strength_display || '—')}</td>
+          <td>${htmlEscape(`${row.pack_quantity || '—'} ${row.pack_unit || ''}`.trim())}</td>
+          <td>${htmlEscape(money(row.last_mrp))}</td>
+          <td>${htmlEscape(row.last_gst_rate == null ? '—' : `${row.last_gst_rate}%`)}</td>
+          <td class=\"order-cell\"></td>
+        </tr>`).join('')
+
+    const printWindow = window.open('', '_blank', 'noopener,noreferrer')
+    if (!printWindow) {
+      setError('Please allow pop-ups for PharmDesk to export the PDF.')
+      return
+    }
+
+    printWindow.document.write(`<!doctype html>
+<html>
+<head>
+  <meta charset=\"utf-8\" />
+  <title>${htmlEscape(supplierName)} - Supplier Order</title>
+  <style>
+    @page { size: A4 landscape; margin: 12mm; }
+    * { box-sizing: border-box; }
+    body { font-family: Arial, sans-serif; color: #172033; margin: 0; }
+    h1 { margin: 0 0 4px; font-size: 20px; }
+    .meta { margin-bottom: 14px; font-size: 12px; color: #56657a; }
+    table { width: 100%; border-collapse: collapse; font-size: 10px; }
+    th, td { border: 1px solid #b8c2cf; padding: 6px; vertical-align: top; }
+    th { background: #eef2f7; text-align: left; font-weight: 700; }
+    .order-cell { min-width: 70px; height: 28px; }
+    .footer { margin-top: 12px; font-size: 10px; color: #667085; }
+  </style>
+</head>
+<body>
+  <h1>Supplier Order — ${htmlEscape(supplierName)}</h1>
+  <div class=\"meta\">Please enter the order quantity for each product.</div>
+  <table>
+    <thead>
+      <tr>
+        <th>Product</th>
+        <th>Composition</th>
+        <th>Manufacturer</th>
+        <th>Dosage Form</th>
+        <th>Strength</th>
+        <th>Pack</th>
+        <th>MRP</th>
+        <th>GST</th>
+        <th>Order Quantity</th>
+      </tr>
+    </thead>
+    <tbody>${tableRows}</tbody>
+  </table>
+</body>
+</html>`)
+    printWindow.document.close()
+    printWindow.focus()
+    printWindow.onload = () => {
+      printWindow.print()
+    }
+  }
+
   const createOrder = async () => {
     setError('')
     setMessage('')
@@ -7093,6 +7290,23 @@ function SupplierPurchaseCatalogue({ store }) {
                   </div>
                 </div>
               ))}
+            </div>
+
+            <div className=\"button-row\" style={{ flexWrap: 'wrap', marginBottom: '12px' }}>
+              <button
+                type=\"button\"
+                className=\"secondary-button\"
+                onClick={exportSupplierCatalogueExcel}
+              >
+                Export Excel
+              </button>
+              <button
+                type=\"button\"
+                className=\"secondary-button\"
+                onClick={exportSupplierCataloguePdf}
+              >
+                Export PDF
+              </button>
             </div>
 
             <label>
@@ -13492,6 +13706,12 @@ function CustomerModal({
         is_active: true,  
       }  
   
+      const generatedCustomerId = editing  
+        ? customer.id  
+        : (globalThis.crypto?.randomUUID  
+            ? globalThis.crypto.randomUUID()  
+            : `${Date.now()}-${Math.random().toString(16).slice(2)}`)  
+  
       let result  
   
       if (editing) {  
@@ -13511,7 +13731,6 @@ function CustomerModal({
               'store_id',  
               store.id,  
             )  
-            .select()  
       } else {  
         result =  
           await pharmdeskDb  
@@ -13519,24 +13738,24 @@ function CustomerModal({
               'customers',  
             )  
             .insert({  
+              id: generatedCustomerId,  
               ...payload,  
               store_id:  
                 store.id,  
             })  
-            .select()  
       }  
   
       if (result.error)  
         throw result.error  
   
-      const savedCustomer = Array.isArray(result.data)  
-        ? result.data[0]  
-        : result.data  
-  
-      if (!savedCustomer) {  
-        throw new Error(  
-          'Customer was saved, but the saved customer could not be returned. Please refresh and try again.',  
-        )  
+      // The write can succeed even when RLS prevents Supabase from returning  
+      // the inserted/updated row through SELECT. Build the saved object locally  
+      // so the UI can continue immediately without showing a false error.  
+      const savedCustomer = {  
+        ...(customer || {}),  
+        ...payload,  
+        id: generatedCustomerId,  
+        store_id: store.id,  
       }  
   
       onCreated(  
