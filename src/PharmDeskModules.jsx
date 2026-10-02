@@ -10570,17 +10570,38 @@ function CustomersModule({
                   )}
                 </div>
                 <div className="record-right">
-                  <button type="button" className="secondary-button" onClick={() => setEditing(customer)}>
-                    Edit
-                  </button>
-                  {outstanding > 0 && (
-                    <button
-                      type="button"
-                      className="primary-button"
-                      onClick={() => setSettlementCustomer({ ...customer, outstanding_credit: outstanding })}
+                  {outstanding > 0.009 ? (
+                    <span
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        padding: '7px 10px',
+                        borderRadius: 999,
+                        background: '#fee2e2',
+                        color: '#b91c1c',
+                        fontWeight: 700,
+                        whiteSpace: 'nowrap',
+                      }}
                     >
-                      Settle Account
-                    </button>
+                      Outstanding {money(outstanding)}
+                    </span>
+                  ) : (
+                    <span
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        padding: '7px 10px',
+                        borderRadius: 999,
+                        background: '#dcfce7',
+                        color: '#166534',
+                        fontWeight: 700,
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      Paid / Cleared
+                    </span>
                   )}
                 </div>
               </div>
