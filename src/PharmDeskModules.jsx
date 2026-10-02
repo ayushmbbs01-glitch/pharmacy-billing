@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import PharmDeskAPI, { pharmdeskDb } from './pharmdeskApi'
 import { supabase } from './supabaseClient'
 
@@ -15431,95 +15432,80 @@ function ToggleRow({
    iOS/iPad-safe scrolling  
 ========================================================= */  
   
-function Modal({  
-  title,  
-  onClose,  
-  children,  
-}) {  
-  return (  
-    <div  
-      className="modal-backdrop"  
-      style={{  
-        position:  
-          'fixed',  
-        inset: 0,  
-        zIndex: 1000,  
-        display: 'flex',  
-        alignItems:  
-          'center',  
-        justifyContent:  
-          'center',  
-        padding: '12px',  
-        overflowY: 'auto',  
-        overflowX: 'hidden',  
-        WebkitOverflowScrolling:  
-          'touch',  
-        background:  
-          'rgba(0,0,0,.45)',  
-      }}  
-    >  
-      <div  
-        className="modal"  
-        style={{  
-          width:  
-            'min(760px, 100%)',  
-          height:  
-            'calc(100vh - 24px)',  
-          maxHeight:  
-            'calc(100dvh - 24px)',  
-          display: 'flex',  
-          flexDirection:  
-            'column',  
-          overflow:  
-            'hidden',  
-          margin: 'auto',  
-        }}  
-      >  
-        <div  
-          className="modal-header"  
-          style={{  
-            flex:  
-              '0 0 auto',  
-          }}  
-        >  
-          <h2>{title}</h2>  
-  
-          <button  
-            type="button"  
-            className="modal-close"  
-            onClick={  
-              onClose  
-            }  
-          >  
-            ×  
-          </button>  
-        </div>  
-  
-        <div  
-          className="modal-body"  
-          style={{  
-            flex:  
-              '1 1 auto',  
-            minHeight: 0,  
-            overflowY:  
-              'scroll',  
-            overflowX:  
-              'hidden',  
-            WebkitOverflowScrolling:  
-              'touch',  
-            overscrollBehavior:  
-              'contain',  
-            paddingBottom:  
-              '40px',  
-          }}  
-        >  
-          {children}  
-        </div>  
-      </div>  
-    </div>  
-  )  
-}  
-  
+function Modal({
+  title,
+  onClose,
+  children,
+}) {
+  const modalContent = (
+    <div
+      className="modal-backdrop"
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 1000,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '12px',
+        overflowY: 'auto',
+        overflowX: 'hidden',
+        WebkitOverflowScrolling: 'touch',
+        background: 'rgba(0,0,0,.45)',
+      }}
+    >
+      <div
+        className="modal"
+        style={{
+          width: 'min(760px, 100%)',
+          height: 'calc(100vh - 24px)',
+          maxHeight: 'calc(100dvh - 24px)',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+          margin: 'auto',
+        }}
+      >
+        <div
+          className="modal-header"
+          style={{
+            flex: '0 0 auto',
+          }}
+        >
+          <h2>{title}</h2>
+
+          <button
+            type="button"
+            className="modal-close"
+            onClick={onClose}
+          >
+            ×
+          </button>
+        </div>
+
+        <div
+          className="modal-body"
+          style={{
+            flex: '1 1 auto',
+            minHeight: 0,
+            overflowY: 'scroll',
+            overflowX: 'hidden',
+            WebkitOverflowScrolling: 'touch',
+            overscrollBehavior: 'contain',
+            paddingBottom: '40px',
+          }}
+        >
+          {children}
+        </div>
+      </div>
+    </div>
+  )
+
+  return createPortal(
+    modalContent,
+    document.body,
+  )
+}
 function ModalActions({  
   onClose,  
   busy,  
