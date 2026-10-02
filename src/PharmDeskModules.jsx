@@ -8502,243 +8502,366 @@ function DeadStockInventory({
   )  
 }  
   
-function StockReconciliation({  
-  store,  
-}) {  
-  const [batches, setBatches] =  
-    useState([])  
-  const [selectedBatch, setSelectedBatch] =  
-    useState('')  
-  const [batchQuery, setBatchQuery] =  
-    useState('')  
-  const [physical, setPhysical] =  
-    useState('')  
-  const [message, setMessage] =  
-    useState('')  
-  
-  useEffect(() => {  
-    if (!store?.id) return  
-  
-    pharmdeskDb  
-      .from('batches')  
-      .select(`  
-        *,  
-        products (  
-          product_name  
-        )  
-      `)  
-      .eq(  
-        'store_id',  
-        store.id,  
-      )  
-      .eq(  
-        'is_active',  
-        true,  
-      )  
-      .order(  
-        'created_at',  
-        {  
-          ascending: false,  
-        },  
-      )  
-      .then(({ data }) =>  
-        setBatches(  
-          data || [],  
-        ),  
-      )  
-  }, [store?.id])  
-  
-  const selected =  
-    batches.find(  
-      (x) =>  
-        x.id ===  
-        selectedBatch,  
-    )  
+function StockReconciliation({
+  store,
+}) {
+  const [batches, setBatches] =
+    useState([])
+  const [selectedProductId, setSelectedProductId] =
+    useState('')
+  const [productQuery, setProductQuery] =
+    useState('')
+  const [selectedBatch, setSelectedBatch] =
+    useState('')
+  const [batchQuery, setBatchQuery] =
+    useState('')
+  const [physical, setPhysical] =
+    useState('')
+  const [message, setMessage] =
+    useState('')
 
-  const batchSuggestions = useMemo(() => {  
-    const q = String(batchQuery || '').trim()  
-    if (!q) return []  
+  useEffect(() => {
+    if (!store?.id) return
 
-    return batches  
-      .map((batch) => ({  
-        batch,  
-        score: fuzzyScore(  
-          q,  
-          [  
-            batch.batch_number,  
-            batch.products?.product_name,  
-            batch.products?.generic_display_name,  
-            batch.products?.manufacturer,  
-            batch.products?.strength_display,  
-            dateText(batch.expiry_date),  
-            batch.current_stock_units,  
-          ].filter(Boolean).join(' '),  
-        ),  
-      }))  
-      .filter((x) => x.score > 0)  
-      .sort((a, b) => b.score - a.score)  
-      .slice(0, 8)  
-      .map((x) => x.batch)  
-  }, [batchQuery, batches])  
-  
-  const save = async () => {  
-    setMessage('')  
-  
-    if (!selected) {  
-      setMessage(  
-        'Select a batch.',  
-      )  
-      return  
-    }  
-  
-    const physicalNumber =  
-      Number(physical)  
-  
-    if (  
-      !Number.isFinite(  
-        physicalNumber,  
-      ) ||  
-      physicalNumber < 0  
-    ) {  
-      setMessage(  
-        'Enter a valid physical quantity.',  
-      )  
-      return  
-    }  
-  
-    const difference =  
-      physicalNumber -  
-      safeNumber(  
-        selected.current_stock_units,  
-      )  
-  
-    const { error } =  
-      await pharmdeskDb  
-        .from(  
-          'stock_reconciliations',  
-        )  
-        .insert({  
-          store_id:  
-            store.id,  
-          batch_id:  
-            selected.id,  
-          system_stock_units:  
-            selected.current_stock_units,  
-          physical_stock_units:  
-            physicalNumber,  
-          difference_units:  
-            difference,  
-        })  
-  
-    if (error) {  
-      setMessage(  
-        error.message,  
-      )  
-      return  
-    }  
-  
-    setMessage(  
-      `Reconciliation recorded. Difference: ${difference}`,  
-    )  
-  }  
-  
-  return (  
-    <PanelList title="Stock Reconciliation">  
-      <label>  
-        Batch  
-        <div style={{ position: 'relative' }}>  
-          <input  
-            placeholder="Type product name or batch number..."  
-            value={batchQuery}  
-            onChange={(e) => {  
-              setBatchQuery(e.target.value)  
-              setSelectedBatch('')  
-            }}  
-          />  
+    pharmdeskDb
+      .from('batches')
+      .select(`
+        *,
+        products (
+          product_name
+        )
+      `)
+      .eq(
+        'store_id',
+        store.id,
+      )
+      .eq(
+        'is_active',
+        true,
+      )
+      .order(
+        'created_at',
+        {
+          ascending: false,
+        },
+      )
+      .then(({ data }) =>
+        setBatches(
+          data || [],
+        ),
+      )
+  }, [store?.id])
 
-          {batchQuery && batchSuggestions.length > 0 && (  
-            <div  
-              className="suggestion-list"  
-              style={{  
-                position: 'absolute',  
-                left: 0,  
-                right: 0,  
-                top: '100%',  
-                zIndex: 20,  
-              }}  
-            >  
-              {batchSuggestions.map((batch) => (  
-                <button  
-                  type="button"  
-                  className="suggestion"  
-                  key={batch.id}  
-                  onClick={() => {  
-                    setSelectedBatch(batch.id)  
-                    setBatchQuery(  
-                      `${batch.products?.product_name || ''} • ${batch.batch_number || ''}`.trim(),  
-                    )  
-                  }}  
-                >  
-                  <strong>  
-                    {batch.products?.product_name || 'Product'}  
-                  </strong>  
-                  <span>  
-                    Batch {batch.batch_number || '—'} • Exp {dateText(batch.expiry_date)} • Stock {batch.current_stock_units ?? 0}  
-                  </span>  
-                </button>  
-              ))}  
-            </div>  
-          )}  
-        </div>  
-      </label>  
-  
-      <label>  
-        Physical stock  
-        <input  
-          type="number"  
-          min="0"  
-          value={physical}  
-          onChange={(e) =>  
-            setPhysical(  
-              e.target.value,  
-            )  
-          }  
-        />  
-      </label>  
-  
-      {selected && (  
-        <div className="info-box">  
-          System stock:{' '}  
-          {  
-            selected.current_stock_units  
-          }  
-        </div>  
-      )}  
-  
-      {message && (  
-        <div className="message-box">  
-          {message}  
-        </div>  
-      )}  
-  
-      <button  
-        className="primary-button"  
-        onClick={save}  
-      >  
-        Record Reconciliation  
-      </button>  
-  
-      <p className="muted">  
-        This records the reconciliation  
-        event. Actual stock adjustment  
-        should be performed through the  
-        dedicated backend stock-adjustment  
-        operation.  
-      </p>  
-    </PanelList>  
-  )  
-}  
-  
+  const selected =
+    batches.find(
+      (x) =>
+        x.id ===
+        selectedBatch,
+    )
+
+  const productOptions = useMemo(() => {
+    const byId = new Map()
+
+    batches.forEach((batch) => {
+      const productId = batch.product_id
+      if (!productId) return
+
+      if (!byId.has(productId)) {
+        byId.set(productId, {
+          id: productId,
+          product_name:
+            batch.products?.product_name || 'Product',
+        })
+      }
+    })
+
+    return Array.from(byId.values())
+  }, [batches])
+
+  const productSuggestions = useMemo(() => {
+    const q = String(productQuery || '').trim()
+    if (!q || selectedProductId) return []
+
+    return productOptions
+      .map((product) => ({
+        product,
+        score: fuzzyScore(
+          q,
+          product.product_name,
+        ),
+      }))
+      .filter((x) => x.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 8)
+      .map((x) => x.product)
+  }, [productQuery, productOptions, selectedProductId])
+
+  const productBatches = useMemo(() => {
+    if (!selectedProductId) return []
+
+    return batches.filter(
+      (batch) =>
+        batch.product_id ===
+        selectedProductId,
+    )
+  }, [batches, selectedProductId])
+
+  const batchSuggestions = useMemo(() => {
+    const q = String(batchQuery || '').trim()
+
+    return productBatches
+      .map((batch) => ({
+        batch,
+        score: q
+          ? fuzzyScore(
+              q,
+              [
+                batch.batch_number,
+                dateText(batch.expiry_date),
+                batch.current_stock_units,
+              ]
+                .filter(Boolean)
+                .join(' '),
+            )
+          : 1,
+      }))
+      .filter((x) => x.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 12)
+      .map((x) => x.batch)
+  }, [batchQuery, productBatches])
+
+  const selectProduct = (product) => {
+    setSelectedProductId(product.id)
+    setProductQuery(product.product_name || '')
+    setSelectedBatch('')
+    setBatchQuery('')
+    setPhysical('')
+    setMessage('')
+  }
+
+  const selectBatch = (batch) => {
+    setSelectedBatch(batch.id)
+    setBatchQuery(batch.batch_number || '')
+    setPhysical('')
+    setMessage('')
+  }
+
+  const save = async () => {
+    setMessage('')
+
+    if (!selectedProductId) {
+      setMessage(
+        'Select a product.',
+      )
+      return
+    }
+
+    if (!selected) {
+      setMessage(
+        'Select a batch.',
+      )
+      return
+    }
+
+    const physicalNumber =
+      Number(physical)
+
+    if (
+      !Number.isFinite(
+        physicalNumber,
+      ) ||
+      physicalNumber < 0
+    ) {
+      setMessage(
+        'Enter a valid physical quantity.',
+      )
+      return
+    }
+
+    const difference =
+      physicalNumber -
+      safeNumber(
+        selected.current_stock_units,
+      )
+
+    const { error } =
+      await pharmdeskDb
+        .from(
+          'stock_reconciliations',
+        )
+        .insert({
+          store_id:
+            store.id,
+          batch_id:
+            selected.id,
+          system_stock_units:
+            selected.current_stock_units,
+          physical_stock_units:
+            physicalNumber,
+          difference_units:
+            difference,
+        })
+
+    if (error) {
+      setMessage(
+        error.message,
+      )
+      return
+    }
+
+    setMessage(
+      `Reconciliation recorded. Difference: ${difference}`,
+    )
+  }
+
+  return (
+    <PanelList title="Stock Reconciliation">
+      <label>
+        Product
+        <div style={{ position: 'relative' }}>
+          <input
+            placeholder="Type product name..."
+            value={productQuery}
+            onChange={(e) => {
+              setProductQuery(e.target.value)
+              setSelectedProductId('')
+              setSelectedBatch('')
+              setBatchQuery('')
+              setPhysical('')
+              setMessage('')
+            }}
+          />
+
+          {productQuery && !selectedProductId && productSuggestions.length > 0 && (
+            <div
+              className="suggestion-list"
+              style={{
+                position: 'absolute',
+                left: 0,
+                right: 0,
+                top: '100%',
+                zIndex: 20,
+              }}
+            >
+              {productSuggestions.map((product) => (
+                <button
+                  type="button"
+                  className="suggestion"
+                  key={product.id}
+                  onClick={() =>
+                    selectProduct(product)
+                  }
+                >
+                  <strong>
+                    {product.product_name}
+                  </strong>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </label>
+
+      {selectedProductId && (
+        <label>
+          Batch
+          <div style={{ position: 'relative' }}>
+            <input
+              placeholder="Select or type batch number..."
+              value={batchQuery}
+              onChange={(e) => {
+                setBatchQuery(e.target.value)
+                setSelectedBatch('')
+                setPhysical('')
+                setMessage('')
+              }}
+            />
+
+            {!selectedBatch && batchSuggestions.length > 0 && (
+              <div
+                className="suggestion-list"
+                style={{
+                  position: 'absolute',
+                  left: 0,
+                  right: 0,
+                  top: '100%',
+                  zIndex: 20,
+                }}
+              >
+                {batchSuggestions.map((batch) => (
+                  <button
+                    type="button"
+                    className="suggestion"
+                    key={batch.id}
+                    onClick={() =>
+                      selectBatch(batch)
+                    }
+                  >
+                    <strong>
+                      {batch.batch_number || 'Batch'}
+                    </strong>
+                    <span>
+                      Stock {batch.current_stock_units ?? 0}
+                      {' • '}
+                      Exp {dateText(batch.expiry_date)}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </label>
+      )}
+
+      {selected && (
+        <div className="info-box">
+          System stock:{' '}
+          {selected.current_stock_units ?? 0}
+        </div>
+      )}
+
+      {selected && (
+        <label>
+          Physical stock
+          <input
+            type="number"
+            min="0"
+            step="any"
+            value={physical}
+            onChange={(e) =>
+              setPhysical(
+                e.target.value,
+              )
+            }
+          />
+        </label>
+      )}
+
+      {message && (
+        <div className="message-box">
+          {message}
+        </div>
+      )}
+
+      <button
+        className="primary-button"
+        onClick={save}
+      >
+        Record Reconciliation
+      </button>
+
+      <p className="muted">
+        This records the reconciliation
+        event. Actual stock adjustment
+        should be performed through the
+        dedicated backend stock-adjustment
+        operation.
+      </p>
+    </PanelList>
+  )
+}
+
 /* =========================================================  
    CUSTOMERS  
 ========================================================= */  
