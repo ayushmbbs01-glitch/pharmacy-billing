@@ -3403,10 +3403,12 @@ function CustomerHistoryModal({
   const totalCredit = sum(accountLedger.map((entry) => entry.credit))
   const totalCollected = totalCredit
   const ledgerOutstanding = Math.max(0, totalDebit - totalCredit)
-  // The rendered account ledger is the source of truth for this customer's
-  // displayed outstanding balance. This includes invoices, sale payments,
-  // customer-credit payments, refunds and adjustments exactly once.
-  const outstanding = ledgerOutstanding
+  const outstanding = Math.max(
+    0,
+    safeNumber(
+      creditSummary?.outstanding_credit ?? customer.outstanding_credit ?? ledgerOutstanding,
+    ),
+  )
 
   return (
     <Modal
@@ -10490,24 +10492,45 @@ function CustomersModule({
     const customers = data || []
     setRows(customers)
 
-    // Customer credit is authoritative at the account level.
-    // Do not derive this from sales.amount_due because account-settlement
-    // payments are recorded in customer_credit_transactions.
-    const { data: creditRows, error: creditError } = await pharmdeskDb.rpc(
-      'pharmdesk_customer_credit_report',
-      { p_store_id: store.id },
-    )
+    // Use the same customer-credit ledger used by Account History.
+    // This keeps the status shown on the Customers screen linked to the
+    // exact outstanding balance the customer account displays.
+    const { data: creditLedgerRows, error: creditLedgerError } = await pharmdeskDb
+      .from('customer_credit_transactions')
+      .select('customer_id, transaction_type, amount')
+      .eq('store_id', store.id)
 
-    if (!creditError) {
-      const creditMap = {}
-      ;(creditRows || []).forEach((row) => {
-        const due = safeNumber(row.outstanding_credit)
-        if (due <= 0.009) return
-        creditMap[row.customer_id] = due
-      })
-      setCreditByCustomer(creditMap)
-    } else {
+    if (creditLedgerError) {
       setCreditByCustomer({})
+    } else {
+      const creditMap = {}
+      ;(creditLedgerRows || []).forEach((row) => {
+        const amount = safeNumber(row.amount)
+        if (!row.customer_id || !Number.isFinite(amount)) return
+
+        let debit = 0
+        let credit = 0
+
+        if (row.transaction_type === 'credit_sale') {
+          debit = amount
+        } else if (row.transaction_type === 'credit_payment') {
+          credit = amount
+        } else if (row.transaction_type === 'credit_adjustment') {
+          if (amount >= 0) debit = amount
+          else credit = Math.abs(amount)
+        } else if (row.transaction_type === 'credit_refund') {
+          credit = amount
+        }
+
+        creditMap[row.customer_id] =
+          safeNumber(creditMap[row.customer_id]) + debit - credit
+      })
+
+      Object.keys(creditMap).forEach((customerId) => {
+        creditMap[customerId] = Math.max(0, creditMap[customerId])
+      })
+
+      setCreditByCustomer(creditMap)
     }
   }
 
