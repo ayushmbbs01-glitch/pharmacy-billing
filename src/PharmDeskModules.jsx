@@ -10497,7 +10497,7 @@ function CustomersModule({
     // consistent with the actual bill-level outstanding balance.
     const { data: salesRows } = await pharmdeskDb
       .from('sales')
-      .select('customer_id, amount_due')
+      .select('customer_id, grand_total, amount_paid, amount_due')
       .eq('store_id', store.id)
       .not('customer_id', 'is', null)
 
@@ -10505,7 +10505,17 @@ function CustomersModule({
     ;(salesRows || []).forEach((sale) => {
       const customerId = sale.customer_id
       if (!customerId) return
-      const due = safeNumber(sale.amount_due)
+
+      // Use both sources of bill-level balance. amount_due is the stored
+      // balance, while grand_total - amount_paid independently catches
+      // partially-paid bills if amount_due has not been refreshed.
+      const storedDue = Math.max(0, safeNumber(sale.amount_due))
+      const calculatedDue = Math.max(
+        0,
+        safeNumber(sale.grand_total) - safeNumber(sale.amount_paid),
+      )
+      const due = Math.max(storedDue, calculatedDue)
+
       if (due <= 0.009) return
       creditMap[customerId] =
         safeNumber(creditMap[customerId]) + due
