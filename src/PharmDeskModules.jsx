@@ -3403,12 +3403,10 @@ function CustomerHistoryModal({
   const totalCredit = sum(accountLedger.map((entry) => entry.credit))
   const totalCollected = totalCredit
   const ledgerOutstanding = Math.max(0, totalDebit - totalCredit)
-  const outstanding = Math.max(
-    0,
-    safeNumber(
-      creditSummary?.outstanding_credit ?? customer.outstanding_credit ?? ledgerOutstanding,
-    ),
-  )
+  // The rendered account ledger is the source of truth for this customer's
+  // displayed outstanding balance. This includes invoices, sale payments,
+  // customer-credit payments, refunds and adjustments exactly once.
+  const outstanding = ledgerOutstanding
 
   return (
     <Modal
@@ -10492,35 +10490,25 @@ function CustomersModule({
     const customers = data || []
     setRows(customers)
 
-    // Use the same per-invoice amount_due field that the detailed
-    // customer history uses. This keeps the customer-list status
-    // consistent with the actual bill-level outstanding balance.
-    const { data: salesRows } = await pharmdeskDb
-      .from('sales')
-      .select('customer_id, grand_total, amount_paid, amount_due')
-      .eq('store_id', store.id)
-      .not('customer_id', 'is', null)
+    // Customer credit is authoritative at the account level.
+    // Do not derive this from sales.amount_due because account-settlement
+    // payments are recorded in customer_credit_transactions.
+    const { data: creditRows, error: creditError } = await pharmdeskDb.rpc(
+      'pharmdesk_customer_credit_report',
+      { p_store_id: store.id },
+    )
 
-    const creditMap = {}
-    ;(salesRows || []).forEach((sale) => {
-      const customerId = sale.customer_id
-      if (!customerId) return
-
-      // Use both sources of bill-level balance. amount_due is the stored
-      // balance, while grand_total - amount_paid independently catches
-      // partially-paid bills if amount_due has not been refreshed.
-      const storedDue = Math.max(0, safeNumber(sale.amount_due))
-      const calculatedDue = Math.max(
-        0,
-        safeNumber(sale.grand_total) - safeNumber(sale.amount_paid),
-      )
-      const due = Math.max(storedDue, calculatedDue)
-
-      if (due <= 0.009) return
-      creditMap[customerId] =
-        safeNumber(creditMap[customerId]) + due
-    })
-    setCreditByCustomer(creditMap)
+    if (!creditError) {
+      const creditMap = {}
+      ;(creditRows || []).forEach((row) => {
+        const due = safeNumber(row.outstanding_credit)
+        if (due <= 0.009) return
+        creditMap[row.customer_id] = due
+      })
+      setCreditByCustomer(creditMap)
+    } else {
+      setCreditByCustomer({})
+    }
   }
 
   useEffect(() => {
