@@ -122,46 +122,59 @@ const levenshtein = (a, b) => {
   return prev[b.length]  
 }  
   
-const fuzzyScore = (query, text) => {  
-  const q = normalize(query)  
-  const t = normalize(text)  
-  
-  if (!q) return 0  
-  if (!t) return -Infinity  
-  
-  if (t === q) return 1000  
-  if (t.includes(q)) return 800 - t.length / 100  
-  
-  const qTokens = q.split(/\s+/).filter(Boolean)  
-  const tTokens = t.split(/\s+/).filter(Boolean)  
-  
-  let score = 0  
-  
-  for (const qt of qTokens) {  
-    let best = Infinity  
-  
-    for (const tt of tTokens) {  
-      if (tt.includes(qt) || qt.includes(tt)) {  
-        best = Math.min(best, 0)  
-      } else {  
-        best = Math.min(best, levenshtein(qt, tt))  
-      }  
-    }  
-  
-    if (best <= 1) score += 100  
-    else if (best <= 2) score += 60  
-    else if (best <= 3) score += 25  
-    else score -= 30  
-  }  
-  
-  return score  
-}  
-  
-const matchesSearch = (query, ...values) => {  
-  if (!normalize(query)) return true  
-  return fuzzyScore(query, values.filter(Boolean).join(' ')) > 0  
-}  
-  
+const fuzzyScore = (query, text) => {
+  const q = normalize(query)
+  const t = normalize(text)
+
+  if (!q) return 0
+  if (!t) return -Infinity
+  if (t === q) return 1000
+
+  // Match the query anywhere in the full value, including inside a word.
+  // Example: para / acetamol / caffeine / caff match
+  // "Paracetamol + Caffeine 50 mg".
+  if (t.includes(q)) return 900 - t.length / 100
+
+  const qTokens = q.split(/\s+/).filter(Boolean)
+  const tTokens = t.split(/\s+/).filter(Boolean)
+  let score = 0
+  let matchedTokens = 0
+
+  for (const qt of qTokens) {
+    let best = Infinity
+    let tokenMatched = false
+
+    for (const tt of tTokens) {
+      if (tt.includes(qt)) {
+        best = 0
+        tokenMatched = true
+        break
+      }
+
+      if (qt.includes(tt)) {
+        best = Math.min(best, 1)
+        tokenMatched = true
+      } else {
+        best = Math.min(best, levenshtein(qt, tt))
+      }
+    }
+
+    if (tokenMatched) matchedTokens += 1
+    if (best === 0) score += 250
+    else if (best <= 1) score += 120
+    else if (best <= 2) score += 70
+    else if (best <= 3) score += 30
+    else score -= 40
+  }
+
+  return matchedTokens > 0 ? score + 100 : score
+}
+
+const matchesSearch = (query, ...values) => {
+  if (!normalize(query)) return true
+  return fuzzyScore(query, values.filter(Boolean).join(' ')) > 0
+}
+
 const emptySaleItem = () => ({  
   id: crypto.randomUUID(),  
   product: null,  
@@ -13937,7 +13950,9 @@ function ProductModal({
   const [compositions, setCompositions] =  
     useState([])  
   
-  const [  
+  
+  const [manufacturers, setManufacturers] = useState([])
+const [  
     compositionQuery,  
     setCompositionQuery,  
   ] = useState('')  
@@ -14105,7 +14120,8 @@ function ProductModal({
     async () => {  
       const [  
         categoryResult,  
-        compositionResult,  
+        compositionResult,
+        manufacturerResult,  
       ] = await Promise.all([  
         pharmdeskDb  
           .from(  
@@ -14116,7 +14132,15 @@ function ProductModal({
             'is_active',  
             true,  
           )  
-          .order('name'),  
+
+
+        pharmdeskDb
+          .from('products')
+          .select('manufacturer')
+          .eq('is_active', true)
+          .not('manufacturer', 'is', null)
+          .order('manufacturer')
+          .limit(500),          .order('name'),  
   
         pharmdeskDb  
           .from(  
@@ -14154,6 +14178,16 @@ function ProductModal({
         compositionRows,  
       )  
   
+      setManufacturers(
+        Array.from(
+          new Set(
+            (manufacturerResult?.data || [])
+              .map((x) => String(x.manufacturer || '').trim())
+              .filter(Boolean),
+          ),
+        ),
+      )
+
       if (  
         product?.composition_id  
       ) {  
@@ -14686,6 +14720,26 @@ function ProductModal({
     }  
   }  
   
+  const deleteProduct = async () => {
+    if (!editing || !product?.id) return
+
+    const confirmed = window.confirm(
+      `Delete ${product.product_name || 'this product'}?\n\nThis will deactivate the product so it no longer appears in active product searches. Historical sales and purchases are preserved.`,
+    )
+    if (!confirmed) return
+
+    setBusy(true)
+    setError('')
+    try {
+      await PharmDeskAPI.deleteProduct(store.id, product.id)
+      onCreated({ id: product.id, deleted: true })
+    } catch (error) {
+      setError(error.message || 'Unable to delete product.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (  
     <Modal  
       title={  
@@ -14803,7 +14857,28 @@ function ProductModal({
                   e.target.value,  
                 )  
               }  
-            />  
+            placeholder="Search manufacturer / company"
+            />
+
+            {manufacturer && manufacturers.length > 0 && (
+              <div className="suggestion-list">
+                {manufacturers
+                  .map((value) => ({ value, score: fuzzyScore(manufacturer, value) }))
+                  .filter((x) => x.score > 0)
+                  .sort((a, b) => b.score - a.score)
+                  .slice(0, 8)
+                  .map((x) => (
+                    <button
+                      type="button"
+                      className="suggestion"
+                      key={x.value}
+                      onClick={() => setManufacturer(x.value)}
+                    >
+                      <strong>{x.value}</strong>
+                    </button>
+                  ))}
+              </div>
+            )}
           </label>  
   
           <label>  
@@ -15250,15 +15325,33 @@ function ProductModal({
           </div>  
         )}  
   
-        <ModalActions  
-          onClose={onClose}  
-          busy={busy}  
-          label={  
-            editing  
-              ? 'Save Product'  
-              : 'Create Product'  
-          }  
-        />  
+        <div className="modal-actions">
+          {editing && (
+            <button
+              type="button"
+              className="danger-button"
+              onClick={deleteProduct}
+              disabled={busy}
+            >
+              {busy ? 'Deleting…' : 'Delete Product'}
+            </button>
+          )}
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={onClose}
+            disabled={busy}
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            className="primary-button"
+            disabled={busy}
+          >
+            {busy ? 'Saving…' : editing ? 'Save Product' : 'Create Product'}
+          </button>
+        </div>  
       </form>  
   
       {compositionModal && (  
