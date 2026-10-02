@@ -7697,6 +7697,65 @@ function PendingSupplierPayments({
 
   return (
     <PanelList title="Pending Supplier Payments">
+      <style>{`
+        .supplier-bill-table-inner {
+          width: 100%;
+        }
+
+        @media (max-width: 900px) and (orientation: landscape) {
+          .supplier-bill-table-inner {
+            min-width: 0 !important;
+            width: 100% !important;
+          }
+
+          .supplier-bill-table-header,
+          .supplier-bill-table-row {
+            grid-template-columns: 32px minmax(0, 1.2fr) minmax(0, 1.25fr) 92px 96px !important;
+            padding-left: 8px !important;
+            padding-right: 8px !important;
+          }
+
+          .supplier-bill-table-header {
+            min-height: 48px !important;
+            font-size: 12px !important;
+          }
+
+          .supplier-bill-table-row {
+            min-height: 60px !important;
+          }
+
+          .supplier-bill-checkbox {
+            width: 18px !important;
+            height: 18px !important;
+          }
+
+          .supplier-bill-invoice {
+            padding: 5px 8px !important;
+            border-radius: 7px !important;
+            font-size: 13px !important;
+          }
+
+          .supplier-bill-supplier,
+          .supplier-bill-date,
+          .supplier-bill-amount {
+            font-size: 12.5px !important;
+          }
+
+          .supplier-bill-supplier {
+            padding-right: 6px !important;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+          }
+        }
+
+        @media (max-width: 900px) and (orientation: landscape) {
+          .supplier-bill-table-header.supplier-selected,
+          .supplier-bill-table-row.supplier-selected {
+            grid-template-columns: 32px minmax(0, 1.55fr) 92px 96px !important;
+          }
+        }
+      `}</style>
       <div
         style={{
           display: 'grid',
@@ -7779,8 +7838,12 @@ function PendingSupplierPayments({
             background: '#fff',
           }}
         >
-          <div style={{ minWidth: supplierSelected ? 640 : 820 }}>
+          <div
+            className="supplier-bill-table-inner"
+            style={{ minWidth: supplierSelected ? 640 : 820 }}
+          >
             <div
+              className={`supplier-bill-table-header${supplierSelected ? ' supplier-selected' : ''}`}
               style={{
                 display: 'grid',
                 gridTemplateColumns: billGridColumns,
@@ -7830,6 +7893,7 @@ function PendingSupplierPayments({
               return (
                 <label
                   key={row.id}
+                  className={`supplier-bill-table-row${supplierSelected ? ' supplier-selected' : ''}`}
                   style={{
                     display: 'grid',
                     gridTemplateColumns: billGridColumns,
@@ -7851,6 +7915,7 @@ function PendingSupplierPayments({
                       checked={selected}
                       disabled={disabled}
                       onChange={() => toggleRow(row.id)}
+                      className="supplier-bill-checkbox"
                       style={{
                         width: 22,
                         height: 22,
@@ -7861,6 +7926,7 @@ function PendingSupplierPayments({
 
                   <div>
                     <span
+                      className="supplier-bill-invoice"
                       style={{
                         display: 'inline-flex',
                         alignItems: 'center',
@@ -7880,6 +7946,7 @@ function PendingSupplierPayments({
 
                   {!supplierSelected && (
                     <div
+                      className="supplier-bill-supplier"
                       style={{
                         fontWeight: 600,
                         color: '#27364a',
@@ -7891,6 +7958,7 @@ function PendingSupplierPayments({
                   )}
 
                   <div
+                    className="supplier-bill-date"
                     style={{
                       color: '#566173',
                       fontSize: 16,
@@ -7901,6 +7969,7 @@ function PendingSupplierPayments({
                   </div>
 
                   <div
+                    className="supplier-bill-amount"
                     style={{
                       textAlign: 'right',
                       fontWeight: 800,
