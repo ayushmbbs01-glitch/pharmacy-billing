@@ -79,7 +79,32 @@ const dateTimeText = (value) => {
   return d.toLocaleString('en-IN')  
 }  
   
-const todayISO = () => new Date().toISOString().slice(0, 10)  
+const localDateISO = (value = new Date()) => {
+  const d = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(d.getTime())) return ''
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+const localDateTimeForDb = (datePart) => {
+  const now = new Date()
+  const pad = (n) => String(n).padStart(2, '0')
+  const offsetMinutes = -now.getTimezoneOffset()
+  const sign = offsetMinutes >= 0 ? '+' : '-'
+  const absoluteOffset = Math.abs(offsetMinutes)
+  const offsetHours = Math.floor(absoluteOffset / 60)
+  const offsetMins = absoluteOffset % 60
+  const offset = `${sign}${pad(offsetHours)}:${pad(offsetMins)}`
+  return `${datePart}T${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}${offset}`
+}
+
+const todayISO = () => localDateISO(new Date())
+
+const localDateFromStoredTimestamp = (value) => {
+  if (!value) return todayISO()
+  const d = new Date(value)
+  return Number.isNaN(d.getTime()) ? todayISO() : localDateISO(d)
+}
   
 const normalize = (value) =>  
   String(value || '')  
@@ -2091,9 +2116,7 @@ function NewSale({ store }) {
             p_store_id: store.id,  
             p_customer_id:  
               selectedCustomer?.id || null,  
-            p_bill_datetime: `${billDate}T${new Date()  
-              .toTimeString()  
-              .slice(0, 8)}`,  
+            p_bill_datetime: localDateTimeForDb(billDate),  
             p_bill_discount_amount:  
               safeNumber(billDiscount),  
             p_notes: null,  
@@ -2985,7 +3008,8 @@ function CustomerLedgerReceiptModal({
         .replaceAll('>', '&gt;')
         .replaceAll('"', '&quot;')
         .replaceAll("'", '&#039;')
-    printWindow.document.write(`
+    printDocument.open()
+  printDocument.write(`
       <!doctype html>
       <html>
         <head>
@@ -3879,16 +3903,23 @@ function CompletedBills({ store }) {
   function printSaleInvoice(details, store) {
   if (!details) return
 
-  const printWindow = window.open(
-    '',
-    '_blank',
-    'width=800,height=900',
-  )
+  // Use an in-page hidden print frame instead of window.open().
+  // This avoids popup blockers on iPad/iPhone while still opening the native
+  // print sheet, where the user can choose Save as PDF.
+  const printFrame = document.createElement('iframe')
+  printFrame.style.position = 'fixed'
+  printFrame.style.right = '0'
+  printFrame.style.bottom = '0'
+  printFrame.style.width = '1px'
+  printFrame.style.height = '1px'
+  printFrame.style.border = '0'
+  printFrame.style.opacity = '0.01'
+  document.body.appendChild(printFrame)
 
-  if (!printWindow) {
-    window.alert(
-      'Unable to open the print window. Please allow pop-ups for PharmDesk.',
-    )
+  const printDocument = printFrame.contentDocument || printFrame.contentWindow?.document
+  if (!printDocument || !printFrame.contentWindow) {
+    printFrame.remove()
+    window.alert('Unable to prepare the invoice for printing.')
     return
   }
 
@@ -4267,11 +4298,12 @@ function CompletedBills({ store }) {
     </html>
   `)
 
-  printWindow.document.close()
-  printWindow.focus()
+  printDocument.close()
+  printFrame.contentWindow.focus()
 
   setTimeout(() => {
-    printWindow.print()
+    printFrame.contentWindow.print()
+    setTimeout(() => printFrame.remove(), 1500)
   }, 250)
 }
  
@@ -4614,12 +4646,10 @@ function SaleEditModal({
   
   const [billDate, setBillDate] =  
     useState(  
-      sale.bill_datetime  
-        ? new Date(  
-            sale.bill_datetime,  
-          )  
-            .toISOString()  
-            .slice(0, 10)  
+      sale.bill_datetime
+        ? localDateFromStoredTimestamp(
+            sale.bill_datetime,
+          )
         : todayISO(),  
     )  
   
@@ -4826,9 +4856,7 @@ function SaleEditModal({
             p_sale_id: sale.id,  
             p_customer_id:  
               customerId || null,  
-            p_bill_datetime: `${billDate}T${new Date()  
-              .toTimeString()  
-              .slice(0, 8)}`,  
+            p_bill_datetime: localDateTimeForDb(billDate),  
             p_bill_discount_amount:  
               safeNumber(  
                 billDiscount,  
@@ -7582,11 +7610,14 @@ function SupplierPurchaseCatalogue({ store }) {
     }))
   }
 
-  const exportSupplierCatalogueExcel = () => {
+  const exportSupplierCatalogueExcel = async () => {
     if (!supplierId || !rows.length) {
       setError('Select a supplier with products before exporting.')
       return
     }
+
+    setError('')
+    setMessage('')
 
     const supplierName =
       suppliers.find((supplier) => supplier.id === supplierId)?.supplier_name ||
@@ -7594,7 +7625,7 @@ function SupplierPurchaseCatalogue({ store }) {
 
     const csvEscape = (value) => {
       const text = String(value ?? '')
-      return `\"${text.replace(/\"/g, '\"\"')}\"`
+      return `"${text.replace(/"/g, '""')}"`
     }
 
     const csvRows = [
@@ -7619,16 +7650,38 @@ function SupplierPurchaseCatalogue({ store }) {
       .map((row) => row.map(csvEscape).join(','))
       .join('\r\n')
 
+    const fileName = `${supplierName.replace(/[^a-z0-9]+/gi, '_')}_Supplier_Catalogue.csv`
+    const file = new File([csv], fileName, { type: 'text/csv;charset=utf-8' })
+
+    if (
+      navigator.share &&
+      navigator.canShare &&
+      navigator.canShare({ files: [file] })
+    ) {
+      try {
+        await navigator.share({
+          files: [file],
+          title: `${supplierName} Supplier Catalogue`,
+          text: 'Supplier catalogue exported from PharmDesk.',
+        })
+        setMessage('Supplier catalogue exported. Choose Excel or Save to Files from the iPad share sheet.')
+        return
+      } catch (shareError) {
+        if (shareError?.name === 'AbortError') return
+      }
+    }
+
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
     const anchor = document.createElement('a')
     anchor.href = url
-    anchor.download = `${supplierName.replace(/[^a-z0-9]+/gi, '_')}_Supplier_Catalogue.csv`
+    anchor.download = fileName
+    anchor.rel = 'noopener'
     document.body.appendChild(anchor)
     anchor.click()
     anchor.remove()
     setTimeout(() => URL.revokeObjectURL(url), 1000)
-    setMessage('Excel-compatible CSV exported. It can be opened in Excel or Numbers on iPad.')
+    setMessage('Excel-compatible CSV exported. It can be opened in Excel or Numbers.')
   }
 
   const exportSupplierCataloguePdf = () => {
@@ -8036,6 +8089,8 @@ function PurchaseOrders({
 
   const [orderError, setOrderError] =
     useState('')
+  const [pdfPreviewHtml, setPdfPreviewHtml] = useState('')
+  const pdfFrameRef = useRef(null)
 
   useEffect(() => {
     if (!store?.id) return
@@ -8147,17 +8202,7 @@ function PurchaseOrders({
       )
       .join('')
 
-    const printWindow =
-      window.open('', '_blank')
-
-    if (!printWindow) {
-      window.alert(
-        'Unable to open the PDF window. Please allow pop-ups for PharmDesk.',
-      )
-      return
-    }
-
-    printWindow.document.write(`
+    setPdfPreviewHtml(`
       <!DOCTYPE html>
       <html>
         <head>
@@ -8476,13 +8521,6 @@ function PurchaseOrders({
         </body>
       </html>
     `)
-
-    printWindow.document.close()
-    printWindow.focus()
-
-    setTimeout(() => {
-      printWindow.print()
-    }, 250)
   }
 
 
@@ -8687,6 +8725,42 @@ function PurchaseOrders({
               </div>
             )}
           </div>
+        </Modal>
+      )}
+
+      {pdfPreviewHtml && (
+        <Modal
+          title="Purchase Order PDF Preview"
+          onClose={() => setPdfPreviewHtml('')}
+        >
+          <div className="button-row" style={{ marginBottom: '12px' }}>
+            <button
+              type="button"
+              className="primary-button"
+              onClick={() => {
+                const frame = pdfFrameRef.current
+                if (frame?.contentWindow) {
+                  frame.contentWindow.focus()
+                  frame.contentWindow.print()
+                }
+              }}
+            >
+              Print / Save as PDF
+            </button>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => setPdfPreviewHtml('')}
+            >
+              Close
+            </button>
+          </div>
+          <iframe
+            ref={pdfFrameRef}
+            title="Purchase order PDF preview"
+            srcDoc={pdfPreviewHtml}
+            style={{ width: '100%', minHeight: '70vh', border: '1px solid #d1d5db', borderRadius: '10px', background: '#fff' }}
+          />
         </Modal>
       )}
 
