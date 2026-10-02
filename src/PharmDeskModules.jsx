@@ -13669,11 +13669,62 @@ function CompositionModal({
         ],  
   )  
   
-  const [busy, setBusy] =  
-    useState(false)  
-  const [error, setError] =  
-    useState('')  
-  
+  const [busy, setBusy] =
+    useState(false)
+  const [error, setError] =
+    useState('')
+  const [existingCompositions, setExistingCompositions] = useState([])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const loadExistingCompositions = async () => {
+      const { data } = await pharmdeskDb
+        .from('compositions')
+        .select(`
+          id,
+          name,
+          dosage_form,
+          composition_ingredients (
+            ingredient_name,
+            strength_value,
+            strength_unit,
+            sequence_number
+          )
+        `)
+        .eq('is_active', true)
+        .order('name')
+        .limit(500)
+
+      if (!cancelled) setExistingCompositions(data || [])
+    }
+
+    loadExistingCompositions()
+    return () => { cancelled = true }
+  }, [])
+
+  const compositionSuggestionsFor = (query, currentCompositionId = null) => {
+    const q = String(query || '').trim()
+    if (!q) return []
+
+    return existingCompositions
+      .filter((composition) => composition.id !== currentCompositionId)
+      .map((composition) => ({
+        composition,
+        score: fuzzyScore(
+          q,
+          [
+            composition.name,
+            ...(composition.composition_ingredients || []).map((x) => x.ingredient_name),
+          ].filter(Boolean).join(' '),
+        ),
+      }))
+      .filter((x) => x.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 6)
+      .map((x) => x.composition)
+  }
+
   const updateIngredient = (  
     index,  
     patch,  
@@ -13837,22 +13888,37 @@ function CompositionModal({
               className="ingredient-row"  
               key={index}  
             >  
-              <input  
-                placeholder="Ingredient"  
-                value={  
-                  ingredient.ingredient_name  
-                }  
-                onChange={(e) =>  
-                  updateIngredient(  
-                    index,  
-                    {  
-                      ingredient_name:  
-                        e.target.value,  
-                    },  
-                  )  
-                }  
-              />  
-  
+              <div style={{ flex: 1, minWidth: 0, position: 'relative' }}>
+                <input
+                  placeholder="Ingredient"
+                  value={ingredient.ingredient_name}
+                  onChange={(e) =>
+                    updateIngredient(index, {
+                      ingredient_name: e.target.value,
+                    })
+                  }
+                />
+
+                {ingredient.ingredient_name && compositionSuggestionsFor(ingredient.ingredient_name).length > 0 && (
+                  <div className="suggestion-list" style={{ position: 'absolute', left: 0, right: 0, top: '100%', zIndex: 20 }}>
+                    {compositionSuggestionsFor(ingredient.ingredient_name).map((composition) => (
+                      <button
+                        type="button"
+                        className="suggestion"
+                        key={`${index}-${composition.id}`}
+                        onClick={() => {
+                          const firstIngredient = composition.composition_ingredients?.[0]?.ingredient_name || composition.name
+                          updateIngredient(index, { ingredient_name: firstIngredient })
+                        }}
+                      >
+                        <strong>{composition.name}</strong>
+                        <span>{(composition.composition_ingredients || []).map((x) => x.ingredient_name).filter(Boolean).join(' + ')}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               <input  
                 type="number"  
                 min="0"  
@@ -14120,8 +14186,8 @@ const [
     async () => {  
       const [  
         categoryResult,  
-        compositionResult,
-        manufacturerResult,  
+        manufacturerResult,
+        compositionResult,  
       ] = await Promise.all([  
         pharmdeskDb  
           .from(  
@@ -14131,8 +14197,7 @@ const [
           .eq(  
             'is_active',  
             true,  
-          )  
-
+          ),  
 
         pharmdeskDb
           .from('products')
@@ -14140,7 +14205,8 @@ const [
           .eq('is_active', true)
           .not('manufacturer', 'is', null)
           .order('manufacturer')
-          .limit(500),          .order('name'),  
+          .limit(500),
+
   
         pharmdeskDb  
           .from(  
@@ -14731,7 +14797,13 @@ const [
     setBusy(true)
     setError('')
     try {
-      await PharmDeskAPI.deleteProduct(store.id, product.id)
+      const { error: storeProductError } = await pharmdeskDb
+        .from('store_products')
+        .update({ is_active: false })
+        .eq('store_id', store.id)
+        .eq('product_id', product.id)
+
+      if (storeProductError) throw storeProductError
       onCreated({ id: product.id, deleted: true })
     } catch (error) {
       setError(error.message || 'Unable to delete product.')
