@@ -7642,7 +7642,7 @@ function SupplierPurchaseCatalogue({ store }) {
         money(row.last_mrp),
         row.last_gst_rate == null ? '' : `${row.last_gst_rate}%`,
         row.times_purchased || 0,
-        '',
+        safeNumber(quantities[row.product_id]) || 0,
       ]),
     ]
 
@@ -7713,7 +7713,7 @@ function SupplierPurchaseCatalogue({ store }) {
           <td>${htmlEscape(`${row.pack_quantity || '—'} ${row.pack_unit || ''}`.trim())}</td>
           <td>${htmlEscape(money(row.last_mrp))}</td>
           <td>${htmlEscape(row.last_gst_rate == null ? '—' : `${row.last_gst_rate}%`)}</td>
-          <td class="order-cell"></td>
+          <td class="order-cell">${htmlEscape(safeNumber(quantities[row.product_id]) || 0)}</td>
         </tr>`).join('')
 
     setPdfPreviewHtml(`<!doctype html>
@@ -9518,6 +9518,8 @@ function StockReconciliation({
     useState('')
   const [physical, setPhysical] =
     useState('')
+  const [adjustmentSign, setAdjustmentSign] =
+    useState(1)
   const [message, setMessage] =
     useState('')
 
@@ -9638,6 +9640,7 @@ function StockReconciliation({
     setSelectedBatch('')
     setBatchQuery('')
     setPhysical('')
+    setAdjustmentSign(1)
     setMessage('')
   }
 
@@ -9645,6 +9648,7 @@ function StockReconciliation({
     setSelectedBatch(batch.id)
     setBatchQuery(batch.batch_number || '')
     setPhysical('')
+    setAdjustmentSign(1)
     setMessage('')
   }
 
@@ -9665,26 +9669,37 @@ function StockReconciliation({
       return
     }
 
-    const physicalNumber =
+    const systemStock = safeNumber(
+      selected.current_stock_units,
+    )
+
+    const adjustmentNumber =
       Number(physical)
 
     if (
       !Number.isFinite(
-        physicalNumber,
+        adjustmentNumber,
       ) ||
-      physicalNumber < 0
+      adjustmentNumber < 0
     ) {
       setMessage(
-        'Enter a valid physical quantity.',
+        'Enter a valid stock adjustment.',
       )
       return
     }
 
     const difference =
-      physicalNumber -
-      safeNumber(
-        selected.current_stock_units,
+      adjustmentSign * adjustmentNumber
+
+    const physicalNumber =
+      systemStock + difference
+
+    if (physicalNumber < 0) {
+      setMessage(
+        'Minus adjustment cannot reduce stock below 0.',
       )
+      return
+    }
 
     const { error } =
       await pharmdeskDb.rpc(
@@ -9821,20 +9836,70 @@ function StockReconciliation({
       )}
 
       {selected && (
-        <label>
-          Physical stock
-          <input
-            type="number"
-            min="0"
-            step="any"
-            value={physical}
-            onChange={(e) =>
-              setPhysical(
-                e.target.value,
-              )
+        <div>
+          <label>Stock difference</label>
+          <div
+            style={{
+              display: 'flex',
+              gap: 8,
+              alignItems: 'center',
+              marginTop: 6,
+            }}
+          >
+            <button
+              type="button"
+              className={
+                adjustmentSign === 1
+                  ? 'primary-button'
+                  : 'secondary-button'
+              }
+              onClick={() => setAdjustmentSign(1)}
+              style={{
+                minWidth: 46,
+                padding: '8px 12px',
+              }}
+            >
+              +
+            </button>
+            <button
+              type="button"
+              className={
+                adjustmentSign === -1
+                  ? 'primary-button'
+                  : 'secondary-button'
+              }
+              onClick={() => setAdjustmentSign(-1)}
+              style={{
+                minWidth: 46,
+                padding: '8px 12px',
+              }}
+            >
+              −
+            </button>
+            <input
+              type="number"
+              min="0"
+              step="any"
+              placeholder="Enter difference"
+              value={physical}
+              onChange={(e) => setPhysical(e.target.value)}
+              style={{ flex: 1 }}
+            />
+          </div>
+          <div
+            className="muted"
+            style={{ marginTop: 6 }}
+          >
+            Adjustment: {adjustmentSign === 1 ? '+' : '−'}
+            {safeNumber(physical) || 0}
+            {' · '}
+            Physical stock after reconciliation: {
+              systemStock +
+              adjustmentSign *
+                (safeNumber(physical) || 0)
             }
-          />
-        </label>
+          </div>
+        </div>
       )}
 
       {message && (
@@ -14645,6 +14710,141 @@ function CustomerModal({
    SUPPLIER MODAL  
 ========================================================= */  
   
+/* =========================================================
+   SUPPLIER DIRECTORY / PURCHASE PARTIES
+========================================================= */
+
+function SupplierDirectory({ store }) {
+  const [suppliers, setSuppliers] = useState([])
+  const [query, setQuery] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [modalSupplier, setModalSupplier] = useState(null)
+  const [showModal, setShowModal] = useState(false)
+
+  const loadSuppliers = async () => {
+    if (!store?.id) return
+    setLoading(true)
+    setError('')
+    try {
+      const { data, error: loadError } = await pharmdeskDb
+        .from('suppliers')
+        .select('*')
+        .eq('store_id', store.id)
+        .eq('is_active', true)
+        .order('supplier_name', { ascending: true })
+      if (loadError) throw loadError
+      setSuppliers(data || [])
+    } catch (loadError) {
+      console.error('Failed to load purchase parties:', loadError)
+      setError(loadError?.message || 'Unable to load purchase parties.')
+      setSuppliers([])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadSuppliers()
+  }, [store?.id])
+
+  const filteredSuppliers = suppliers.filter((supplier) => {
+    const haystack = [
+      supplier?.supplier_name,
+      supplier?.drug_license_number,
+      supplier?.contact_person,
+      supplier?.phone,
+      supplier?.email,
+      supplier?.gstin,
+      supplier?.address,
+    ].filter(Boolean).join(' ').toLowerCase()
+    const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
+    return words.every((word) => haystack.includes(word))
+  })
+
+  const openAdd = () => {
+    setModalSupplier(null)
+    setShowModal(true)
+  }
+
+  const openEdit = (supplier) => {
+    setModalSupplier(supplier)
+    setShowModal(true)
+  }
+
+  const handleSaved = async (savedSupplier) => {
+    setShowModal(false)
+    setModalSupplier(null)
+    if (savedSupplier?.id) {
+      setSuppliers((current) => {
+        const exists = current.some((item) => item.id === savedSupplier.id)
+        if (exists) {
+          return current.map((item) =>
+            item.id === savedSupplier.id ? { ...item, ...savedSupplier } : item,
+          )
+        }
+        return [savedSupplier, ...current]
+      })
+    }
+    await loadSuppliers()
+  }
+
+  return (
+    <>
+      <PanelList title="Purchase Parties">
+        <div className="search-row">
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search purchase party by name, phone, GSTIN or licence"
+          />
+          <button type="button" className="primary-button" onClick={openAdd}>
+            + Add Purchase Party
+          </button>
+        </div>
+
+        {error && <div className="error-box">{error}</div>}
+
+        {loading ? (
+          <div className="muted">Loading purchase parties…</div>
+        ) : filteredSuppliers.length === 0 ? (
+          <EmptyState
+            text={query ? 'No purchase parties match your search.' : 'No purchase parties added yet.'}
+          />
+        ) : (
+          <div className="record-list">
+            {filteredSuppliers.map((supplier) => (
+              <div className="record-row" key={supplier.id}>
+                <div>
+                  <strong>{supplier.supplier_name || 'Unnamed purchase party'}</strong>
+                  <span>
+                    {supplier.phone || supplier.gstin || supplier.drug_license_number || 'No contact details'}
+                  </span>
+                </div>
+                <button type="button" className="secondary-button" onClick={() => openEdit(supplier)}>
+                  Edit
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </PanelList>
+
+      {showModal && (
+        <SupplierModal
+          store={store}
+          supplier={modalSupplier}
+          onClose={() => {
+            setShowModal(false)
+            setModalSupplier(null)
+          }}
+          onCreated={handleSaved}
+        />
+      )}
+    </>
+  )
+}
+
 function SupplierModal({  
   store,  
   supplier = null,  
