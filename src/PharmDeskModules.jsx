@@ -2819,135 +2819,246 @@ function SaleItemRow({
    CUSTOMER HISTORY  
 ========================================================= */  
   
-function CustomerHistoryList({ store }) {  
-  const [customers, setCustomers] =  
-    useState([])  
-  const [query, setQuery] = useState('')  
-  const [selected, setSelected] =  
-    useState(null)  
-  const [editing, setEditing] =  
-    useState(null)  
-  
-  const load = async () => {  
-    const { data } = await supabase  
-      .from('customers')  
-      .select('*')  
-      .eq('store_id', store.id)  
-      .order('name')  
-  
-    setCustomers(data || [])  
-  }  
-  
-  useEffect(() => {  
-    if (store?.id) load()  
-  }, [store?.id])  
-  
-  const filtered = customers.filter(  
-    (c) =>  
-      matchesSearch(  
-        query,  
-        c.name,  
-        c.phone,  
-      ),  
-  )  
-  
-  return (  
-    <PanelList title="Customers">  
-      <input  
-        placeholder="Search customer"  
-        value={query}  
-        onChange={(e) =>  
-          setQuery(e.target.value)  
-        }  
-      />  
-  
-      <div className="record-list">  
-        {filtered.map((customer) => (  
-          <div  
-            className="record-row static"  
-            key={customer.id}  
-          >  
-            <div>  
-              <button  
-                type="button"  
-                onClick={() => setSelected(customer)}  
-                style={{  
-                  border: 0,  
-                  background: 'transparent',  
-                  padding: 0,  
-                  margin: 0,  
-                  font: 'inherit',  
-                  fontWeight: 700,  
-                  color: '#0a5bd3',  
-                  textAlign: 'left',  
-                  textDecoration: 'underline',  
-                  textUnderlineOffset: '3px',  
-                  cursor: 'pointer',  
-                }}  
-                title="Open customer account"  
-              >  
-                {customer.name ||  
-                  'Walk-in Customer'}  
-              </button>  
-  
-              <span>  
-                {customer.phone ||  
-                  'No phone'}  
-              </span>  
-            </div>  
-  
-            <div className="record-right">  
-              <button  
-                type="button"  
-                className="secondary-button"  
-                onClick={() =>  
-                  setEditing(customer)  
-                }  
-              >  
-                Edit  
-              </button>  
-            </div>  
-          </div>  
-        ))}  
-      </div>  
-  
-      {selected && (  
-        <CustomerHistoryModal  
-          store={store}  
-          customer={selected}  
-          onClose={() =>  
-            setSelected(null)  
-          }  
-          onEdit={(customer) => {  
-            setSelected(null)  
-            setEditing(customer)  
-          }}  
-        />  
-      )}  
-  
-      {editing && (  
-        <CustomerModal  
-          store={store}  
-          customer={editing}  
-          onClose={() =>  
-            setEditing(null)  
-          }  
-          onCreated={(updated) => {  
-            setCustomers((current) =>  
-              current.map((x) =>  
-                x.id === updated.id  
-                  ? updated  
-                  : x,  
-              ),  
-            )  
-            setEditing(null)  
-          }}  
-        />  
-      )}  
-    </PanelList>  
-  )  
-}  
-  
+function CustomerHistoryList({ store }) {
+  const [customers, setCustomers] = useState([])
+  const [query, setQuery] = useState('')
+  const [selected, setSelected] = useState(null)
+  const [editing, setEditing] = useState(null)
+  const [creditByCustomer, setCreditByCustomer] = useState({})
+
+  const load = async () => {
+    if (!store?.id) return
+
+    const [
+      { data: customerRows },
+      { data: salesRows },
+      { data: creditRows },
+    ] = await Promise.all([
+      supabase
+        .from('customers')
+        .select('*')
+        .eq('store_id', store.id)
+        .order('name'),
+      supabase
+        .from('sales')
+        .select('id, customer_id, grand_total, status')
+        .eq('store_id', store.id)
+        .not('customer_id', 'is', null),
+      supabase
+        .from('customer_credit_transactions')
+        .select('customer_id, transaction_type, amount')
+        .eq('store_id', store.id),
+    ])
+
+    const customersList = customerRows || []
+    setCustomers(customersList)
+
+    const salesById = {}
+    const debitByCustomer = {}
+    ;(salesRows || []).forEach((sale) => {
+      if (!sale?.customer_id) return
+      if (sale.status === 'cancelled') return
+
+      const amount = safeNumber(sale.grand_total)
+      debitByCustomer[sale.customer_id] =
+        safeNumber(debitByCustomer[sale.customer_id]) + amount
+
+      salesById[sale.id] = sale.customer_id
+    })
+
+    const creditByCustomerTotals = {}
+
+    const saleIds = Object.keys(salesById)
+    if (saleIds.length) {
+      const { data: paymentRows } = await supabase
+        .from('sale_payments')
+        .select('sale_id, amount')
+        .in('sale_id', saleIds)
+
+      ;(paymentRows || []).forEach((payment) => {
+        const customerId = salesById[payment.sale_id]
+        if (!customerId) return
+
+        creditByCustomerTotals[customerId] =
+          safeNumber(creditByCustomerTotals[customerId]) +
+          safeNumber(payment.amount)
+      })
+    }
+
+    ;(creditRows || []).forEach((entry) => {
+      const customerId = entry?.customer_id
+      if (!customerId) return
+
+      const amount = safeNumber(entry.amount)
+
+      if (entry.transaction_type === 'credit_payment') {
+        creditByCustomerTotals[customerId] =
+          safeNumber(creditByCustomerTotals[customerId]) + amount
+      } else if (entry.transaction_type === 'credit_refund') {
+        creditByCustomerTotals[customerId] =
+          safeNumber(creditByCustomerTotals[customerId]) + amount
+      } else if (entry.transaction_type === 'credit_adjustment') {
+        if (amount >= 0) {
+          debitByCustomer[customerId] =
+            safeNumber(debitByCustomer[customerId]) + amount
+        } else {
+          creditByCustomerTotals[customerId] =
+            safeNumber(creditByCustomerTotals[customerId]) +
+            Math.abs(amount)
+        }
+      }
+    })
+
+    const balanceMap = {}
+    customersList.forEach((customer) => {
+      const debit = safeNumber(debitByCustomer[customer.id])
+      const credit = safeNumber(creditByCustomerTotals[customer.id])
+      balanceMap[customer.id] = Math.max(0, debit - credit)
+    })
+
+    setCreditByCustomer(balanceMap)
+  }
+
+  useEffect(() => {
+    if (store?.id) load()
+  }, [store?.id])
+
+  const filtered = customers.filter((customer) =>
+    matchesSearch(query, customer.name, customer.phone),
+  )
+
+  return (
+    <PanelList title="Customers">
+      <input
+        placeholder="Search customer"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+      />
+
+      <div className="record-list">
+        {filtered.map((customer) => {
+          const outstanding = safeNumber(creditByCustomer[customer.id])
+
+          return (
+            <div
+              className="record-row static"
+              key={customer.id}
+            >
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setSelected(customer)}
+                  style={{
+                    border: 0,
+                    background: 'transparent',
+                    padding: 0,
+                    margin: 0,
+                    font: 'inherit',
+                    fontWeight: 700,
+                    color: '#0a5bd3',
+                    textAlign: 'left',
+                    textDecoration: 'underline',
+                    textUnderlineOffset: '3px',
+                    cursor: 'pointer',
+                  }}
+                  title="Open customer account"
+                >
+                  {customer.name || 'Walk-in Customer'}
+                </button>
+
+                <span>{customer.phone || '—'}</span>
+
+                {customer.referred_doctor_name && (
+                  <span>
+                    Dr. {customer.referred_doctor_name}
+                  </span>
+                )}
+
+                {outstanding > 0.009 && (
+                  <span>
+                    Outstanding credit: {money(outstanding)}
+                  </span>
+                )}
+              </div>
+
+              <div className="record-right">
+                {outstanding > 0.009 ? (
+                  <span
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      padding: '7px 10px',
+                      borderRadius: 999,
+                      background: '#fee2e2',
+                      color: '#b91c1c',
+                      fontWeight: 700,
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    Outstanding {money(outstanding)}
+                  </span>
+                ) : (
+                  <span
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      padding: '7px 10px',
+                      borderRadius: 999,
+                      background: '#dcfce7',
+                      color: '#166534',
+                      fontWeight: 700,
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    Paid / Cleared
+                  </span>
+                )}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      {selected && (
+        <CustomerHistoryModal
+          store={store}
+          customer={selected}
+          onClose={() => setSelected(null)}
+          onEdit={(customer) => {
+            setSelected(null)
+            setEditing(customer)
+          }}
+          onSettle={(customer) => {
+            setSelected(null)
+          }}
+        />
+      )}
+
+      {editing && (
+        <CustomerModal
+          store={store}
+          customer={editing}
+          onClose={() => setEditing(null)}
+          onCreated={(updated) => {
+            setCustomers((current) =>
+              current.map((customer) =>
+                customer.id === updated.id
+                  ? updated
+                  : customer,
+              ),
+            )
+            setEditing(null)
+            load()
+          }}
+        />
+      )}
+    </PanelList>
+  )
+}
+
+
 function CustomerLedgerReceiptModal({
   store,
   customer,
@@ -3403,12 +3514,10 @@ function CustomerHistoryModal({
   const totalCredit = sum(accountLedger.map((entry) => entry.credit))
   const totalCollected = totalCredit
   const ledgerOutstanding = Math.max(0, totalDebit - totalCredit)
-  const outstanding = Math.max(
-    0,
-    safeNumber(
-      creditSummary?.outstanding_credit ?? customer.outstanding_credit ?? ledgerOutstanding,
-    ),
-  )
+  // The rendered account ledger is the source of truth for this customer's
+  // displayed outstanding balance. This includes invoices, sale payments,
+  // customer-credit payments, refunds and adjustments exactly once.
+  const outstanding = ledgerOutstanding
 
   return (
     <Modal
@@ -8078,6 +8187,7 @@ function SupplierPurchaseCatalogue({ store }) {
   const [message, setMessage] = useState('')
   const [notes, setNotes] = useState('')
   const [pdfPreviewHtml, setPdfPreviewHtml] = useState('')
+  const [exportChoiceOpen, setExportChoiceOpen] = useState(false)
   const pdfFrameRef = useRef(null)
 
   useEffect(() => {
@@ -8151,15 +8261,7 @@ function SupplierPurchaseCatalogue({ store }) {
     }))
   }
 
-  const exportSupplierCatalogueExcel = async () => {
-    if (!supplierId || !rows.length) {
-      setError('Select a supplier with products before exporting.')
-      return
-    }
-
-    setError('')
-    setMessage('')
-
+  const getSupplierCatalogueExportData = () => {
     const supplierName =
       suppliers.find((supplier) => supplier.id === supplierId)?.supplier_name ||
       'Supplier'
@@ -8169,8 +8271,21 @@ function SupplierPurchaseCatalogue({ store }) {
       return `"${text.replace(/"/g, '""')}"`
     }
 
-    const csvRows = [
-      ['Product', 'Composition', 'Manufacturer', 'Dosage Form', 'Strength', 'Pack', 'Last Purchased', 'Last Purchase Rate', 'MRP', 'GST', 'Purchased Times', 'Order Quantity'],
+    const rowsForExport = [
+      [
+        'Product',
+        'Composition',
+        'Manufacturer',
+        'Dosage Form',
+        'Strength',
+        'Pack',
+        'Last Purchased',
+        'Last Purchase Rate',
+        'MRP',
+        'GST',
+        'Purchased Times',
+        'Order Quantity',
+      ],
       ...rows.map((row) => [
         row.product_name,
         row.composition || '',
@@ -8187,13 +8302,17 @@ function SupplierPurchaseCatalogue({ store }) {
       ]),
     ]
 
-    const csv = '\ufeff' + csvRows
-      .map((row) => row.map(csvEscape).join(','))
-      .join('\r\n')
+    return {
+      supplierName,
+      rowsForExport,
+      csvEscape,
+    }
+  }
 
-    const fileName = `${supplierName.replace(/[^a-z0-9]+/gi, '_')}_Supplier_Catalogue.csv`
-    const file = new File([csv], fileName, { type: 'text/csv;charset=utf-8' })
-
+  const shareOrDownloadFile = async (
+    file,
+    successMessage,
+  ) => {
     if (
       navigator.share &&
       navigator.canShare &&
@@ -8202,27 +8321,155 @@ function SupplierPurchaseCatalogue({ store }) {
       try {
         await navigator.share({
           files: [file],
-          title: `${supplierName} Supplier Catalogue`,
-          text: 'Supplier catalogue exported from PharmDesk.',
+          title: file.name,
+          text: successMessage,
         })
-        setMessage('Supplier catalogue exported. Choose Excel or Save to Files from the iPad share sheet.')
+        setMessage(successMessage)
         return
       } catch (shareError) {
         if (shareError?.name === 'AbortError') return
       }
     }
 
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
+    const url = URL.createObjectURL(file)
     const anchor = document.createElement('a')
     anchor.href = url
-    anchor.download = fileName
+    anchor.download = file.name
     anchor.rel = 'noopener'
     document.body.appendChild(anchor)
     anchor.click()
     anchor.remove()
     setTimeout(() => URL.revokeObjectURL(url), 1000)
-    setMessage('Excel-compatible CSV exported. It can be opened in Excel or Numbers.')
+    setMessage(successMessage)
+  }
+
+  const exportSupplierCatalogueCsv = async () => {
+    if (!supplierId || !rows.length) {
+      setError('Select a supplier with products before exporting.')
+      return
+    }
+
+    setError('')
+    setMessage('')
+
+    const {
+      supplierName,
+      rowsForExport,
+      csvEscape,
+    } = getSupplierCatalogueExportData()
+
+    const csv = '\ufeff' + rowsForExport
+      .map((row) => row.map(csvEscape).join(','))
+      .join('\r\n')
+
+    const fileName =
+      `${supplierName.replace(/[^a-z0-9]+/gi, '_')}_Supplier_Catalogue.csv`
+
+    await shareOrDownloadFile(
+      new File(
+        [csv],
+        fileName,
+        { type: 'text/csv;charset=utf-8' },
+      ),
+      'Supplier catalogue exported as CSV.',
+    )
+
+    setExportChoiceOpen(false)
+  }
+
+  const exportSupplierCatalogueExcel = async () => {
+    if (!supplierId || !rows.length) {
+      setError('Select a supplier with products before exporting.')
+      return
+    }
+
+    setError('')
+    setMessage('')
+
+    const {
+      supplierName,
+      rowsForExport,
+    } = getSupplierCatalogueExportData()
+
+    const htmlEscape = (value) =>
+      String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;')
+
+    const tableRows = rowsForExport
+      .slice(1)
+      .map(
+        (row) => `
+          <tr>
+            ${row
+              .map(
+                (value) =>
+                  `<td>${htmlEscape(value)}</td>`,
+              )
+              .join('')}
+          </tr>
+        `,
+      )
+      .join('')
+
+    const excelHtml = `
+      <!doctype html>
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <style>
+            table { border-collapse: collapse; }
+            th, td { border: 1px solid #999; padding: 6px; }
+            th { font-weight: 700; background: #eeeeee; }
+          </style>
+        </head>
+        <body>
+          <table>
+            <thead>
+              <tr>
+                ${rowsForExport[0]
+                  .map(
+                    (header) =>
+                      `<th>${htmlEscape(header)}</th>`,
+                  )
+                  .join('')}
+              </tr>
+            </thead>
+            <tbody>
+              ${tableRows}
+            </tbody>
+          </table>
+        </body>
+      </html>
+    `
+
+    const fileName =
+      `${supplierName.replace(/[^a-z0-9]+/gi, '_')}_Supplier_Catalogue.xls`
+
+    await shareOrDownloadFile(
+      new File(
+        [excelHtml],
+        fileName,
+        { type: 'application/vnd.ms-excel' },
+      ),
+      'Supplier catalogue exported as an Excel-compatible file.',
+    )
+
+    setExportChoiceOpen(false)
+  }
+
+  const openSupplierCatalogueExport = () => {
+    if (!supplierId || !rows.length) {
+      setError('Select a supplier with products before exporting.')
+      return
+    }
+
+    setError('')
+    setMessage('')
+    setExportChoiceOpen(true)
   }
 
   const exportSupplierCataloguePdf = () => {
@@ -8535,7 +8782,7 @@ function SupplierPurchaseCatalogue({ store }) {
               <button
                 type="button"
                 className="secondary-button"
-                onClick={exportSupplierCatalogueExcel}
+                onClick={openSupplierCatalogueExport}
               >
                 Export Excel / CSV
               </button>
@@ -8547,6 +8794,41 @@ function SupplierPurchaseCatalogue({ store }) {
                 Export PDF
               </button>
             </div>
+
+            {exportChoiceOpen && (
+              <Modal
+                title="Choose Export Format"
+                onClose={() => setExportChoiceOpen(false)}
+              >
+                <div className="button-row" style={{ flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    className="primary-button"
+                    onClick={exportSupplierCatalogueExcel}
+                  >
+                    Excel
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={exportSupplierCatalogueCsv}
+                  >
+                    CSV
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => setExportChoiceOpen(false)}
+                  >
+                    Cancel
+                  </button>
+                </div>
+
+                <div className="info-box" style={{ marginTop: '12px' }}>
+                  Excel exports as an Excel-compatible .xls file. CSV exports as a UTF-8 .csv file.
+                </div>
+              </Modal>
+            )}
 
             <label>
               Order notes
@@ -10492,45 +10774,24 @@ function CustomersModule({
     const customers = data || []
     setRows(customers)
 
-    // Use the same customer-credit ledger used by Account History.
-    // This keeps the status shown on the Customers screen linked to the
-    // exact outstanding balance the customer account displays.
-    const { data: creditLedgerRows, error: creditLedgerError } = await pharmdeskDb
-      .from('customer_credit_transactions')
-      .select('customer_id, transaction_type, amount')
-      .eq('store_id', store.id)
+    // Customer credit is authoritative at the account level.
+    // Do not derive this from sales.amount_due because account-settlement
+    // payments are recorded in customer_credit_transactions.
+    const { data: creditRows, error: creditError } = await pharmdeskDb.rpc(
+      'pharmdesk_customer_credit_report',
+      { p_store_id: store.id },
+    )
 
-    if (creditLedgerError) {
-      setCreditByCustomer({})
-    } else {
+    if (!creditError) {
       const creditMap = {}
-      ;(creditLedgerRows || []).forEach((row) => {
-        const amount = safeNumber(row.amount)
-        if (!row.customer_id || !Number.isFinite(amount)) return
-
-        let debit = 0
-        let credit = 0
-
-        if (row.transaction_type === 'credit_sale') {
-          debit = amount
-        } else if (row.transaction_type === 'credit_payment') {
-          credit = amount
-        } else if (row.transaction_type === 'credit_adjustment') {
-          if (amount >= 0) debit = amount
-          else credit = Math.abs(amount)
-        } else if (row.transaction_type === 'credit_refund') {
-          credit = amount
-        }
-
-        creditMap[row.customer_id] =
-          safeNumber(creditMap[row.customer_id]) + debit - credit
+      ;(creditRows || []).forEach((row) => {
+        const due = safeNumber(row.outstanding_credit)
+        if (due <= 0.009) return
+        creditMap[row.customer_id] = due
       })
-
-      Object.keys(creditMap).forEach((customerId) => {
-        creditMap[customerId] = Math.max(0, creditMap[customerId])
-      })
-
       setCreditByCustomer(creditMap)
+    } else {
+      setCreditByCustomer({})
     }
   }
 
