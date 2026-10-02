@@ -4886,7 +4886,9 @@ function NewPurchase({ store }) {
           'supplier_name',  
         )  
   
-    setSuppliers(data || [])  
+    const nextSuppliers = data || []
+    setSuppliers(nextSuppliers)
+    return nextSuppliers
   }  
   
   const loadProducts = async () => {  
@@ -5490,21 +5492,17 @@ function NewPurchase({ store }) {
               false,  
             )  
           }  
-          onCreated={(  
-            supplier,  
-          ) => {  
-            setSuppliers(  
-              (x) => [  
-                supplier,  
-                ...x,  
-              ],  
-            )  
-            setSelectedSupplier(  
-              supplier,  
-            )  
-            setSupplierModal(  
-              false,  
-            )  
+          onCreated={async (supplier) => {
+            const refreshed = await loadSuppliers()
+            const freshSupplier = refreshed.find((x) =>
+              x.supplier_name === supplier.supplier_name &&
+              (!supplier.phone || x.phone === supplier.phone) &&
+              (!supplier.drug_license_number || x.drug_license_number === supplier.drug_license_number)
+            ) || refreshed.find((x) => x.supplier_name === supplier.supplier_name) || supplier
+
+            setSuppliers(refreshed)
+            setSelectedSupplier(freshSupplier)
+            setSupplierModal(false)
           }}  
         />  
       )}  
@@ -13400,42 +13398,27 @@ function SupplierModal({
         is_active: true,  
       }  
   
-      let result  
-  
-      if (editing) {  
-        result =  
-          await pharmdeskDb  
-            .from(  
-              'suppliers',  
-            )  
-            .update(  
-              modernPayload,  
-            )  
-            .eq(  
-              'id',  
-              supplier.id,  
-            )  
-            .eq(  
-              'store_id',  
-              store.id,  
-            )  
-            .select()  
-            .single()  
-      } else {  
-        result =  
-          await pharmdeskDb  
-            .from(  
-              'suppliers',  
-            )  
-            .insert({  
-              ...modernPayload,  
-              store_id:  
-                store.id,  
-            })  
-            .select()  
-            .single()  
-      }  
-  
+      let result
+      let savedPayload = modernPayload
+
+      if (editing) {
+        // Avoid .select().single(): PGRST116 can occur when the write succeeds
+        // but RLS does not return exactly one representation row.
+        result = await pharmdeskDb
+          .from('suppliers')
+          .update(modernPayload)
+          .eq('id', supplier.id)
+          .eq('store_id', store.id)
+      } else {
+        // Write only; the purchase screen refreshes its supplier list afterward.
+        result = await pharmdeskDb
+          .from('suppliers')
+          .insert({
+            ...modernPayload,
+            store_id: store.id,
+          })
+      }
+
       if (  
         result.error &&  
         /drug_license_number|column/i.test(  
@@ -13464,6 +13447,8 @@ function SupplierModal({
           is_active: true,  
         }  
   
+        savedPayload = legacyPayload
+
         if (editing) {  
           result =  
             await pharmdeskDb  
@@ -13480,9 +13465,7 @@ function SupplierModal({
               .eq(  
                 'store_id',  
                 store.id,  
-              )  
-              .select()  
-              .single()  
+              )    
         } else {  
           result =  
             await pharmdeskDb  
@@ -13493,18 +13476,19 @@ function SupplierModal({
                 ...legacyPayload,  
                 store_id:  
                   store.id,  
-              })  
-              .select()  
-              .single()  
+              })    
         }  
       }  
   
       if (result.error)  
         throw result.error  
-  
-      onCreated(  
-        result.data,  
-      )  
+      const savedSupplier = {
+        ...(editing ? supplier : {}),
+        ...savedPayload,
+        store_id: store.id,
+      }
+
+      onCreated(savedSupplier)  
     } catch (error) {  
       setError(  
         error.message,  
