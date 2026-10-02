@@ -7982,7 +7982,6 @@ function SupplierPurchaseCatalogue({ store }) {
             </div>
           </PanelList>
         )}
-    </div>
 
       {pdfPreviewHtml && (
         <Modal
@@ -9614,26 +9613,20 @@ function StockReconciliation({
       )
 
     const { error } =
-      await pharmdeskDb
-        .from(
-          'stock_reconciliations',
-        )
-        .insert({
-          store_id:
-            store.id,
-          batch_id:
-            selected.id,
-          system_stock_units:
-            selected.current_stock_units,
-          physical_stock_units:
-            physicalNumber,
-          reason:
+      await pharmdeskDb.rpc(
+        'pharmdesk_reconcile_stock',
+        {
+          p_store_id: store.id,
+          p_batch_id: selected.id,
+          p_physical_stock_units: physicalNumber,
+          p_reason:
             difference > 0
               ? 'Physical stock found above system stock'
               : difference < 0
                 ? 'Physical stock below system stock'
                 : 'No stock difference',
-        })
+        },
+      )
 
     if (error) {
       setMessage(
