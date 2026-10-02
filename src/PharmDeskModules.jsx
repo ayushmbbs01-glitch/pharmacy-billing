@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import PharmDeskAPI, { pharmdeskDb } from './pharmdeskApi'
 import { supabase } from './supabaseClient'
@@ -205,6 +205,8 @@ const emptyPurchaseItem = () => ({
   supplierDiscountPercent: 0,  
   gstRate: 0,  
   unitsPerPack: 1,  
+  batches: [],  
+  selectedBatchId: '',  
 })  
   
 const sum = (arr) => arr.reduce((a, b) => a + safeNumber(b), 0)  
@@ -2931,6 +2933,7 @@ function CustomerLedgerReceiptModal({
 }) {
   const [details, setDetails] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [receiptEditing, setReceiptEditing] = useState(false)
 
   useEffect(() => {
     if (entry.sourceType === 'sale_payment' && entry.payment) {
@@ -2946,6 +2949,7 @@ function CustomerLedgerReceiptModal({
         paymentReference: entry.payment.payment_reference || '',
         notes: entry.payment.notes || '',
       })
+      setReceiptEditing(false)
       setLoading(false)
       return
     }
@@ -3036,22 +3040,86 @@ function CustomerLedgerReceiptModal({
             </div>
           </div>
 
+          <div className="button-row" style={{ marginBottom: '12px' }}>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => setReceiptEditing((current) => !current)}
+            >
+              {receiptEditing ? 'Done editing' : 'Edit for printing'}
+            </button>
+          </div>
+
+          {receiptEditing && (
+            <div className="info-box">
+              Edit the print copy below before printing. These changes do not alter the stored sale/payment record.
+            </div>
+          )}
+
+          <div className="item-grid">
+            <label>
+              Customer
+              <input value={details.customerName} readOnly />
+            </label>
+            <label>
+              Invoice / Reference
+              <input
+                value={details.invoiceNumber}
+                readOnly={!receiptEditing}
+                onChange={(e) => setDetails((current) => ({ ...current, invoiceNumber: e.target.value }))}
+              />
+            </label>
+            <label>
+              Amount
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={details.amount}
+                readOnly={!receiptEditing}
+                onChange={(e) => setDetails((current) => ({ ...current, amount: e.target.value }))}
+              />
+            </label>
+            <label>
+              Payment mode
+              <select
+                value={String(details.paymentMethod || '').toLowerCase().replace(/\s+/g, '_')}
+                disabled={!receiptEditing}
+                onChange={(e) => setDetails((current) => ({ ...current, paymentMethod: paymentLabel(e.target.value) }))}
+              >
+                <option value="cash">Cash</option>
+                <option value="upi">UPI</option>
+                <option value="card">Card</option>
+                <option value="bank_transfer">Bank transfer</option>
+                <option value="cheque">Cheque</option>
+                <option value="other">Other</option>
+              </select>
+            </label>
+            <label>
+              Payment reference
+              <input
+                value={details.paymentReference || ''}
+                readOnly={!receiptEditing}
+                onChange={(e) => setDetails((current) => ({ ...current, paymentReference: e.target.value }))}
+              />
+            </label>
+          </div>
+
+          <label>
+            Notes
+            <textarea
+              value={details.notes || ''}
+              readOnly={!receiptEditing}
+              onChange={(e) => setDetails((current) => ({ ...current, notes: e.target.value }))}
+              rows={3}
+            />
+          </label>
+
           <div className="stats-grid">
             <StatCard title="Amount" value={money(details.amount)} />
             <StatCard title="Payment Mode" value={details.paymentMethod} />
             <StatCard title="Invoice / Reference" value={details.invoiceNumber} />
           </div>
-
-          {details.paymentReference && (
-            <div className="info-box">
-              Payment reference: <strong>{details.paymentReference}</strong>
-            </div>
-          )}
-          {details.notes && (
-            <div className="info-box">
-              Notes: {details.notes}
-            </div>
-          )}
         </>
       )}
     </Modal>
@@ -5373,6 +5441,7 @@ function CustomerSettlementModal({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [receipt, setReceipt] = useState(null)
+  const [receiptEditing, setReceiptEditing] = useState(false)
 
   const submit = async (e) => {
     e.preventDefault()
@@ -5395,6 +5464,7 @@ function CustomerSettlementModal({
       if (rpcError) throw rpcError
 
       const remaining = Math.max(0, outstanding - paid)
+      setReceiptEditing(false)
       setReceipt({
         id: transactionId,
         customerName: customer.name || 'Walk-in Customer',
@@ -5464,16 +5534,69 @@ function CustomerSettlementModal({
     return (
       <Modal title="Payment Receipt" onClose={onClose}>
         <div className="info-box">Payment recorded successfully. The credit ledger has been updated.</div>
-        <div className="record-row static">
-          <div>
-            <strong>{receipt.customerName}</strong>
-            <span>Receipt {receipt.id}</span>
-            <span>{dateTimeText(receipt.date)}</span>
-            <span>Payment mode: {paymentLabel(receipt.paymentMethod)}</span>
-          </div>
-          <div className="record-right"><strong>{money(receipt.amount)}</strong></div>
+        <div className="button-row" style={{ marginBottom: '12px' }}>
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => setReceiptEditing((current) => !current)}
+          >
+            {receiptEditing ? 'Done editing' : 'Edit for printing'}
+          </button>
         </div>
-        <div className="info-box">Remaining credit: {money(receipt.remaining)}</div>
+        {receiptEditing && (
+          <div className="info-box">
+            These edits affect only the print copy. The stored payment transaction is unchanged.
+          </div>
+        )}
+        <div className="item-grid">
+          <label>
+            Customer
+            <input value={receipt.customerName} readOnly />
+          </label>
+          <label>
+            Receipt
+            <input value={receipt.id} readOnly />
+          </label>
+          <label>
+            Amount
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={receipt.amount}
+              readOnly={!receiptEditing}
+              onChange={(e) => {
+                const amount = safeNumber(e.target.value)
+                setReceipt((current) => ({ ...current, amount, remaining: Math.max(0, outstanding - amount) }))
+              }}
+            />
+          </label>
+          <label>
+            Payment mode
+            <select
+              value={receipt.paymentMethod}
+              disabled={!receiptEditing}
+              onChange={(e) => setReceipt((current) => ({ ...current, paymentMethod: e.target.value }))}
+            >
+              <option value="cash">Cash</option>
+              <option value="upi">UPI</option>
+              <option value="card">Card</option>
+              <option value="bank_transfer">Bank transfer</option>
+              <option value="cheque">Cheque</option>
+              <option value="other">Other</option>
+            </select>
+          </label>
+        </div>
+        <label>
+          Notes
+          <textarea
+            value={receipt.notes || ''}
+            readOnly={!receiptEditing}
+            onChange={(e) => setReceipt((current) => ({ ...current, notes: e.target.value }))}
+            rows={3}
+          />
+        </label>
+        <div className="info-box">Remaining credit for print copy: {money(receipt.remaining)}</div>
         <div className="button-row">
           <button type="button" className="secondary-button" onClick={printReceipt}>Print Receipt</button>
           <button type="button" className="primary-button" onClick={onClose}>Close</button>
@@ -5741,19 +5864,29 @@ function NewPurchase({ store }) {
       .slice(0, 12)  
       .map((x) => x.p)  
   
-  const chooseProduct = (  
+  const chooseProduct = async (  
     product,  
   ) => {  
     setProductQuery('')  
-  
+
+    const { data: existingBatches } = await supabase
+      .from('batches')
+      .select('*')
+      .eq('store_id', store.id)
+      .eq('product_id', product.id)
+      .order('expiry_date', { ascending: true })
+      .order('created_at', { ascending: false })
+
+    const batches = existingBatches || []
+    const defaultBatch = batches[0] || null
+
     setItems((current) => {  
       const item = {  
         ...emptyPurchaseItem(),  
         product,  
-        gstRate:  
-          safeNumber(  
-            product.gst_rate,  
-          ),  
+        batches,
+        gstRate: safeNumber(product.gst_rate),
+        unitsPerPack: safeNumber(defaultBatch?.units_per_pack) || safeNumber(product.pack_quantity) || 1,
       }  
   
       if (  
@@ -6570,20 +6703,41 @@ function PurchaseItemRow({
   onRemove,  
 }) {  
   const paid =  
-    safeNumber(  
-      item.paidPacks,  
-    ) *  
-    safeNumber(  
-      item.purchaseRatePerPack,  
-    )  
-  
+    safeNumber(item.paidPacks) *  
+    safeNumber(item.purchaseRatePerPack)  
+
+  const totalPacks =
+    safeNumber(item.paidPacks) + safeNumber(item.freePacks)
+
+  const batchSuggestions = useMemo(() => {
+    const q = String(item.batchNumber || '').trim()
+    const source = Array.isArray(item.batches) ? item.batches : []
+
+    return source
+      .map((batch) => ({
+        batch,
+        score: q
+          ? fuzzyScore(
+              q,
+              [
+                batch.batch_number,
+                dateText(batch.expiry_date),
+                batch.current_stock_units,
+              ].filter((value) => value !== null && value !== undefined).join(' '),
+            )
+          : 1,
+      }))
+      .filter((x) => x.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 10)
+      .map((x) => x.batch)
+  }, [item.batchNumber, item.batches])
+
   return (  
     <div className="transaction-item">  
       <div className="item-title">  
         <strong>  
-          {item.product  
-            ?.product_name ||  
-            'Product not selected'}  
+          {item.product?.product_name || 'Product not selected'}  
         </strong>  
       </div>  
   
@@ -6591,51 +6745,69 @@ function PurchaseItemRow({
         <div className="item-grid">  
           <label>  
             Batch  
-            <input  
-              value={  
-                item.batchNumber  
-              }  
-              onChange={(e) =>  
-                onChange({  
-                  batchNumber:  
-                    e.target.value,  
-                })  
-              }  
-              placeholder="Batch number"  
-            />  
+            <div style={{ position: 'relative' }}>
+              <input  
+                value={item.batchNumber}  
+                onChange={(e) =>
+                  onChange({
+                    batchNumber: e.target.value,
+                    selectedBatchId: '',
+                  })
+                }
+                placeholder="Select previous batch or enter a new batch"  
+              />
+              {batchSuggestions.length > 0 && !item.selectedBatchId && (
+                <div className="suggestion-list" style={{ position: 'absolute', left: 0, right: 0, top: '100%', zIndex: 25 }}>
+                  {batchSuggestions.map((batch) => (
+                    <button
+                      type="button"
+                      className="suggestion"
+                      key={batch.id}
+                      onClick={() =>
+                        onChange({
+                          batchNumber: batch.batch_number || '',
+                          expiryDate: batch.expiry_date || '',
+                          unitsPerPack: safeNumber(batch.units_per_pack) || safeNumber(item.unitsPerPack) || 1,
+                          purchaseRatePerPack: safeNumber(batch.purchase_rate_per_pack),
+                          mrpPerPack: safeNumber(batch.mrp_per_pack),
+                          selectedBatchId: batch.id,
+                        })
+                      }
+                    >
+                      <strong>{batch.batch_number || 'Batch'}</strong>
+                      <span>
+                        Exp {dateText(batch.expiry_date)} • Stock {safeNumber(batch.current_stock_units)}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </label>  
   
           <label>  
             Expiry  
             <input  
               type="date"  
-              value={  
-                item.expiryDate  
-              }  
-              onChange={(e) =>  
-                onChange({  
-                  expiryDate:  
-                    e.target.value,  
-                })  
-              }  
+              min={todayISO()}
+              value={item.expiryDate}  
+              onChange={(e) =>
+                onChange({
+                  expiryDate: e.target.value,
+                  selectedBatchId: '',
+                })
+              }
             />  
           </label>  
   
           <label>  
-            Units / pack  
+            Total packs  
             <input  
-              type="number"  
-              min="1"  
-              value={  
-                item.unitsPerPack ||  
-                1  
-              }  
-              onChange={(e) =>  
-                onChange({  
-                  unitsPerPack:  
-                    e.target.value,  
-                })  
-              }  
+              type="number"
+              value={totalPacks}
+              readOnly
+              aria-label="Total packs"
+              title="Paid packs + Free packs"
             />  
           </label>  
   
@@ -6644,15 +6816,9 @@ function PurchaseItemRow({
             <input  
               type="number"  
               min="0"  
-              value={  
-                item.paidPacks  
-              }  
-              onChange={(e) =>  
-                onChange({  
-                  paidPacks:  
-                    e.target.value,  
-                })  
-              }  
+              step="any"
+              value={item.paidPacks}  
+              onChange={(e) => onChange({ paidPacks: e.target.value })}  
             />  
           </label>  
   
@@ -6661,15 +6827,9 @@ function PurchaseItemRow({
             <input  
               type="number"  
               min="0"  
-              value={  
-                item.freePacks  
-              }  
-              onChange={(e) =>  
-                onChange({  
-                  freePacks:  
-                    e.target.value,  
-                })  
-              }  
+              step="any"
+              value={item.freePacks}  
+              onChange={(e) => onChange({ freePacks: e.target.value })}  
             />  
           </label>  
   
@@ -6678,15 +6838,9 @@ function PurchaseItemRow({
             <input  
               type="number"  
               min="0"  
-              value={  
-                item.looseUnits  
-              }  
-              onChange={(e) =>  
-                onChange({  
-                  looseUnits:  
-                    e.target.value,  
-                })  
-              }  
+              step="any"
+              value={item.looseUnits}  
+              onChange={(e) => onChange({ looseUnits: e.target.value })}  
             />  
           </label>  
   
@@ -6696,15 +6850,8 @@ function PurchaseItemRow({
               type="number"  
               min="0"  
               step="0.01"  
-              value={  
-                item.purchaseRatePerPack  
-              }  
-              onChange={(e) =>  
-                onChange({  
-                  purchaseRatePerPack:  
-                    e.target.value,  
-                })  
-              }  
+              value={item.purchaseRatePerPack}  
+              onChange={(e) => onChange({ purchaseRatePerPack: e.target.value })}  
             />  
           </label>  
   
@@ -6714,15 +6861,8 @@ function PurchaseItemRow({
               type="number"  
               min="0"  
               step="0.01"  
-              value={  
-                item.mrpPerPack  
-              }  
-              onChange={(e) =>  
-                onChange({  
-                  mrpPerPack:  
-                    e.target.value,  
-                })  
-              }  
+              value={item.mrpPerPack}  
+              onChange={(e) => onChange({ mrpPerPack: e.target.value })}  
             />  
           </label>  
   
@@ -6732,25 +6872,28 @@ function PurchaseItemRow({
               type="number"  
               min="0"  
               max="100"  
-              value={  
-                item.gstRate  
-              }  
-              onChange={(e) =>  
-                onChange({  
-                  gstRate:  
-                    e.target.value,  
-                })  
-              }  
+              step="0.01"
+              value={item.gstRate}  
+              onChange={(e) => onChange({ gstRate: e.target.value })}  
             />  
           </label>  
+
+          <label>
+            Supplier discount %
+            <input
+              type="number"
+              min="0"
+              max="100"
+              step="0.01"
+              value={item.supplierDiscountPercent}
+              onChange={(e) => onChange({ supplierDiscountPercent: e.target.value })}
+            />
+          </label>
         </div>  
       )}  
   
       <div className="item-footer">  
-        <strong>  
-          {money(paid)}  
-        </strong>  
-  
+        <span>Paid value: {money(paid)}</span>  
         <button  
           type="button"  
           className="danger-button"  
@@ -6761,192 +6904,8 @@ function PurchaseItemRow({
       </div>  
     </div>  
   )  
-}  
-  
-/* =========================================================  
-   SUPPLIER DIRECTORY  
-========================================================= */  
-  
-function SupplierDirectory({  
-  store,  
-}) {  
-  const [rows, setRows] =  
-    useState([])  
-  const [query, setQuery] =  
-    useState('')  
-  const [editing, setEditing] =  
-    useState(null)  
-  const [history, setHistory] =  
-    useState(null)  
-  
-  const load = async () => {  
-    const { data } =  
-      await supabase  
-        .from('suppliers')  
-        .select('*')  
-        .eq(  
-          'store_id',  
-          store.id,  
-        )  
-        .order(  
-          'supplier_name',  
-        )  
-  
-    setRows(data || [])  
-  }  
-  
-  useEffect(() => {  
-    if (store?.id) load()  
-  }, [store?.id])  
-  
-  const filtered =  
-    rows.filter((supplier) =>  
-      matchesSearch(  
-        query,  
-        supplier.supplier_name,  
-        supplier.phone,  
-        supplier.email,  
-        supplier.gstin,  
-        supplierLicense(  
-          supplier,  
-        ),  
-      ),  
-    )  
-  
-  return (  
-    <>  
-      <PanelList title="Purchase Parties / Companies">  
-        <div className="search-row">  
-          <input  
-            placeholder="Search company / purchase party"  
-            value={query}  
-            onChange={(e) =>  
-              setQuery(  
-                e.target.value,  
-              )  
-            }  
-          />  
-  
-          <button  
-            className="primary-button"  
-            onClick={() =>  
-              setEditing({})  
-            }  
-          >  
-            + Purchase Party  
-          </button>  
-        </div>  
-  
-        <div className="record-list">  
-          {filtered.map(  
-            (supplier) => (  
-              <div  
-                className="record-row static"  
-                key={supplier.id}  
-              >  
-                <div>  
-                  <strong>  
-                    {  
-                      supplier.supplier_name  
-                    }  
-                  </strong>  
-  
-                  <span>  
-                    {supplier.phone ||  
-                      'No phone'}{' '}  
-                    •{' '}  
-                    {supplier.gstin ||  
-                      'No GSTIN'}  
-                  </span>  
-                </div>  
-  
-                <div className="record-right">  
-                  <button  
-                    className="secondary-button"  
-                    onClick={() =>  
-                      setEditing(  
-                        supplier,  
-                      )  
-                    }  
-                  >  
-                    Edit  
-                  </button>  
-  
-                  <button  
-                    className="secondary-button"  
-                    onClick={() =>  
-                      setHistory(  
-                        supplier,  
-                      )  
-                    }  
-                  >  
-                    Products & History  
-                  </button>  
-                </div>  
-              </div>  
-            ),  
-          )}  
-        </div>  
-      </PanelList>  
-  
-      {editing && (  
-        <SupplierModal  
-          store={store}  
-          supplier={  
-            editing.id  
-              ? editing  
-              : null  
-          }  
-          onClose={() =>  
-            setEditing(null)  
-          }  
-          onCreated={(updated) => {  
-            if (updated.id) {  
-              setRows(  
-                (current) =>  
-                  current.some(  
-                    (x) =>  
-                      x.id ===  
-                      updated.id,  
-                  )  
-                    ? current.map(  
-                        (x) =>  
-                          x.id ===  
-                          updated.id  
-                            ? updated  
-                            : x,  
-                      )  
-                    : [  
-                        updated,  
-                        ...current,  
-                      ],  
-              )  
-            }  
-  
-            setEditing(null)  
-          }}  
-        />  
-      )}  
-  
-      {history && (  
-        <SupplierHistoryModal  
-          supplier={history}  
-          store={store}  
-          onClose={() =>  
-            setHistory(null)  
-          }  
-          onEdit={(supplier) => {  
-            setHistory(null)  
-            setEditing(  
-              supplier,  
-            )  
-          }}  
-        />  
-      )}  
-    </>  
-  )  
-}  
-  
+}
+
 /* =========================================================  
    SUPPLIER HISTORY  
 ========================================================= */  
@@ -7477,6 +7436,7 @@ function PendingSupplierPayments({
       .in(  
         'payment_status',  
         [  
+          'unpaid',  
           'pending',  
           'partial',  
           'due',  
@@ -7502,7 +7462,7 @@ function PendingSupplierPayments({
         <EmptyState text="No pending supplier payments." />  
       ) : (  
         <div className="record-list">  
-          {filtered.map(  
+          {rows.map(  
             (row) => (  
               <div  
                 className="record-row static"  
@@ -7548,6 +7508,8 @@ function SupplierPurchaseCatalogue({ store }) {
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [notes, setNotes] = useState('')
+  const [pdfPreviewHtml, setPdfPreviewHtml] = useState('')
+  const pdfFrameRef = useRef(null)
 
   useEffect(() => {
     if (!store?.id) return
@@ -7630,19 +7592,13 @@ function SupplierPurchaseCatalogue({ store }) {
       suppliers.find((supplier) => supplier.id === supplierId)?.supplier_name ||
       'Supplier'
 
-    const xmlEscape = (value) =>
-      String(value ?? '')
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/\"/g, '&quot;')
-        .replace(/'/g, '&apos;')
+    const csvEscape = (value) => {
+      const text = String(value ?? '')
+      return `\"${text.replace(/\"/g, '\"\"')}\"`
+    }
 
-    const cell = (value, type = 'String') =>
-      `<Cell><Data ss:Type=\"${type}\">${xmlEscape(value)}</Data></Cell>`
-
-    const rowsXml = [
-      ['Product', 'Composition', 'Manufacturer', 'Dosage Form', 'Strength', 'Pack', 'Last Purchased', 'Last Purchase Rate', 'Last MRP', 'GST', 'Purchased Times', 'Order Quantity'],
+    const csvRows = [
+      ['Product', 'Composition', 'Manufacturer', 'Dosage Form', 'Strength', 'Pack', 'Last Purchased', 'Last Purchase Rate', 'MRP', 'GST', 'Purchased Times', 'Order Quantity'],
       ...rows.map((row) => [
         row.product_name,
         row.composition || '',
@@ -7658,30 +7614,21 @@ function SupplierPurchaseCatalogue({ store }) {
         '',
       ]),
     ]
-      .map((row) =>
-        `<Row>${row.map((value, index) => cell(value, index === 10 ? 'Number' : 'String')).join('')}</Row>`,
-      )
-      .join('')
 
-    const workbook = `<?xml version=\"1.0\"?>
-<?mso-application progid=\"Excel.Sheet\"?>
-<Workbook xmlns=\"urn:schemas-microsoft-com:office:spreadsheet\" xmlns:o=\"urn:schemas-microsoft-com:office:office\" xmlns:x=\"urn:schemas-microsoft-com:office:excel\" xmlns:ss=\"urn:schemas-microsoft-com:office:spreadsheet\">
-  <Worksheet ss:Name=\"Supplier Catalogue\">
-    <Table>${rowsXml}</Table>
-  </Worksheet>
-</Workbook>`
+    const csv = '\ufeff' + csvRows
+      .map((row) => row.map(csvEscape).join(','))
+      .join('\r\n')
 
-    const blob = new Blob([workbook], {
-      type: 'application/vnd.ms-excel',
-    })
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
     const anchor = document.createElement('a')
     anchor.href = url
-    anchor.download = `${supplierName.replace(/[^a-z0-9]+/gi, '_')}_Supplier_Catalogue.xls`
+    anchor.download = `${supplierName.replace(/[^a-z0-9]+/gi, '_')}_Supplier_Catalogue.csv`
     document.body.appendChild(anchor)
     anchor.click()
     anchor.remove()
-    URL.revokeObjectURL(url)
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+    setMessage('Excel-compatible CSV exported. It can be opened in Excel or Numbers on iPad.')
   }
 
   const exportSupplierCataloguePdf = () => {
@@ -7713,24 +7660,19 @@ function SupplierPurchaseCatalogue({ store }) {
           <td>${htmlEscape(`${row.pack_quantity || '—'} ${row.pack_unit || ''}`.trim())}</td>
           <td>${htmlEscape(money(row.last_mrp))}</td>
           <td>${htmlEscape(row.last_gst_rate == null ? '—' : `${row.last_gst_rate}%`)}</td>
-          <td class=\"order-cell\"></td>
+          <td class="order-cell"></td>
         </tr>`).join('')
 
-    const printWindow = window.open('', '_blank', 'noopener,noreferrer')
-    if (!printWindow) {
-      setError('Please allow pop-ups for PharmDesk to export the PDF.')
-      return
-    }
-
-    printWindow.document.write(`<!doctype html>
+    setPdfPreviewHtml(`<!doctype html>
 <html>
 <head>
-  <meta charset=\"utf-8\" />
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>${htmlEscape(supplierName)} - Supplier Order</title>
   <style>
     @page { size: A4 landscape; margin: 12mm; }
     * { box-sizing: border-box; }
-    body { font-family: Arial, sans-serif; color: #172033; margin: 0; }
+    body { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #172033; margin: 0; padding: 18px; }
     h1 { margin: 0 0 4px; font-size: 20px; }
     .meta { margin-bottom: 14px; font-size: 12px; color: #56657a; }
     table { width: 100%; border-collapse: collapse; font-size: 10px; }
@@ -7738,11 +7680,12 @@ function SupplierPurchaseCatalogue({ store }) {
     th { background: #eef2f7; text-align: left; font-weight: 700; }
     .order-cell { min-width: 70px; height: 28px; }
     .footer { margin-top: 12px; font-size: 10px; color: #667085; }
+    @media print { body { padding: 0; } }
   </style>
 </head>
 <body>
   <h1>Supplier Order — ${htmlEscape(supplierName)}</h1>
-  <div class=\"meta\">Please enter the order quantity for each product.</div>
+  <div class="meta">Please enter the order quantity for each product.</div>
   <table>
     <thead>
       <tr>
@@ -7759,13 +7702,9 @@ function SupplierPurchaseCatalogue({ store }) {
     </thead>
     <tbody>${tableRows}</tbody>
   </table>
+  <div class="footer">Generated from PharmDesk.</div>
 </body>
 </html>`)
-    printWindow.document.close()
-    printWindow.focus()
-    printWindow.onload = () => {
-      printWindow.print()
-    }
   }
 
   const createOrder = async () => {
@@ -8004,7 +7943,7 @@ function SupplierPurchaseCatalogue({ store }) {
                 className="secondary-button"
                 onClick={exportSupplierCatalogueExcel}
               >
-                Export Excel
+                Export Excel / CSV
               </button>
               <button
                 type="button"
@@ -8043,6 +7982,43 @@ function SupplierPurchaseCatalogue({ store }) {
             </div>
           </PanelList>
         )}
+    </div>
+
+      {pdfPreviewHtml && (
+        <Modal
+          title="Supplier Order PDF Preview"
+          onClose={() => setPdfPreviewHtml('')}
+        >
+          <div className="button-row" style={{ marginBottom: '12px' }}>
+            <button
+              type="button"
+              className="primary-button"
+              onClick={() => {
+                const frame = pdfFrameRef.current
+                if (frame?.contentWindow) {
+                  frame.contentWindow.focus()
+                  frame.contentWindow.print()
+                }
+              }}
+            >
+              Print / Save as PDF
+            </button>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => setPdfPreviewHtml('')}
+            >
+              Close
+            </button>
+          </div>
+          <iframe
+            ref={pdfFrameRef}
+            title="Supplier order PDF preview"
+            srcDoc={pdfPreviewHtml}
+            style={{ width: '100%', minHeight: '70vh', border: '1px solid #d1d5db', borderRadius: '10px', background: '#fff' }}
+          />
+        </Modal>
+      )}
     </div>
   )
 }
@@ -8173,11 +8149,7 @@ function PurchaseOrders({
       .join('')
 
     const printWindow =
-      window.open(
-        '',
-        '_blank',
-        'width=900,height=900',
-      )
+      window.open('', '_blank')
 
     if (!printWindow) {
       window.alert(
@@ -8514,6 +8486,34 @@ function PurchaseOrders({
     }, 250)
   }
 
+
+  const deleteOrder = async () => {
+    if (!selectedOrder?.id) return
+
+    const confirmed = window.confirm(
+      `Delete purchase order ${selectedOrder.order_number || selectedOrder.id.slice(0, 8)}? This cannot be undone.`,
+    )
+    if (!confirmed) return
+
+    setOrderError('')
+
+    try {
+      const { error } = await supabase
+        .from('purchase_orders')
+        .delete()
+        .eq('store_id', store.id)
+        .eq('id', selectedOrder.id)
+
+      if (error) throw error
+
+      setRows((current) => current.filter((row) => row.id !== selectedOrder.id))
+      setSelectedOrder(null)
+    } catch (error) {
+      console.error('Failed to delete purchase order:', error)
+      setOrderError(error?.message || 'Unable to delete purchase order.')
+    }
+  }
+
   return (
     <>
       <PanelList title="Purchase Orders">
@@ -8571,6 +8571,14 @@ function PurchaseOrders({
               }
             >
               Export PDF
+            </button>
+
+            <button
+              type="button"
+              className="danger-button"
+              onClick={deleteOrder}
+            >
+              Delete Order
             </button>
 
             <button
@@ -9619,8 +9627,12 @@ function StockReconciliation({
             selected.current_stock_units,
           physical_stock_units:
             physicalNumber,
-          difference_units:
-            difference,
+          reason:
+            difference > 0
+              ? 'Physical stock found above system stock'
+              : difference < 0
+                ? 'Physical stock below system stock'
+                : 'No stock difference',
         })
 
     if (error) {
@@ -15128,11 +15140,12 @@ function CompositionModal({
                   onChange={(e) =>
                     updateIngredient(index, {
                       ingredient_name: e.target.value,
+                      selectedSuggestion: false,
                     })
                   }
                 />
 
-                {ingredient.ingredient_name && compositionSuggestionsFor(ingredient.ingredient_name).length > 0 && (
+                {ingredient.ingredient_name && !ingredient.selectedSuggestion && compositionSuggestionsFor(ingredient.ingredient_name).length > 0 && (
                   <div className="suggestion-list" style={{ position: 'absolute', left: 0, right: 0, top: '100%', zIndex: 20 }}>
                     {compositionSuggestionsFor(ingredient.ingredient_name).map((composition) => (
                       <button
@@ -15141,7 +15154,7 @@ function CompositionModal({
                         key={`${index}-${composition.id}`}
                         onClick={() => {
                           const firstIngredient = composition.composition_ingredients?.[0]?.ingredient_name || composition.name
-                          updateIngredient(index, { ingredient_name: firstIngredient })
+                          updateIngredient(index, { ingredient_name: firstIngredient, selectedSuggestion: true })
                         }}
                       >
                         <strong>{composition.name}</strong>
@@ -15286,7 +15299,9 @@ const [
   ] = useState(  
     product?.manufacturer ||  
       '',  
-  )  
+  )
+
+  const [selectedManufacturer, setSelectedManufacturer] = useState(product?.manufacturer || '')  
   
   const [  
     dosageForm,  
@@ -16157,15 +16172,14 @@ const [
               value={  
                 manufacturer  
               }  
-              onChange={(e) =>  
-                setManufacturer(  
-                  e.target.value,  
-                )  
-              }  
+              onChange={(e) => {
+                setManufacturer(e.target.value)
+                setSelectedManufacturer('')
+              }}
             placeholder="Search manufacturer / company"
             />
 
-            {manufacturer && manufacturers.length > 0 && (
+            {manufacturer && !selectedManufacturer && manufacturers.length > 0 && (
               <div className="suggestion-list">
                 {manufacturers
                   .map((value) => ({ value, score: fuzzyScore(manufacturer, value) }))
@@ -16177,7 +16191,7 @@ const [
                       type="button"
                       className="suggestion"
                       key={x.value}
-                      onClick={() => setManufacturer(x.value)}
+                      onClick={() => { setManufacturer(x.value); setSelectedManufacturer(x.value) }}
                     >
                       <strong>{x.value}</strong>
                     </button>
