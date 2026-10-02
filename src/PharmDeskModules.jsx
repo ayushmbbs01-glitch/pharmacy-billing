@@ -2872,293 +2872,385 @@ function CustomerHistoryList({ store }) {
   )  
 }  
   
-function CustomerHistoryModal({  
-  customer,  
-  onClose,  
-  onEdit,  
-}) {  
-  const [sales, setSales] = useState([])  
-  const [items, setItems] = useState([])  
-  const [loading, setLoading] =  
-    useState(true)  
-  
-  useEffect(() => {  
-    loadHistory()  
-  }, [customer.id])  
-  
-  const loadHistory = async () => {  
-    setLoading(true)  
-  
-    const { data: salesData } =  
-      await supabase  
-        .from('sales')  
-        .select(  
-          'id, invoice_number, bill_datetime, grand_total, amount_paid, amount_due, status',  
-        )  
-        .eq('customer_id', customer.id)  
-        .order('bill_datetime', {  
-          ascending: false,  
-        })  
-  
-    const saleRows = salesData || []  
-    setSales(saleRows)  
-  
-    if (saleRows.length) {  
-      const { data: itemRows } =  
-        await supabase  
-          .from('sale_items')  
-          .select(`  
-            *,  
-            products (  
-              id,  
-              product_name,  
-              generic_display_name  
-            ),  
-            batches (  
-              batch_number,  
-              expiry_date  
-            )  
-          `)  
-          .in(  
-            'sale_id',  
-            saleRows.map(  
-              (x) => x.id,  
-            ),  
-          )  
-  
-      setItems(itemRows || [])  
-    } else {  
-      setItems([])  
-    }  
-  
-    setLoading(false)  
-  }  
-  
-  const medicineHistory = useMemo(() => {  
-    const map = new Map()  
-  
-    for (const item of items) {  
-      const product = item.products  
-  
-      if (!product) continue  
-  
-      if (!map.has(product.id)) {  
-        map.set(product.id, {  
-          product,  
-          quantity: 0,  
-          lastDate: null,  
-          lastPrice: 0,  
-          bills: 0,  
-        })  
-      }  
-  
-      const entry = map.get(product.id)  
-  
-      entry.quantity += safeNumber(  
-        item.quantity_entered,  
-      )  
-  
-      entry.lastPrice =  
-        safeNumber(  
-          item.selling_price_per_pack,  
-        )  
-  
-      const sale = sales.find(  
-        (s) => s.id === item.sale_id,  
-      )  
-  
-      if (  
-        sale &&  
-        (!entry.lastDate ||  
-          new Date(  
-            sale.bill_datetime,  
-          ) >  
-            new Date(  
-              entry.lastDate,  
-            ))  
-      ) {  
-        entry.lastDate =  
-          sale.bill_datetime  
-      }  
-  
-      entry.bills += 1  
-    }  
-  
-    return Array.from(  
-      map.values(),  
-    ).sort(  
-      (a, b) =>  
-        new Date(  
-          b.lastDate || 0,  
-        ) -  
-        new Date(  
-          a.lastDate || 0,  
-        ),  
-    )  
-  }, [items, sales])  
-  
-  const totalSpent = sum(  
-    sales  
-      .filter(  
-        (x) => x.status !== 'cancelled',  
-      )  
-      .map((x) => x.grand_total),  
-  )  
-  
-  const totalDue = sum(  
-    sales.map((x) => x.amount_due),  
-  )  
-  
-  return (  
-    <Modal  
-      title={`${customer.name} • Purchase History`}  
-      onClose={onClose}  
-    >  
-      {loading ? (  
-        <LoadingInline />  
-      ) : (  
-        <>  
-          <div className="history-header">  
-            <div>  
-              <strong>  
-                {customer.name}  
-              </strong>  
-              <span>  
-                {customer.phone ||  
-                  'No phone'}  
-              </span>  
-            </div>  
-  
-            {onEdit && (  
-              <button  
-                className="secondary-button"  
-                onClick={() =>  
-                  onEdit(customer)  
-                }  
-              >  
-                Edit Customer  
-              </button>  
-            )}  
-          </div>  
-  
-          <div className="stats-grid">  
-            <StatCard  
-              title="Bills"  
-              value={sales.length}  
-            />  
-  
-            <StatCard  
-              title="Total Purchased"  
-              value={money(totalSpent)}  
-            />  
-  
-            <StatCard  
-              title="Outstanding"  
-              value={money(totalDue)}  
-            />  
-          </div>  
-  
-          <h3>  
-            Products previously purchased  
-          </h3>  
-  
-          <div className="record-list">  
-            {medicineHistory.length ===  
-              0 && (  
-              <EmptyState  
-                text="No previous medicine purchases found."  
-              />  
-            )}  
-  
-            {medicineHistory.map(  
-              (entry) => (  
-                <div  
-                  className="record-row static"  
-                  key={entry.product.id}  
-                >  
-                  <div>  
-                    <strong>  
-                      {  
-                        entry.product  
-                          .product_name  
-                      }  
-                    </strong>  
-  
-                    <span>  
-                      {entry.product  
-                        .generic_display_name ||  
-                        ''}  
-                    </span>  
-                  </div>  
-  
-                  <div className="record-right">  
-                    <span>  
-                      Qty: {entry.quantity}  
-                    </span>  
-  
-                    <span>  
-                      Bills: {entry.bills}  
-                    </span>  
-  
-                    <span>  
-                      Last:{' '}  
-                      {dateText(  
-                        entry.lastDate,  
-                      )}  
-                    </span>  
-  
-                    <strong>  
-                      {money(  
-                        entry.lastPrice,  
-                      )}  
-                    </strong>  
-                  </div>  
-                </div>  
-              ),  
-            )}  
-          </div>  
-  
-          <h3>Previous bills</h3>  
-  
-          <div className="record-list">  
-            {sales.map((sale) => (  
-              <div  
-                className="record-row static"  
-                key={sale.id}  
-              >  
-                <div>  
-                  <strong>  
-                    {sale.invoice_number ||  
-                      'Bill'}  
-                  </strong>  
-  
-                  <span>  
-                    {dateTimeText(  
-                      sale.bill_datetime,  
-                    )}  
-                  </span>  
-                </div>  
-  
-                <div className="record-right">  
-                  <span>  
-                    {sale.status}  
-                  </span>  
-  
-                  <strong>  
-                    {money(  
-                      sale.grand_total,  
-                    )}  
-                  </strong>  
-                </div>  
-              </div>  
-            ))}  
-          </div>  
-        </>  
-      )}  
-    </Modal>  
-  )  
-}  
-  
+function CustomerHistoryModal({
+  customer,
+  onClose,
+  onEdit,
+  onSettle,
+}) {
+  const [sales, setSales] = useState([])
+  const [items, setItems] = useState([])
+  const [salePayments, setSalePayments] = useState([])
+  const [ledger, setLedger] = useState([])
+  const [creditSummary, setCreditSummary] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [ledgerError, setLedgerError] = useState('')
+
+  useEffect(() => {
+    loadHistory()
+  }, [customer.id])
+
+  const loadHistory = async () => {
+    setLoading(true)
+    setLedgerError('')
+
+    const { data: salesData } = await supabase
+      .from('sales')
+      .select(
+        'id, invoice_number, bill_datetime, grand_total, amount_paid, amount_due, status',
+      )
+      .eq('customer_id', customer.id)
+      .eq('store_id', customer.store_id)
+      .order('bill_datetime', { ascending: false })
+
+    const saleRows = salesData || []
+    setSales(saleRows)
+
+    if (saleRows.length) {
+      const saleIds = saleRows.map((x) => x.id)
+
+      const { data: itemRows } = await supabase
+        .from('sale_items')
+        .select(`
+          *,
+          products (
+            id,
+            product_name,
+            generic_display_name
+          ),
+          batches (
+            batch_number,
+            expiry_date
+          )
+        `)
+        .in('sale_id', saleIds)
+
+      setItems(itemRows || [])
+
+      const { data: paymentRows, error: paymentError } = await supabase
+        .from('sale_payments')
+        .select('id, sale_id, payment_method, amount, created_at, payment_reference')
+        .in('sale_id', saleIds)
+        .order('created_at', { ascending: true })
+
+      if (paymentError) {
+        setSalePayments([])
+        setLedgerError(paymentError.message || 'Could not load customer payment records.')
+      } else {
+        setSalePayments(paymentRows || [])
+      }
+    } else {
+      setItems([])
+      setSalePayments([])
+    }
+
+    const { data: ledgerRows, error: ledgerLoadError } = await supabase
+      .from('customer_credit_transactions')
+      .select(
+        'id, sale_id, transaction_type, amount, notes, created_at',
+      )
+      .eq('customer_id', customer.id)
+      .eq('store_id', customer.store_id)
+      .order('created_at', { ascending: true })
+
+    if (ledgerLoadError) {
+      setLedger([])
+      setLedgerError(
+        (current) => current || ledgerLoadError.message || 'Could not load the customer account ledger.',
+      )
+    } else {
+      setLedger(ledgerRows || [])
+    }
+
+    const { data: creditRows } = await supabase.rpc(
+      'pharmdesk_customer_credit_report',
+      { p_store_id: customer.store_id },
+    )
+
+    const summary = (creditRows || []).find(
+      (row) => row.customer_id === customer.id,
+    )
+    setCreditSummary(summary || null)
+
+    setLoading(false)
+  }
+
+  const medicineHistory = useMemo(() => {
+    const map = new Map()
+
+    for (const item of items) {
+      const product = item.products
+      if (!product) continue
+
+      if (!map.has(product.id)) {
+        map.set(product.id, {
+          product,
+          quantity: 0,
+          lastDate: null,
+          lastPrice: 0,
+          bills: 0,
+        })
+      }
+
+      const entry = map.get(product.id)
+      entry.quantity += safeNumber(item.quantity_entered)
+      entry.lastPrice = safeNumber(item.selling_price_per_pack)
+
+      const sale = sales.find((s) => s.id === item.sale_id)
+      if (
+        sale &&
+        (!entry.lastDate ||
+          new Date(sale.bill_datetime) > new Date(entry.lastDate))
+      ) {
+        entry.lastDate = sale.bill_datetime
+      }
+
+      entry.bills += 1
+    }
+
+    return Array.from(map.values()).sort(
+      (a, b) =>
+        new Date(b.lastDate || 0) - new Date(a.lastDate || 0),
+    )
+  }, [items, sales])
+
+  const activeSales = sales.filter((x) => x.status !== 'cancelled')
+  const activeSaleIds = useMemo(
+    () => new Set(activeSales.map((sale) => sale.id)),
+    [activeSales],
+  )
+
+  const saleById = useMemo(
+    () => new Map(activeSales.map((sale) => [sale.id, sale])),
+    [activeSales],
+  )
+
+  const accountLedger = useMemo(() => {
+    const entries = []
+
+    activeSales.forEach((sale) => {
+      entries.push({
+        id: `invoice-${sale.id}`,
+        reference: sale.invoice_number || `Invoice ${String(sale.id).slice(0, 8).toUpperCase()}`,
+        date: sale.bill_datetime,
+        debit: safeNumber(sale.grand_total),
+        credit: 0,
+        sortDate: new Date(sale.bill_datetime || 0).getTime(),
+      })
+    })
+
+    salePayments
+      .filter((payment) => activeSaleIds.has(payment.sale_id))
+      .forEach((payment) => {
+        const sale = saleById.get(payment.sale_id)
+        entries.push({
+          id: `payment-${payment.id}`,
+          reference:
+            payment.payment_reference ||
+            `Receipt RCP-${String(payment.id || '').slice(0, 8).toUpperCase()}`,
+          date: payment.created_at || sale?.bill_datetime,
+          debit: 0,
+          credit: safeNumber(payment.amount),
+          sortDate: new Date(payment.created_at || sale?.bill_datetime || 0).getTime(),
+        })
+      })
+
+    ledger.forEach((entry) => {
+      const sale = entry.sale_id ? saleById.get(entry.sale_id) : null
+      if (entry.sale_id && !sale) return
+
+      if (entry.transaction_type === 'credit_payment') {
+        entries.push({
+          id: `credit-payment-${entry.id}`,
+          reference: `Receipt RCP-${String(entry.id || '').slice(0, 8).toUpperCase()}`,
+          date: entry.created_at,
+          debit: 0,
+          credit: safeNumber(entry.amount),
+          sortDate: new Date(entry.created_at || 0).getTime(),
+        })
+      } else if (entry.transaction_type === 'credit_adjustment') {
+        const amount = safeNumber(entry.amount)
+        entries.push({
+          id: `adjustment-${entry.id}`,
+          reference: `Adjustment ${String(entry.id || '').slice(0, 8).toUpperCase()}`,
+          date: entry.created_at,
+          debit: amount > 0 ? amount : 0,
+          credit: amount < 0 ? Math.abs(amount) : 0,
+          sortDate: new Date(entry.created_at || 0).getTime(),
+        })
+      } else if (entry.transaction_type === 'credit_refund') {
+        entries.push({
+          id: `refund-${entry.id}`,
+          reference: sale?.invoice_number || `Refund RCP-${String(entry.id || '').slice(0, 8).toUpperCase()}`,
+          date: entry.created_at,
+          debit: 0,
+          credit: safeNumber(entry.amount),
+          sortDate: new Date(entry.created_at || 0).getTime(),
+        })
+      }
+    })
+
+    return entries.sort((a, b) => {
+      if (a.sortDate !== b.sortDate) return a.sortDate - b.sortDate
+      return String(a.id).localeCompare(String(b.id))
+    })
+  }, [activeSales, activeSaleIds, ledger, saleById, salePayments])
+
+  const totalBilled = sum(activeSales.map((x) => x.grand_total))
+  const totalDebit = sum(accountLedger.map((entry) => entry.debit))
+  const totalCredit = sum(accountLedger.map((entry) => entry.credit))
+  const totalCollected = totalCredit
+  const ledgerOutstanding = Math.max(0, totalDebit - totalCredit)
+  const outstanding = Math.max(
+    0,
+    safeNumber(
+      creditSummary?.outstanding_credit ?? customer.outstanding_credit ?? ledgerOutstanding,
+    ),
+  )
+
+  return (
+    <Modal
+      title={`${customer.name || 'Customer'} • Account History`}
+      onClose={onClose}
+    >
+      {loading ? (
+        <LoadingInline />
+      ) : (
+        <>
+          <div className="history-header">
+            <div>
+              <strong>{customer.name || 'Walk-in Customer'}</strong>
+              <span>{customer.phone || 'No phone'}</span>
+            </div>
+
+            <div className="button-row">
+              {onEdit && (
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => onEdit(customer)}
+                >
+                  Edit Customer
+                </button>
+              )}
+              {outstanding > 0.009 && onSettle && (
+                <button
+                  type="button"
+                  className="primary-button"
+                  onClick={() => onSettle({ ...customer, outstanding_credit: outstanding })}
+                >
+                  Settle Account
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="stats-grid">
+            <StatCard title="Total Bills" value={activeSales.length} />
+            <StatCard title="Total Billed" value={money(totalBilled)} />
+            <StatCard title="Total Paid" value={money(totalCollected)} />
+            <StatCard title="Outstanding" value={money(outstanding)} />
+          </div>
+
+          <h3>Bill History</h3>
+          <div className="record-list">
+            {activeSales.length === 0 ? (
+              <EmptyState text="No bills have been made for this customer." />
+            ) : (
+              activeSales.map((sale) => {
+                const due = safeNumber(sale.amount_due)
+                const paid = safeNumber(sale.amount_paid)
+                return (
+                  <div className="record-row static" key={sale.id}>
+                    <div>
+                      <strong>{sale.invoice_number || 'Bill'}</strong>
+                      <span>{dateTimeText(sale.bill_datetime)}</span>
+                      <span>{due > 0.009 ? 'Outstanding' : 'Paid'}</span>
+                    </div>
+                    <div className="record-right">
+                      <span>Invoice: {money(sale.grand_total)}</span>
+                      <span>Paid: {money(paid)}</span>
+                      <span>Outstanding: {money(due)}</span>
+                    </div>
+                  </div>
+                )
+              })
+            )}
+          </div>
+
+          <h3>Account Ledger</h3>
+          {ledgerError && <div className="error-box">{ledgerError}</div>}
+
+          {!ledgerError && accountLedger.length === 0 && (
+            <EmptyState text="No account transactions recorded for this customer." />
+          )}
+
+          {!ledgerError && accountLedger.length > 0 && (
+            <>
+              <div className="record-list">
+                <div className="record-row static" style={{ fontWeight: 700 }}>
+                  <div>Reference</div>
+                  <div className="record-right" style={{ minWidth: 260 }}>
+                    <span>Date</span>
+                    <span>Debit</span>
+                    <span>Credit</span>
+                  </div>
+                </div>
+
+                {accountLedger.map((entry) => (
+                  <div className="record-row static" key={entry.id}>
+                    <div>
+                      <strong>{entry.reference}</strong>
+                    </div>
+                    <div className="record-right" style={{ minWidth: 260 }}>
+                      <span>{dateTimeText(entry.date)}</span>
+                      <span>{entry.debit > 0 ? money(entry.debit) : '—'}</span>
+                      <span>{entry.credit > 0 ? money(entry.credit) : '—'}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="record-row static" style={{ marginTop: 12, fontWeight: 700 }}>
+                <div>
+                  <strong>Totals</strong>
+                </div>
+                <div className="record-right" style={{ minWidth: 260 }}>
+                  <span>Outstanding: {money(ledgerOutstanding)}</span>
+                  <span>{money(totalDebit)}</span>
+                  <span>{money(totalCredit)}</span>
+                </div>
+              </div>
+            </>
+          )}
+
+          <h3>Products Previously Purchased</h3>
+          <div className="record-list">
+            {medicineHistory.length === 0 ? (
+              <EmptyState text="No previous medicine purchases found." />
+            ) : (
+              medicineHistory.map((entry) => (
+                <div className="record-row static" key={entry.product.id}>
+                  <div>
+                    <strong>{entry.product.product_name}</strong>
+                    <span>{entry.product.generic_display_name || ''}</span>
+                  </div>
+                  <div className="record-right">
+                    <span>Qty: {entry.quantity}</span>
+                    <span>Bills: {entry.bills}</span>
+                    <span>Last: {dateText(entry.lastDate)}</span>
+                    <strong>{money(entry.lastPrice)}</strong>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </>
+      )}
+    </Modal>
+  )
+}
+
 /* =========================================================  
    SALES LISTS  
 ========================================================= */  
@@ -4770,61 +4862,251 @@ function SalesReturns({ store }) {
   )  
 }  
   
-function CustomerCredit({ store }) {  
-  const [rows, setRows] = useState([])  
-  
-  useEffect(() => {  
-    if (!store?.id) return  
-  
-    supabase  
-      .from(  
-        'customer_credit_transactions',  
-      )  
-      .select('*')  
-      .eq('store_id', store.id)  
-      .order('created_at', {  
-        ascending: false,  
-      })  
-      .limit(200)  
-      .then(({ data }) =>  
-        setRows(data || []),  
-      )  
-  }, [store?.id])  
-  
-  return (  
-    <PanelList title="Customer Credit">  
-      {rows.length === 0 ? (  
-        <EmptyState text="No credit transactions." />  
-      ) : (  
-        <div className="record-list">  
-          {rows.map((row) => (  
-            <div  
-              className="record-row static"  
-              key={row.id}  
-            >  
-              <div>  
-                <strong>  
-                  {row.transaction_type}  
-                </strong>  
-  
-                <span>  
-                  {dateTimeText(  
-                    row.created_at,  
-                  )}  
-                </span>  
-              </div>  
-  
-              <strong>  
-                {money(row.amount)}  
-              </strong>  
-            </div>  
-          ))}  
-        </div>  
-      )}  
-    </PanelList>  
-  )  
-}  
-  
+function CustomerCredit({ store }) {
+  const [rows, setRows] = useState([])
+  const [query, setQuery] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [settlementCustomer, setSettlementCustomer] = useState(null)
+
+  const load = async () => {
+    if (!store?.id) return
+    setLoading(true)
+    setError('')
+    try {
+      const { data, error: reportError } = await supabase.rpc(
+        'pharmdesk_customer_credit_report',
+        { p_store_id: store.id },
+      )
+      if (reportError) throw reportError
+      setRows((data || []).filter((row) => safeNumber(row.outstanding_credit) > 0.009))
+    } catch (err) {
+      setError(err.message || 'Could not load customer credit.')
+      setRows([])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    load()
+  }, [store?.id])
+
+  const filtered = rows.filter((row) => matchesSearch(query, row.name, row.phone))
+
+  return (
+    <PanelList title="Customer Credit">
+      <div className="search-row">
+        <input
+          placeholder="Search customer"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+      </div>
+
+      {error && <div className="error-box">{error}</div>}
+
+      {loading ? (
+        <EmptyState text="Loading customer credit..." />
+      ) : filtered.length === 0 ? (
+        <EmptyState text="No customers with outstanding credit." />
+      ) : (
+        <div className="record-list">
+          {filtered.map((row) => (
+            <div className="record-row static" key={row.customer_id}>
+              <div>
+                <strong>{row.name || 'Walk-in Customer'}</strong>
+                <span>{row.phone || 'No phone'}</span>
+                {row.last_bill_at && <span>Last credit: {dateTimeText(row.last_bill_at)}</span>}
+              </div>
+              <div className="record-right">
+                <strong>Outstanding: {money(row.outstanding_credit)}</strong>
+                <button
+                  type="button"
+                  className="primary-button"
+                  onClick={() =>
+                    setSettlementCustomer({
+                      id: row.customer_id,
+                      name: row.name,
+                      phone: row.phone,
+                      outstanding_credit: safeNumber(row.outstanding_credit),
+                    })
+                  }
+                >
+                  Settle Credit
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {settlementCustomer && (
+        <CustomerSettlementModal
+          store={store}
+          customer={settlementCustomer}
+          onClose={() => setSettlementCustomer(null)}
+          onSettled={async () => {
+            await load()
+          }}
+        />
+      )}
+    </PanelList>
+  )
+}
+
+function CustomerSettlementModal({
+  store,
+  customer,
+  onClose,
+  onSettled,
+}) {
+  const outstanding = safeNumber(customer?.outstanding_credit)
+  const [amount, setAmount] = useState(String(outstanding || ''))
+  const [notes, setNotes] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [receipt, setReceipt] = useState(null)
+
+  const submit = async (e) => {
+    e.preventDefault()
+    setBusy(true)
+    setError('')
+    try {
+      const paid = safeNumber(amount)
+      if (paid <= 0) throw new Error('Enter a payment amount greater than zero.')
+      if (paid > outstanding + 0.01) throw new Error('Payment cannot exceed the outstanding credit.')
+
+      const { data: transactionId, error: rpcError } = await supabase.rpc(
+        'pharmdesk_record_customer_credit_payment',
+        {
+          p_store_id: store.id,
+          p_customer_id: customer.id,
+          p_amount: paid,
+          p_notes: notes.trim() || null,
+        },
+      )
+      if (rpcError) throw rpcError
+
+      const remaining = Math.max(0, outstanding - paid)
+      setReceipt({
+        id: transactionId,
+        customerName: customer.name || 'Walk-in Customer',
+        phone: customer.phone || '',
+        amount: paid,
+        remaining,
+        date: new Date().toISOString(),
+        notes: notes.trim(),
+      })
+      await onSettled()
+    } catch (err) {
+      setError(err.message || 'Could not record the payment.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const printReceipt = () => {
+    if (!receipt) return
+    const printWindow = window.open('', '_blank', 'width=480,height=720')
+    if (!printWindow) {
+      setError('The receipt window was blocked. Please allow pop-ups and try again.')
+      return
+    }
+    const safe = (value) =>
+      String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;')
+    printWindow.document.write(`
+      <!doctype html>
+      <html>
+        <head>
+          <meta name="viewport" content="width=device-width,initial-scale=1" />
+          <title>Customer Credit Payment Receipt</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 24px; max-width: 420px; margin: auto; }
+            h1 { font-size: 20px; margin-bottom: 18px; }
+            .row { display: flex; justify-content: space-between; gap: 16px; padding: 7px 0; }
+            .total { border-top: 1px solid #ccc; margin-top: 10px; padding-top: 12px; font-size: 18px; font-weight: 700; }
+            .muted { color: #666; font-size: 12px; }
+          </style>
+        </head>
+        <body>
+          <h1>Customer Credit Payment Receipt</h1>
+          <div class="row"><span>Receipt</span><strong>${safe(receipt.id)}</strong></div>
+          <div class="row"><span>Customer</span><strong>${safe(receipt.customerName)}</strong></div>
+          <div class="row"><span>Phone</span><span>${safe(receipt.phone || '—')}</span></div>
+          <div class="row"><span>Date</span><span>${safe(dateTimeText(receipt.date))}</span></div>
+          <div class="row total"><span>Amount paid</span><span>${safe(money(receipt.amount))}</span></div>
+          <div class="row"><span>Remaining credit</span><strong>${safe(money(receipt.remaining))}</strong></div>
+          ${receipt.notes ? `<p><strong>Notes:</strong> ${safe(receipt.notes)}</p>` : ''}
+          <p class="muted">This receipt corresponds to the stored customer credit payment transaction.</p>
+        </body>
+      </html>
+    `)
+    printWindow.document.close()
+    printWindow.focus()
+    setTimeout(() => printWindow.print(), 250)
+  }
+
+  if (receipt) {
+    return (
+      <Modal title="Payment Receipt" onClose={onClose}>
+        <div className="info-box">Payment recorded successfully. The credit ledger has been updated.</div>
+        <div className="record-row static">
+          <div>
+            <strong>{receipt.customerName}</strong>
+            <span>Receipt {receipt.id}</span>
+            <span>{dateTimeText(receipt.date)}</span>
+          </div>
+          <div className="record-right"><strong>{money(receipt.amount)}</strong></div>
+        </div>
+        <div className="info-box">Remaining credit: {money(receipt.remaining)}</div>
+        <div className="button-row">
+          <button type="button" className="secondary-button" onClick={printReceipt}>Print Receipt</button>
+          <button type="button" className="primary-button" onClick={onClose}>Close</button>
+        </div>
+      </Modal>
+    )
+  }
+
+  return (
+    <Modal title={`Settle Account — ${customer.name || 'Customer'}`} onClose={onClose}>
+      <form onSubmit={submit}>
+        <div className="info-box">Outstanding credit: <strong>{money(outstanding)}</strong></div>
+        <label>
+          Amount paid
+          <input
+            type="number"
+            min="0.01"
+            step="0.01"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            required
+          />
+        </label>
+        <label>
+          Notes
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="Optional payment note"
+          />
+        </label>
+        {safeNumber(amount) >= outstanding - 0.01 && outstanding > 0 && (
+          <div className="info-box">
+            This payment will fully settle the account. The customer will disappear from Customer Credit after the list refreshes.
+          </div>
+        )}
+        {error && <div className="error-box">{error}</div>}
+        <ModalActions onClose={onClose} busy={busy} label="Record Payment" />
+      </form>
+    </Modal>
+  )
+}
 /* =========================================================  
    PURCHASES  
 ========================================================= */  
@@ -9080,183 +9362,171 @@ function StockReconciliation({
    CUSTOMERS  
 ========================================================= */  
   
-function CustomersModule({  
-  store,  
-}) {  
-  const [rows, setRows] =  
-    useState([])  
-  const [query, setQuery] =  
-    useState('')  
-  const [modal, setModal] =  
-    useState(false)  
-  const [history, setHistory] =  
-    useState(null)  
-  const [editing, setEditing] =  
-    useState(null)  
-  
-  const load = async () => {  
-    const { data } =  
-      await pharmdeskDb  
-        .from('customers')  
-        .select('*')  
-        .eq(  
-          'store_id',  
-          store.id,  
-        )  
-        .order('name')  
-  
-    setRows(data || [])  
-  }  
-  
-  useEffect(() => {  
-    if (store?.id) load()  
-  }, [store?.id])  
-  
-  const filtered =  
-    rows.filter((x) =>  
-      matchesSearch(  
-        query,  
-        x.name,  
-        x.phone,  
-      ),  
-    )  
-  
-  return (  
-    <div>  
-      <ModuleHeader  
-        title="Customers"  
-        subtitle="Customer records and purchase history"  
-      />  
-  
-      <PanelList title="Customers">  
-        <div className="search-row">  
-          <input  
-            placeholder="Search customer"  
-            value={query}  
-            onChange={(e) =>  
-              setQuery(  
-                e.target.value,  
-              )  
-            }  
-          />  
-  
-          <button  
-            className="primary-button"  
-            onClick={() =>  
-              setModal(true)  
-            }  
-          >  
-            + Customer  
-          </button>  
-        </div>  
-  
-        <div className="record-list">  
-          {filtered.map(  
-            (customer) => (  
-              <div  
-                className="record-row static"  
-                key={customer.id}  
-              >  
-                <div>  
-                  <strong>  
-                    {customer.name ||  
-                      'Walk-in Customer'}  
-                  </strong>  
-  
-                  <span>  
-                    {customer.phone ||  
-                      '—'}  
-                  </span>  
-                  {customer.referred_doctor_name && (  
-                    <span>  
-                      Dr. {customer.referred_doctor_name}  
-                    </span>  
-                  )}  
-                </div>  
-  
-                <div className="record-right">  
-                  <button  
-                    className="secondary-button"  
-                    onClick={() =>  
-                      setEditing(  
-                        customer,  
-                      )  
-                    }  
-                  >  
-                    Edit  
-                  </button>  
-  
-                  <button  
-                    className="secondary-button"  
-                    onClick={() =>  
-                      setHistory(  
-                        customer,  
-                      )  
-                    }  
-                  >  
-                    History  
-                  </button>  
-                </div>  
-              </div>  
-            ),  
-          )}  
-        </div>  
-      </PanelList>  
-  
-      {(modal ||  
-        editing) && (  
-        <CustomerModal  
-          store={store}  
-          customer={  
-            editing  
-          }  
-          onClose={() => {  
-            setModal(false)  
-            setEditing(null)  
-          }}  
-          onCreated={(  
-            customer,  
-          ) => {  
-            setRows(  
-              (current) =>  
-                editing  
-                  ? current.map(  
-                      (x) =>  
-                        x.id ===  
-                        customer.id  
-                          ? customer  
-                          : x,  
-                    )  
-                  : [  
-                      customer,  
-                      ...current,  
-                    ],  
-            )  
-  
-            setModal(false)  
-            setEditing(null)  
-          }}  
-        />  
-      )}  
-  
-      {history && (  
-        <CustomerHistoryModal  
-          customer={history}  
-          onClose={() =>  
-            setHistory(null)  
-          }  
-          onEdit={(customer) => {  
-            setHistory(null)  
-            setEditing(  
-              customer,  
-            )  
-          }}  
-        />  
-      )}  
-    </div>  
-  )  
-}  
-  
+function CustomersModule({
+  store,
+}) {
+  const [rows, setRows] = useState([])
+  const [query, setQuery] = useState('')
+  const [modal, setModal] = useState(false)
+  const [history, setHistory] = useState(null)
+  const [editing, setEditing] = useState(null)
+  const [settlementCustomer, setSettlementCustomer] = useState(null)
+  const [creditByCustomer, setCreditByCustomer] = useState({})
+
+  const load = async () => {
+    const { data } = await pharmdeskDb
+      .from('customers')
+      .select('*')
+      .eq('store_id', store.id)
+      .order('name')
+
+    const customers = data || []
+    setRows(customers)
+
+    const { data: creditRows } = await pharmdeskDb.rpc(
+      'pharmdesk_customer_credit_report',
+      { p_store_id: store.id },
+    )
+
+    const creditMap = {}
+    ;(creditRows || []).forEach((row) => {
+      creditMap[row.customer_id] = safeNumber(row.outstanding_credit)
+    })
+    setCreditByCustomer(creditMap)
+  }
+
+  useEffect(() => {
+    if (store?.id) load()
+  }, [store?.id])
+
+  const filtered = rows.filter((x) =>
+    matchesSearch(query, x.name, x.phone),
+  )
+
+  return (
+    <div>
+      <ModuleHeader
+        title="Customers"
+        subtitle="Customer records, purchase history and outstanding credit"
+      />
+
+      <PanelList title="Customers">
+        <div className="search-row">
+          <input
+            placeholder="Search customer"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+          <button
+            type="button"
+            className="primary-button"
+            onClick={() => setModal(true)}
+          >
+            + Customer
+          </button>
+        </div>
+
+        <div className="record-list">
+          {filtered.map((customer) => {
+            const outstanding = creditByCustomer[customer.id] || 0
+            return (
+              <div className="record-row static" key={customer.id}>
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => setHistory(customer)}
+                    style={{
+                      border: 0,
+                      background: 'transparent',
+                      padding: 0,
+                      margin: 0,
+                      font: 'inherit',
+                      fontWeight: 700,
+                      color: 'inherit',
+                      textAlign: 'left',
+                      cursor: 'pointer',
+                    }}
+                    title="Open customer account"
+                  >
+                    {customer.name || 'Walk-in Customer'}
+                  </button>
+                  <span>{customer.phone || '—'}</span>
+                  {customer.referred_doctor_name && (
+                    <span>Dr. {customer.referred_doctor_name}</span>
+                  )}
+                  {outstanding > 0 && (
+                    <span>Outstanding credit: {money(outstanding)}</span>
+                  )}
+                </div>
+                <div className="record-right">
+                  <button type="button" className="secondary-button" onClick={() => setEditing(customer)}>
+                    Edit
+                  </button>
+                  {outstanding > 0 && (
+                    <button
+                      type="button"
+                      className="primary-button"
+                      onClick={() => setSettlementCustomer({ ...customer, outstanding_credit: outstanding })}
+                    >
+                      Settle Account
+                    </button>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </PanelList>
+
+      {(modal || editing) && (
+        <CustomerModal
+          store={store}
+          customer={editing}
+          onClose={() => {
+            setModal(false)
+            setEditing(null)
+          }}
+          onCreated={(customer) => {
+            setRows((current) =>
+              editing
+                ? current.map((x) => (x.id === customer.id ? customer : x))
+                : [customer, ...current],
+            )
+            setModal(false)
+            setEditing(null)
+          }}
+        />
+      )}
+
+      {history && (
+        <CustomerHistoryModal
+          customer={history}
+          onClose={() => setHistory(null)}
+          onEdit={(customer) => {
+            setHistory(null)
+            setEditing(customer)
+          }}
+          onSettle={(customer) => {
+            setHistory(null)
+            setSettlementCustomer(customer)
+          }}
+        />
+      )}
+
+      {settlementCustomer && (
+        <CustomerSettlementModal
+          store={store}
+          customer={settlementCustomer}
+          onClose={() => setSettlementCustomer(null)}
+          onSettled={async () => {
+            await load()
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
 /* =========================================================  
    REPORTS  
 ========================================================= */  
