@@ -13249,7 +13249,6 @@ function CustomerModal({
               store.id,  
             )  
             .select()  
-            .single()  
       } else {  
         result =  
           await pharmdeskDb  
@@ -13262,14 +13261,23 @@ function CustomerModal({
                 store.id,  
             })  
             .select()  
-            .single()  
       }  
   
       if (result.error)  
         throw result.error  
   
+      const savedCustomer = Array.isArray(result.data)  
+        ? result.data[0]  
+        : result.data  
+  
+      if (!savedCustomer) {  
+        throw new Error(  
+          'Customer was saved, but the saved customer could not be returned. Please refresh and try again.',  
+        )  
+      }  
+  
       onCreated(  
-        result.data,  
+        savedCustomer,  
       )  
     } catch (error) {  
       setError(  
