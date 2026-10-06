@@ -300,6 +300,8 @@ const customerLedgerVisual = (type) => {
 export function PharmDeskApp() {
   const [session, setSession] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [platformAdmin, setPlatformAdmin] = useState(false)
+  const [adminCheckComplete, setAdminCheckComplete] = useState(false)
 
   useEffect(() => {
     let mounted = true
@@ -332,6 +334,8 @@ export function PharmDeskApp() {
 
           if (mounted) {
             setSession(null)
+            setPlatformAdmin(false)
+            setAdminCheckComplete(true)
             setLoading(false)
           }
 
@@ -346,17 +350,6 @@ export function PharmDeskApp() {
           result?.data?.session ??
           null
 
-        if (currentSession) {
-          try {
-            await PharmDeskAPI.claimApprovedStoreAccess()
-          } catch (claimError) {
-            console.error(
-              'Failed to claim approved store access:',
-              claimError,
-            )
-          }
-        }
-
         if (mounted) {
           setSession(currentSession)
           setLoading(false)
@@ -369,6 +362,8 @@ export function PharmDeskApp() {
 
         if (mounted) {
           setSession(null)
+          setPlatformAdmin(false)
+          setAdminCheckComplete(true)
           setLoading(false)
         }
       }
@@ -392,12 +387,86 @@ export function PharmDeskApp() {
     }
   }, [])
 
-  if (loading) {
+  /*
+    Authentication is followed by a platform-admin check.
+
+    This is deliberately done before StoreApplicationGate so that
+    a platform administrator never gets sent through the medical
+    store application flow or into a pharmacy store dashboard.
+  */
+  useEffect(() => {
+    let mounted = true
+
+    const checkAdminAndClaimAccess = async () => {
+      if (!session?.user?.id) {
+        setPlatformAdmin(false)
+        setAdminCheckComplete(true)
+        return
+      }
+
+      setAdminCheckComplete(false)
+
+      try {
+        const admin =
+          await PharmDeskAPI.isPlatformAdmin()
+
+        if (!mounted) return
+
+        setPlatformAdmin(Boolean(admin))
+
+        /*
+          Only normal store users need approved-store access to be
+          claimed here. Platform administrators use their separate
+          administration dashboard.
+        */
+        if (!admin) {
+          try {
+            await PharmDeskAPI.claimApprovedStoreAccess()
+          } catch (claimError) {
+            console.error(
+              'Failed to claim approved store access:',
+              claimError,
+            )
+          }
+        }
+      } catch (error) {
+        /*
+          If the admin-check RPC is unavailable or fails, do not
+          lock an ordinary store user out of PharmDesk. Fall back
+          to the normal store/application flow.
+        */
+        console.error(
+          'Platform admin check failed:',
+          error,
+        )
+
+        if (mounted) {
+          setPlatformAdmin(false)
+        }
+      } finally {
+        if (mounted) {
+          setAdminCheckComplete(true)
+        }
+      }
+    }
+
+    checkAdminAndClaimAccess()
+
+    return () => {
+      mounted = false
+    }
+  }, [session?.user?.id])
+
+  if (loading || !adminCheckComplete) {
     return <LoadingScreen />
   }
 
   if (!session) {
     return <LoginScreen />
+  }
+
+  if (platformAdmin) {
+    return <PlatformAdminDashboard session={session} />
   }
 
   return <StoreApplicationGate session={session} />
@@ -996,7 +1065,914 @@ function LoginScreen() {
   )
 }
   
-  function StoreApplicationGate({ session }) {
+  
+/* =========================================================
+   PLATFORM ADMIN DASHBOARD
+========================================================= */
+
+function PlatformAdminDashboard({ session }) {
+  const [activeTab, setActiveTab] = useState('Applications')
+  const [adminStores, setAdminStores] = useState([])
+  const [adminApplications, setAdminApplications] = useState([])
+  const [adminLoading, setAdminLoading] = useState(false)
+  const [applicationLoading, setApplicationLoading] = useState(false)
+  const [adminMessage, setAdminMessage] = useState('')
+  const [applicationMessage, setApplicationMessage] = useState('')
+  const [error, setError] = useState('')
+
+  const [newStore, setNewStore] = useState({
+    name: '',
+    ownerEmail: '',
+    address: '',
+    phone: '',
+    email: '',
+    gstin: '',
+    drugLicenseNumber: '',
+  })
+
+  const loadAdminStores = async () => {
+    try {
+      setAdminLoading(true)
+      setError('')
+
+      const result =
+        await PharmDeskAPI.adminListStores()
+
+      setAdminStores(
+        Array.isArray(result)
+          ? result
+          : [],
+      )
+    } catch (loadError) {
+      console.error(
+        'Failed to load admin stores:',
+        loadError,
+      )
+
+      setError(
+        loadError?.message ||
+          'Failed to load medical stores.',
+      )
+    } finally {
+      setAdminLoading(false)
+    }
+  }
+
+  const loadAdminApplications = async () => {
+    try {
+      setApplicationLoading(true)
+      setError('')
+
+      const result =
+        await PharmDeskAPI.adminListStoreApplications()
+
+      setAdminApplications(
+        Array.isArray(result)
+          ? result
+          : [],
+      )
+    } catch (loadError) {
+      console.error(
+        'Failed to load store applications:',
+        loadError,
+      )
+
+      setError(
+        loadError?.message ||
+          'Failed to load store applications.',
+      )
+    } finally {
+      setApplicationLoading(false)
+    }
+  }
+
+  const refreshAdminData = async () => {
+    setError('')
+    await Promise.all([
+      loadAdminStores(),
+      loadAdminApplications(),
+    ])
+  }
+
+  useEffect(() => {
+    refreshAdminData()
+  }, [])
+
+  const createAdminStore = async (event) => {
+    event.preventDefault()
+
+    try {
+      setAdminLoading(true)
+      setAdminMessage('')
+      setError('')
+
+      if (!newStore.name.trim()) {
+        throw new Error(
+          'Medical store name is required.',
+        )
+      }
+
+      if (!newStore.ownerEmail.trim()) {
+        throw new Error(
+          'Owner email is required.',
+        )
+      }
+
+      await PharmDeskAPI.adminCreateStore({
+        name: newStore.name.trim(),
+        ownerEmail:
+          newStore.ownerEmail.trim(),
+        address:
+          newStore.address.trim() || null,
+        phone:
+          newStore.phone.trim() || null,
+        email:
+          newStore.email.trim() || null,
+        gstin:
+          newStore.gstin.trim() || null,
+        drugLicenseNumber:
+          newStore.drugLicenseNumber.trim() ||
+          null,
+      })
+
+      setNewStore({
+        name: '',
+        ownerEmail: '',
+        address: '',
+        phone: '',
+        email: '',
+        gstin: '',
+        drugLicenseNumber: '',
+      })
+
+      setAdminMessage(
+        'Medical store created successfully. It is now pending activation.',
+      )
+
+      await loadAdminStores()
+    } catch (createError) {
+      console.error(
+        'Failed to create medical store:',
+        createError,
+      )
+
+      setAdminMessage(
+        createError?.message ||
+          'Failed to create medical store.',
+      )
+    } finally {
+      setAdminLoading(false)
+    }
+  }
+
+  const activateAdminStore = async (storeId) => {
+    try {
+      setAdminLoading(true)
+      setAdminMessage('')
+      setError('')
+
+      await PharmDeskAPI.adminActivateStore(
+        storeId,
+      )
+
+      setAdminMessage(
+        'Store approved and 1-year service activated.',
+      )
+
+      await loadAdminStores()
+    } catch (activateError) {
+      console.error(
+        'Failed to activate store:',
+        activateError,
+      )
+
+      setAdminMessage(
+        activateError?.message ||
+          'Failed to activate store.',
+      )
+    } finally {
+      setAdminLoading(false)
+    }
+  }
+
+  const suspendAdminStore = async (storeId) => {
+    try {
+      setAdminLoading(true)
+      setAdminMessage('')
+      setError('')
+
+      await PharmDeskAPI.adminSuspendStore(
+        storeId,
+      )
+
+      setAdminMessage(
+        'Store service has been suspended.',
+      )
+
+      await loadAdminStores()
+    } catch (suspendError) {
+      console.error(
+        'Failed to suspend store:',
+        suspendError,
+      )
+
+      setAdminMessage(
+        suspendError?.message ||
+          'Failed to suspend store.',
+      )
+    } finally {
+      setAdminLoading(false)
+    }
+  }
+
+  const reactivateAdminStore = async (storeId) => {
+    try {
+      setAdminLoading(true)
+      setAdminMessage('')
+      setError('')
+
+      await PharmDeskAPI.adminReactivateStore(
+        storeId,
+      )
+
+      setAdminMessage(
+        'Store service has been renewed for 1 year.',
+      )
+
+      await loadAdminStores()
+    } catch (reactivateError) {
+      console.error(
+        'Failed to renew store service:',
+        reactivateError,
+      )
+
+      setAdminMessage(
+        reactivateError?.message ||
+          'Failed to renew store service.',
+      )
+    } finally {
+      setAdminLoading(false)
+    }
+  }
+
+  const approveStoreApplication = async (
+    applicationId,
+  ) => {
+    try {
+      setApplicationLoading(true)
+      setApplicationMessage('')
+      setError('')
+
+      await PharmDeskAPI.adminApproveStoreApplication(
+        applicationId,
+      )
+
+      setApplicationMessage(
+        'Application approved. The store has been activated for 1 year.',
+      )
+
+      await Promise.all([
+        loadAdminApplications(),
+        loadAdminStores(),
+      ])
+    } catch (approveError) {
+      console.error(
+        'Failed to approve store application:',
+        approveError,
+      )
+
+      setApplicationMessage(
+        approveError?.message ||
+          'Failed to approve store application.',
+      )
+    } finally {
+      setApplicationLoading(false)
+    }
+  }
+
+  const rejectStoreApplication = async (
+    applicationId,
+  ) => {
+    const reason = window.prompt(
+      'Enter a rejection reason (optional):',
+    )
+
+    if (reason === null) {
+      return
+    }
+
+    try {
+      setApplicationLoading(true)
+      setApplicationMessage('')
+      setError('')
+
+      await PharmDeskAPI.adminRejectStoreApplication(
+        applicationId,
+        reason.trim() || null,
+      )
+
+      setApplicationMessage(
+        'Store application rejected.',
+      )
+
+      await loadAdminApplications()
+    } catch (rejectError) {
+      console.error(
+        'Failed to reject store application:',
+        rejectError,
+      )
+
+      setApplicationMessage(
+        rejectError?.message ||
+          'Failed to reject store application.',
+      )
+    } finally {
+      setApplicationLoading(false)
+    }
+  }
+
+  const today = todayISO()
+
+  const getEffectiveStatus = (adminStore) => {
+    if (
+      adminStore.service_end_date &&
+      adminStore.service_end_date < today &&
+      adminStore.service_status === 'active'
+    ) {
+      return 'expired'
+    }
+
+    return adminStore.service_status || 'pending'
+  }
+
+  return (
+    <div className="app-shell">
+      <aside className="sidebar">
+        <div className="brand">
+          <div className="brand-mark">P</div>
+
+          <div>
+            <strong>PharmDesk</strong>
+            <span>Platform Administration</span>
+          </div>
+        </div>
+
+        <nav>
+          {[
+            'Applications',
+            'Medical Stores',
+            'Add Store',
+          ].map((item) => (
+            <button
+              key={item}
+              className={
+                activeTab === item
+                  ? 'nav-item active'
+                  : 'nav-item'
+              }
+              onClick={() => setActiveTab(item)}
+            >
+              {item}
+            </button>
+          ))}
+        </nav>
+
+        <button
+          className="logout-button"
+          onClick={() => PharmDeskAPI.signOut()}
+        >
+          Sign out
+        </button>
+      </aside>
+
+      <main className="main-content">
+        <ModuleHeader
+          title="PharmDesk Administration"
+          subtitle="Manage medical store applications, service access and renewals"
+        />
+
+        <div className="stats-grid">
+          <StatCard
+            title="Store Applications"
+            value={adminApplications.filter(
+              (x) => x.status === 'pending',
+            ).length}
+          />
+
+          <StatCard
+            title="Registered Stores"
+            value={adminStores.length}
+          />
+
+          <StatCard
+            title="Active Stores"
+            value={adminStores.filter(
+              (x) =>
+                getEffectiveStatus(x) ===
+                'active',
+            ).length}
+          />
+
+          <StatCard
+            title="Expired / Suspended"
+            value={adminStores.filter((x) => {
+              const status =
+                getEffectiveStatus(x)
+
+              return (
+                status === 'expired' ||
+                status === 'suspended'
+              )
+            }).length}
+          />
+        </div>
+
+        {(error ||
+          adminMessage ||
+          applicationMessage) && (
+          <div
+            className={
+              error
+                ? 'error-box'
+                : 'message-box'
+            }
+            style={{ marginBottom: 16 }}
+          >
+            {error ||
+              adminMessage ||
+              applicationMessage}
+          </div>
+        )}
+
+        {activeTab === 'Applications' && (
+          <PanelList title="Pending Store Applications">
+            <div
+              className="history-header"
+              style={{
+                marginBottom: 12,
+              }}
+            >
+              <div>
+                <strong>
+                  Medical store applications
+                </strong>
+
+                <span>
+                  Review applications before
+                  granting store access.
+                </span>
+              </div>
+
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={loadAdminApplications}
+                disabled={applicationLoading}
+              >
+                {applicationLoading
+                  ? 'Refreshing…'
+                  : 'Refresh'}
+              </button>
+            </div>
+
+            {applicationLoading &&
+              adminApplications.length === 0 && (
+                <div className="message-box">
+                  Loading applications…
+                </div>
+              )}
+
+            {!applicationLoading &&
+              adminApplications.length === 0 && (
+                <EmptyState text="No store applications found." />
+              )}
+
+            {adminApplications.map(
+              (application) => (
+                <div
+                  key={application.id}
+                  className="history-item"
+                >
+                  <div className="history-header">
+                    <div>
+                      <strong>
+                        {application.store_name}
+                      </strong>
+
+                      <span>
+                        Owner:{' '}
+                        {application.owner_name ||
+                          'Not provided'}
+                      </span>
+                    </div>
+
+                    <strong>
+                      {String(
+                        application.status ||
+                          'pending',
+                      ).toUpperCase()}
+                    </strong>
+                  </div>
+
+                  <div className="history-header">
+                    <span>
+                      Email:{' '}
+                      {application.owner_email ||
+                        'Not provided'}
+                    </span>
+
+                    <span>
+                      Phone:{' '}
+                      {application.phone ||
+                        'Not provided'}
+                    </span>
+                  </div>
+
+                  <div className="history-header">
+                    <span>
+                      GSTIN:{' '}
+                      {application.gstin ||
+                        'Not provided'}
+                    </span>
+
+                    <span>
+                      Drug License:{' '}
+                      {application.drug_license_number ||
+                        'Not provided'}
+                    </span>
+                  </div>
+
+                  <div>
+                    <span>
+                      Address:{' '}
+                      {application.address ||
+                        'Not provided'}
+                    </span>
+                  </div>
+
+                  <div className="history-header">
+                    <span>
+                      Store email:{' '}
+                      {application.store_email ||
+                        'Not provided'}
+                    </span>
+
+                    <span>
+                      Applied:{' '}
+                      {application.created_at
+                        ? new Date(
+                            application.created_at,
+                          ).toLocaleString()
+                        : 'Unknown'}
+                    </span>
+                  </div>
+
+                  {application.status ===
+                    'rejected' &&
+                    application.rejection_reason && (
+                      <div className="error-box">
+                        Rejection reason:{' '}
+                        {
+                          application.rejection_reason
+                        }
+                      </div>
+                    )}
+
+                  {application.status ===
+                    'pending' && (
+                    <div className="button-row">
+                      <button
+                        type="button"
+                        className="primary-button"
+                        onClick={() =>
+                          approveStoreApplication(
+                            application.id,
+                          )
+                        }
+                        disabled={
+                          applicationLoading
+                        }
+                      >
+                        Approve & Start
+                        1-Year Service
+                      </button>
+
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={() =>
+                          rejectStoreApplication(
+                            application.id,
+                          )
+                        }
+                        disabled={
+                          applicationLoading
+                        }
+                      >
+                        Reject
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ),
+            )}
+
+            {applicationMessage && (
+              <div className="message-box">
+                {applicationMessage}
+              </div>
+            )}
+          </PanelList>
+        )}
+
+        {activeTab === 'Medical Stores' && (
+          <PanelList title="Registered Medical Stores">
+            <div
+              className="history-header"
+              style={{
+                marginBottom: 12,
+              }}
+            >
+              <div>
+                <strong>
+                  Store service management
+                </strong>
+
+                <span>
+                  Activate, suspend and renew
+                  PharmDesk store service.
+                </span>
+              </div>
+
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={loadAdminStores}
+                disabled={adminLoading}
+              >
+                {adminLoading
+                  ? 'Refreshing…'
+                  : 'Refresh'}
+              </button>
+            </div>
+
+            {adminLoading &&
+              adminStores.length === 0 && (
+                <div className="message-box">
+                  Loading stores…
+                </div>
+              )}
+
+            {!adminLoading &&
+              adminStores.length === 0 && (
+                <EmptyState text="No medical stores found." />
+              )}
+
+            {adminStores.map((adminStore) => {
+              const status =
+                getEffectiveStatus(
+                  adminStore,
+                )
+
+              return (
+                <div
+                  key={adminStore.id}
+                  className="history-item"
+                >
+                  <div className="history-header">
+                    <div>
+                      <strong>
+                        {adminStore.name}
+                      </strong>
+
+                      <span>
+                        {adminStore.email ||
+                          adminStore.phone ||
+                          'No contact details'}
+                      </span>
+                    </div>
+
+                    <strong>
+                      {status.toUpperCase()}
+                    </strong>
+                  </div>
+
+                  <div className="history-header">
+                    <span>
+                      Store contact:{' '}
+                      {adminStore.email ||
+                        adminStore.phone ||
+                        'Not provided'}
+                    </span>
+
+                    <span>
+                      GSTIN:{' '}
+                      {adminStore.gstin ||
+                        'Not provided'}
+                    </span>
+                  </div>
+
+                  <div className="history-header">
+                    <span>
+                      Service start:{' '}
+                      {adminStore.service_start_date ||
+                        'Not activated'}
+                    </span>
+
+                    <span>
+                      Service end:{' '}
+                      {adminStore.service_end_date ||
+                        'Not activated'}
+                    </span>
+                  </div>
+
+                  <div className="button-row">
+                    {status === 'pending' && (
+                      <button
+                        type="button"
+                        className="primary-button"
+                        onClick={() =>
+                          activateAdminStore(
+                            adminStore.id,
+                          )
+                        }
+                        disabled={adminLoading}
+                      >
+                        Approve & Start
+                        1-Year Service
+                      </button>
+                    )}
+
+                    {status === 'active' && (
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={() =>
+                          suspendAdminStore(
+                            adminStore.id,
+                          )
+                        }
+                        disabled={adminLoading}
+                      >
+                        Suspend Service
+                      </button>
+                    )}
+
+                    {(status === 'expired' ||
+                      status === 'suspended') && (
+                      <button
+                        type="button"
+                        className="primary-button"
+                        onClick={() =>
+                          reactivateAdminStore(
+                            adminStore.id,
+                          )
+                        }
+                        disabled={adminLoading}
+                      >
+                        Renew for 1 Year
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </PanelList>
+        )}
+
+        {activeTab === 'Add Store' && (
+          <PanelList title="Add Medical Store">
+            <form
+              onSubmit={createAdminStore}
+              className="form-stack"
+            >
+              <label>
+                Medical store name
+                <input
+                  value={newStore.name}
+                  onChange={(event) =>
+                    setNewStore({
+                      ...newStore,
+                      name: event.target.value,
+                    })
+                  }
+                  placeholder="e.g. ABC Medical Store"
+                  required
+                />
+              </label>
+
+              <label>
+                Owner email
+                <input
+                  type="email"
+                  value={newStore.ownerEmail}
+                  onChange={(event) =>
+                    setNewStore({
+                      ...newStore,
+                      ownerEmail:
+                        event.target.value,
+                    })
+                  }
+                  placeholder="owner@example.com"
+                  required
+                />
+              </label>
+
+              <label>
+                Store address
+                <textarea
+                  value={newStore.address}
+                  onChange={(event) =>
+                    setNewStore({
+                      ...newStore,
+                      address:
+                        event.target.value,
+                    })
+                  }
+                  rows={3}
+                />
+              </label>
+
+              <div className="form-grid">
+                <label>
+                  Phone
+                  <input
+                    type="tel"
+                    value={newStore.phone}
+                    onChange={(event) =>
+                      setNewStore({
+                        ...newStore,
+                        phone:
+                          event.target.value,
+                      })
+                    }
+                  />
+                </label>
+
+                <label>
+                  Store email
+                  <input
+                    type="email"
+                    value={newStore.email}
+                    onChange={(event) =>
+                      setNewStore({
+                        ...newStore,
+                        email:
+                          event.target.value,
+                      })
+                    }
+                  />
+                </label>
+
+                <label>
+                  GSTIN
+                  <input
+                    value={newStore.gstin}
+                    onChange={(event) =>
+                      setNewStore({
+                        ...newStore,
+                        gstin:
+                          event.target.value,
+                      })
+                    }
+                  />
+                </label>
+
+                <label>
+                  Drug licence number
+                  <input
+                    value={
+                      newStore.drugLicenseNumber
+                    }
+                    onChange={(event) =>
+                      setNewStore({
+                        ...newStore,
+                        drugLicenseNumber:
+                          event.target.value,
+                      })
+                    }
+                  />
+                </label>
+              </div>
+
+              <button
+                type="submit"
+                className="primary-button"
+                disabled={adminLoading}
+              >
+                {adminLoading
+                  ? 'Creating…'
+                  : 'Add Medical Store'}
+              </button>
+            </form>
+          </PanelList>
+        )}
+      </main>
+    </div>
+  )
+}
+
+function StoreApplicationGate({ session }) {
   const [application, setApplication] = useState(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
