@@ -371,16 +371,60 @@ export const PharmDeskAPI = {
 
   async dashboardSnapshot(storeId, date, expiryDays = 90) {
     const start = date || new Date().toISOString().slice(0, 10)
-    const expiryLimit = new Date(`${start}T00:00:00`)
+    const startDate = new Date(\`${start}T00:00:00\`)
+    const nextDate = new Date(startDate)
+    nextDate.setDate(nextDate.getDate() + 1)
+    const weekStart = new Date(startDate)
+    weekStart.setDate(weekStart.getDate() - 6)
+
+    const isoDate = (value) => value.toISOString().slice(0, 10)
+    const dayStart = \`${start}T00:00:00\`
+    const dayEnd = \`${isoDate(nextDate)}T00:00:00\`
+    const weekStartIso = \`${isoDate(weekStart)}T00:00:00\`
+
+    const expiryLimit = new Date(startDate)
     expiryLimit.setDate(expiryLimit.getDate() + Number(expiryDays || 90))
     const expiryDate = expiryLimit.toISOString().slice(0, 10)
-    const [sales, purchases, batches, expiry] = await Promise.all([
-      select('sales', { select: 'grand_total', eq: { store_id: storeId, status: 'completed' }, }),
-      select('purchase_invoices', { select: 'total_amount', eq: { store_id: storeId, invoice_date: start }, }),
-      select('batches', { select: 'id', eq: { store_id: storeId }, gt: { current_stock_units: 0 }, }),
-      select('batches', { select: 'id', eq: { store_id: storeId }, gt: { current_stock_units: 0 }, lte: { expiry_date: expiryDate }, }),
+
+    const [sales, sales7d, purchases, batches, expiry] = await Promise.all([
+      select('sales', {
+        select: 'grand_total',
+        eq: { store_id: storeId, status: 'completed' },
+        gte: { bill_datetime: dayStart },
+        lt: { bill_datetime: dayEnd },
+      }),
+      select('sales', {
+        select: 'grand_total,bill_datetime',
+        eq: { store_id: storeId, status: 'completed' },
+        gte: { bill_datetime: weekStartIso },
+        lt: { bill_datetime: dayEnd },
+        order: [{ column: 'bill_datetime', ascending: true }],
+      }),
+      select('purchase_invoices', {
+        select: 'total_amount',
+        eq: { store_id: storeId, invoice_date: start },
+      }),
+      select('batches', {
+        select: 'id',
+        eq: { store_id: storeId },
+        gt: { current_stock_units: 0 },
+      }),
+      select('batches', {
+        select: 'id',
+        eq: { store_id: storeId },
+        gt: { current_stock_units: 0 },
+        lte: { expiry_date: expiryDate },
+      }),
     ])
-    return { sales, purchases, batches: (batches || []).filter(Boolean), expiry: (expiry || []).filter(Boolean), expiryDate }
+
+    return {
+      sales,
+      sales7d,
+      purchases,
+      batches: (batches || []).filter(Boolean),
+      expiry: (expiry || []).filter(Boolean),
+      expiryDate,
+    }
   },
 
   refreshAlerts(storeId) {
