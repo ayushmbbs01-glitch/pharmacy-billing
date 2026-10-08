@@ -668,6 +668,7 @@ h1, h2, h3, p { overflow-wrap: anywhere; }
   .profile-pill strong, .profile-chevron { display:none; }
   .profile-avatar { width:32px; height:32px; }
   .module-header { margin-bottom:14px; }
+  .date-pill { display:none; }
   .dashboard-stats { grid-template-columns:repeat(2,minmax(0,1fr)); }
   .dashboard-columns { grid-template-columns:1fr; }
 }
