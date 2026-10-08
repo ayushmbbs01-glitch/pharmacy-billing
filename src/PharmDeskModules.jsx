@@ -2380,6 +2380,7 @@ function PharmacyApp({ session }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [globalSearch, setGlobalSearch] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
+  const [globalSearchData, setGlobalSearchData] = useState([])
   const [store, setStore] = useState(null)  
   const [profile, setProfile] = useState(null)  
   const [loading, setLoading] = useState(true)  
@@ -2477,6 +2478,62 @@ function PharmacyApp({ session }) {
     }  
   }  
   
+  useEffect(() => {
+    const query = globalSearch.trim()
+    if (!query || !store?.id) {
+      setGlobalSearchData([])
+      return
+    }
+
+    let cancelled = false
+    const timer = setTimeout(async () => {
+      try {
+        const [products, customers] = await Promise.all([
+          PharmDeskAPI.searchProducts(store.id, query, 6),
+          PharmDeskAPI.customers(store.id, query),
+        ])
+
+        if (cancelled) return
+
+        const productResults = (products || []).slice(0, 6).map((product) => ({
+          type: 'product',
+          label: product.product_name || product.name || 'Product',
+          hint: [product.generic_display_name, product.manufacturer].filter(Boolean).join(' • ') || 'Open Inventory',
+          action: () => {
+            setActiveNav('Inventory')
+            setSearchOpen(false)
+            setGlobalSearch('')
+            setSidebarOpen(false)
+          },
+        }))
+
+        const customerResults = (customers || []).slice(0, 6).map((customer) => ({
+          type: 'customer',
+          label: customer.name || 'Customer',
+          hint: customer.phone ? `Customer • ${customer.phone}` : 'Open Customers',
+          action: () => {
+            setActiveNav('Customers')
+            setSearchOpen(false)
+            setGlobalSearch('')
+            setSidebarOpen(false)
+          },
+        }))
+
+        setGlobalSearchData([...productResults, ...customerResults])
+      } catch (error) {
+        if (!cancelled) {
+          console.error('Global search failed:', error)
+          setGlobalSearchData([])
+        }
+      }
+    }, 250)
+
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [globalSearch, store?.id])
+
   const navSearchItems = NAV_ITEMS.map((item) => ({
     type: 'nav',
     label: item,
@@ -2504,7 +2561,11 @@ function PharmacyApp({ session }) {
     },
   }))
 
-  const searchResults = [...navSearchItems, ...quickSearchItems].filter((item) =>
+  const searchResults = [
+    ...globalSearchData,
+    ...navSearchItems,
+    ...quickSearchItems,
+  ].filter((item) =>
     !globalSearch.trim() ||
     matchesSearch(globalSearch, item.label, item.hint),
   )
@@ -2609,12 +2670,12 @@ function PharmacyApp({ session }) {
                   event.currentTarget.blur()
                 }
               }}
-              placeholder="Search products, customers, invoices..."
+              placeholder="Search products or customers..."
             />
             {searchOpen && (
               <div className="global-search-results">
                 {searchResults.slice(0, 7).map((item) => (
-                  <button key={item.label} type="button" onClick={item.action}>
+                  <button key={`${item.type}-${item.label}`} type="button" onClick={item.action}>
                     <span>{item.label}</span>
                     <small>{item.hint}</small>
                   </button>
