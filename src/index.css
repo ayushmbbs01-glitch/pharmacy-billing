@@ -936,3 +936,27 @@ h1, h2, h3, p { overflow-wrap: anywhere; }
 @media (max-width: 600px) {
   .global-search-results { display: none; }
 }
+
+
+/* SEARCH DROPDOWN: keep it above dashboard content and fully opaque */
+.topbar {
+  position: relative;
+  z-index: 200;
+}
+.global-search {
+  z-index: 210;
+}
+.global-search-results {
+  z-index: 1000 !important;
+  background: #ffffff !important;
+  opacity: 1 !important;
+  isolation: isolate;
+  overflow: hidden;
+}
+.global-search-results button,
+.global-search-empty {
+  background: #ffffff;
+}
+.global-search-results button:hover {
+  background: #f2f8fd;
+}
