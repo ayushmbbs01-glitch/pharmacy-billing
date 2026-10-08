@@ -2494,7 +2494,7 @@ function Dashboard({ store, onNavigate }) {
     <div>
       <ModuleHeader
         title={greeting}
-        subtitle={store?.name ? `Here's what's happening at  today.` : 'Here’s your pharmacy overview for today.'}
+        subtitle={store?.name ? "Here's what's happening at " + store.name + " today." : 'Here’s your pharmacy overview for today.'}
       />
 
       <div className="stats-grid dashboard-stats">
