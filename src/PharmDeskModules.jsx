@@ -19015,18 +19015,20 @@ const [
    SHARED UI  
 ========================================================= */  
   
-function ModuleHeader({  
-  title,  
-  subtitle,  
-}) {  
-  return (  
-    <div className="module-header">  
-      <div>  
-        <h1>{title}</h1>  
-        <p>{subtitle}</p>  
-      </div>  
-    </div>  
-  )  
+function ModuleHeader({
+  title,
+  subtitle,
+  right,
+}) {
+  return (
+    <div className="module-header">
+      <div>
+        <h1>{title}</h1>
+        <p>{subtitle}</p>
+      </div>
+      {right}
+    </div>
+  )
 }  
   
 function TabBar({  
