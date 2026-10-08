@@ -2329,6 +2329,50 @@ function AppIcon({ name, size = 19 }) {
   )
 }
 
+function PharmDeskLogo({ compact = false }) {
+  return (
+    <div className={compact ? 'pharmdesk-logo-code compact' : 'pharmdesk-logo-code'}>
+      <svg className="pharmdesk-mark-code" viewBox="0 0 512 512" aria-hidden="true">
+        <defs>
+          <linearGradient id="pdBg" x1="0" y1="0" x2="1" y2="1">
+            <stop stopColor="#061a36" />
+            <stop offset=".55" stopColor="#0a3262" />
+            <stop offset="1" stopColor="#05172f" />
+          </linearGradient>
+          <linearGradient id="pdP" x1=".05" y1=".05" x2=".9" y2=".95">
+            <stop stopColor="#e8fbff" />
+            <stop offset=".35" stopColor="#70d2ff" />
+            <stop offset=".72" stopColor="#22a8f4" />
+            <stop offset="1" stopColor="#0871cc" />
+          </linearGradient>
+          <linearGradient id="pdInner" x1="0" y1="0" x2="1" y2="1">
+            <stop stopColor="#062d69" />
+            <stop offset=".55" stopColor="#0757aa" />
+            <stop offset="1" stopColor="#16a7f1" />
+          </linearGradient>
+          <radialGradient id="pdGlow">
+            <stop stopColor="#2db7ff" stopOpacity=".35" />
+            <stop offset="1" stopColor="#2db7ff" stopOpacity="0" />
+          </radialGradient>
+          <filter id="pdShadow">
+            <feDropShadow dx="0" dy="9" stdDeviation="9" floodColor="#00152e" floodOpacity=".5" />
+          </filter>
+        </defs>
+        <rect width="512" height="512" rx="108" fill="url(#pdBg)" />
+        <circle cx="330" cy="210" r="190" fill="url(#pdGlow)" />
+        <g filter="url(#pdShadow)">
+          <path d="M184 52h154c82 0 148 66 148 148s-66 148-148 148H260v38c0 58-47 105-105 105S50 444 50 386V184C50 111 111 52 184 52z" fill="url(#pdP)" />
+          <path d="M184 141h154c33 0 59 26 59 59s-26 59-59 59H260v-70h78c9 0 16-7 16-16s-7-16-16-16H184c-51 0-92 41-92 92v-26c0-45 37-82 82-82h10z" fill="url(#pdInner)" />
+          <rect x="190" y="151" width="126" height="59" rx="29.5" fill="url(#pdP)" />
+          <path d="M205 151h48v59h-48c-16 0-29-13-29-29.5s13-29.5 29-29.5z" fill="#fff" />
+          <rect x="267" y="164" width="38" height="8" rx="4" fill="#eafaff" />
+        </g>
+      </svg>
+      <span className="pharmdesk-wordmark"><span>Pharm</span><b>Desk</b></span>
+    </div>
+  )
+}
+
 function AuthBrandPanel() {
   return (
     <section className="auth-brand-panel">
