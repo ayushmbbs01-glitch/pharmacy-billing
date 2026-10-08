@@ -2572,6 +2572,12 @@ function Dashboard({ store, profile, onNavigate }) {
       <ModuleHeader
         title={`${greeting}, ${profile?.full_name || 'there'} 👋`}
         subtitle="Here's what's happening at your pharmacy today."
+        right={
+          <div className="date-pill">
+            <AppIcon name="calendar" size={15} />
+            <span>{new Date().toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</span>
+          </div>
+        }
       />
 
       <div className="stats-grid dashboard-stats">
