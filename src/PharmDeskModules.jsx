@@ -979,10 +979,10 @@ function LoginScreen() {
       >
         <div className="brand-mark"><img src="/icons/pharmdesk-logo.svg" alt="PharmDesk" /></div>
 
-        <h1>PharmDesk</h1>
+        <h1>Welcome to PharmDesk</h1>
 
         <p>
-          Medical store management made simple.
+          Sign in to continue
         </p>
 
         <div className="form-stack">
@@ -1031,7 +1031,7 @@ function LoginScreen() {
           >
             {busy
               ? 'Signing in…'
-              : 'Sign in'}
+              : 'Sign In'}
           </button>
 
           <button
