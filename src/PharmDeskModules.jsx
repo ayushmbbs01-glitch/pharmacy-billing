@@ -2541,6 +2541,7 @@ function Dashboard({ store, onNavigate }) {
     purchases: 0,
     batches: 0,
     expiry: 0,
+    sales7d: [],
   })
 
   useEffect(() => {
@@ -2554,6 +2555,7 @@ function Dashboard({ store, onNavigate }) {
           purchases: sum((snapshot.purchases || []).map((x) => x.total_amount)),
           batches: snapshot.batches?.length || 0,
           expiry: snapshot.expiry?.length || 0,
+          sales7d: snapshot.sales7d || [],
         })
       } catch (error) {
         console.error('Dashboard load error:', error)
@@ -2591,12 +2593,26 @@ function Dashboard({ store, onNavigate }) {
           <div className="mini-chart">
             <div className="chart-y"><span>₹</span><span>0</span></div>
             <div className="chart-bars">
-              {[28, 42, 35, 55, 46, 68, 58].map((height, index) => (
-                <div className="chart-column" key={index}>
-                  <div className="chart-bar" style={{height: `${height}%`}} />
-                  <span>{['Mon','Tue','Wed','Thu','Fri','Sat','Sun'][index]}</span>
-                </div>
-              ))}
+              {(() => {
+                const days = Array.from({ length: 7 }, (_, index) => {
+                  const day = new Date()
+                  day.setDate(day.getDate() - (6 - index))
+                  const key = localDateISO(day)
+                  const total = sum(
+                    (stats.sales7d || [])
+                      .filter((sale) => localDateISO(sale.bill_datetime) === key)
+                      .map((sale) => sale.grand_total),
+                  )
+                  return { key, label: day.toLocaleDateString('en-IN', { weekday: 'short' }), total }
+                })
+                const max = Math.max(...days.map((day) => day.total), 1)
+                return days.map((day) => (
+                  <div className="chart-column" key={day.key}>
+                    <div className="chart-bar" style={{ height: `${Math.max(4, (day.total / max) * 100)}%` }} title={money(day.total)} />
+                    <span>{day.label}</span>
+                  </div>
+                ))
+              })()}
             </div>
           </div>
         </section>
