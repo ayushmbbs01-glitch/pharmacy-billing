@@ -480,7 +480,7 @@ function LoadingScreen() {
   return (
     <div className="loading-screen">
       <div className="loading-card">
-        <div className="loading-logo"><img src="/icons/pharmdesk-logo.svg" alt="PharmDesk" /></div>
+        <div className="loading-logo primary-logo-display"><img src="/icons/pharmdesk-primary.svg" alt="PharmDesk" /></div>
         <p>Loading…</p>
       </div>
     </div>
@@ -2370,7 +2370,7 @@ function AuthBrandPanel() {
       <div className="auth-brand-orb orb-one" />
       <div className="auth-brand-orb orb-two" />
       <div className="auth-brand-content">
-        <PharmDeskLogo />
+        <img className="auth-brand-primary-logo" src="/icons/pharmdesk-primary.svg" alt="PharmDesk" />
         <h2>Smart Pharmacy Management</h2>
         <p>Everything your pharmacy needs in one place.</p>
         <div className="auth-brand-features">
