@@ -388,6 +388,7 @@ h1, h2, h3, p { overflow-wrap: anywhere; }
 ========================================================= */
 
 .auth-screen {
+  position: relative;
   min-height: 100vh;
   display: grid;
   grid-template-columns: minmax(390px, 42%) minmax(460px, 58%);
@@ -435,6 +436,10 @@ h1, h2, h3, p { overflow-wrap: anywhere; }
   place-items: center;
   padding: 40px 7vw;
   position: relative;
+}
+.auth-screen > .auth-card {
+  align-self: center;
+  justify-self: center;
 }
 .auth-card {
   width: min(455px, 100%);
