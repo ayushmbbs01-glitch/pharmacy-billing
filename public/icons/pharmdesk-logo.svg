@@ -1,12 +1,21 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 700">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" role="img" aria-labelledby="title desc">
+<title id="title">PharmDesk</title><desc id="desc">PharmDesk logo</desc>
 <defs>
-  <linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#dff6ff"/><stop offset=".52" stop-color="#52bdf7"/><stop offset="1" stop-color="#1688dc"/></linearGradient>
-  <linearGradient id="d" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#062c67"/><stop offset="1" stop-color="#148fe8"/></linearGradient>
+<linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#071d3b"/><stop offset=".55" stop-color="#0a3262"/><stop offset="1" stop-color="#061a34"/></linearGradient>
+<radialGradient id="glow" cx=".58" cy=".38" r=".55"><stop stop-color="#20a9ff" stop-opacity=".30"/><stop offset="1" stop-color="#20a9ff" stop-opacity="0"/></radialGradient>
+<linearGradient id="p" x1=".1" y1=".05" x2=".9" y2=".95"><stop stop-color="#e8fbff"/><stop offset=".35" stop-color="#72d4ff"/><stop offset=".7" stop-color="#26aaf4"/><stop offset="1" stop-color="#0b73cf"/></linearGradient>
+<linearGradient id="inner" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#062d69"/><stop offset=".55" stop-color="#0757aa"/><stop offset="1" stop-color="#16a7f1"/></linearGradient>
+<filter id="shadow" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="14" stdDeviation="16" flood-color="#00152e" flood-opacity=".45"/></filter>
+<filter id="soft"><feGaussianBlur stdDeviation="12"/></filter>
 </defs>
-<path d="M285 55c-105 0-190 85-190 190v250c0 64 52 116 116 116s116-52 116-116V455h170c159 0 288-129 288-288 0-62-50-112-112-112H285z" fill="url(#g)"/>
-<path d="M285 195h330c74 0 134 60 134 134s-60 134-134 134H327V351h288c12 0 22-10 22-22s-10-22-22-22H285c-87 0-158 71-158 158V245c0-28 22-50 50-50h108z" fill="url(#d)" opacity=".98"/>
-<rect x="335" y="243" width="240" height="112" rx="56" fill="url(#g)"/>
-<path d="M365 243h90v112h-90c-31 0-56-25-56-56s25-56 56-56z" fill="#fff" opacity=".96"/>
-<rect x="472" y="267" width="70" height="14" rx="7" fill="#e8f9ff"/>
-<text x="500" y="665" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="108" font-weight="800" letter-spacing="-5" fill="#fff">Pharm<tspan fill="#61c6ff">Desk</tspan></text>
+<rect x="28" y="28" width="1144" height="844" rx="92" fill="url(#bg)"/>
+<ellipse cx="720" cy="310" rx="410" ry="330" fill="url(#glow)" filter="url(#soft)"/>
+<g filter="url(#shadow)">
+<path d="M426 88c-118 0-214 96-214 214v288c0 73 59 132 132 132s132-59 132-132v-62h176c190 0 344-154 344-344 0-54-44-96-98-96H426z" fill="url(#p)"/>
+<path d="M425 249h332c78 0 141 63 141 141s-63 141-141 141H476v-92h281c27 0 49-22 49-49s-22-49-49-49H425c-72 0-130 58-130 130V350c0-56 45-101 101-101h29z" fill="url(#inner)"/>
+<rect x="487" y="292" width="250" height="118" rx="59" fill="url(#p)"/>
+<path d="M516 292h94v118h-94c-33 0-59-26-59-59s26-59 59-59z" fill="#fff"/>
+<rect x="640" y="318" width="78" height="15" rx="7.5" fill="#eafaff"/>
+</g>
+<text x="600" y="790" text-anchor="middle" font-family="Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="122" font-weight="850" letter-spacing="-6" fill="#fff">Pharm<tspan fill="#63c9ff">Desk</tspan></text>
 </svg>
