@@ -2418,7 +2418,7 @@ function PharmacyApp({ session }) {
   const renderPage = () => {  
     switch (activeNav) {  
       case 'Dashboard':  
-        return <Dashboard store={store} onNavigate={setActiveNav} />  
+        return <Dashboard store={store} profile={profile} onNavigate={setActiveNav} />  
   
       case 'Sales':  
         return <SalesModule store={store} session={session} />  
@@ -2520,7 +2520,7 @@ function PharmacyApp({ session }) {
             </button>
             <div className="profile-pill">
               <span className="profile-avatar">{(profile?.full_name || session.user.email || 'A').charAt(0).toUpperCase()}</span>
-              <strong>{profile?.full_name || 'Admin'}</strong>
+              <strong>{profile?.full_name || session.user.email?.split('@')[0] || 'User'}</strong>
               <span className="profile-chevron">⌄</span>
             </div>
           </div>
@@ -2535,7 +2535,7 @@ function PharmacyApp({ session }) {
    DASHBOARD  
 ========================================================= */  
   
-function Dashboard({ store, onNavigate }) {
+function Dashboard({ store, profile, onNavigate }) {
   const [stats, setStats] = useState({
     sales: 0,
     purchases: 0,
@@ -2570,8 +2570,8 @@ function Dashboard({ store, onNavigate }) {
   return (
     <div>
       <ModuleHeader
-        title={greeting}
-        subtitle={store?.name ? "Here's what's happening at " + store.name + " today." : 'Here’s your pharmacy overview for today.'}
+        title={`${greeting}, ${profile?.full_name || 'there'} 👋`}
+        subtitle="Here's what's happening at your pharmacy today."
       />
 
       <div className="stats-grid dashboard-stats">
