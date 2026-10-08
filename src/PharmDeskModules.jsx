@@ -2381,6 +2381,7 @@ function PharmacyApp({ session }) {
   const [globalSearch, setGlobalSearch] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
   const [globalSearchData, setGlobalSearchData] = useState([])
+  const globalSearchRef = useRef(null)
   const [store, setStore] = useState(null)  
   const [profile, setProfile] = useState(null)  
   const [loading, setLoading] = useState(true)  
@@ -2438,6 +2439,28 @@ function PharmacyApp({ session }) {
     setLoading(false)
   }
 }
+
+  useEffect(() => {
+    const handleOutsideSearchClick = (event) => {
+      if (!globalSearchRef.current?.contains(event.target)) {
+        setSearchOpen(false)
+      }
+    }
+
+    const handleSearchEscape = (event) => {
+      if (event.key === 'Escape') {
+        setSearchOpen(false)
+      }
+    }
+
+    document.addEventListener('pointerdown', handleOutsideSearchClick)
+    document.addEventListener('keydown', handleSearchEscape)
+
+    return () => {
+      document.removeEventListener('pointerdown', handleOutsideSearchClick)
+      document.removeEventListener('keydown', handleSearchEscape)
+    }
+  }, [])
 
   useEffect(() => {
     const query = globalSearch.trim()
@@ -2590,6 +2613,8 @@ function PharmacyApp({ session }) {
             onClick={() => {
               setActiveNav('Dashboard')
               setSidebarOpen(false)
+              setSearchOpen(false)
+              setGlobalSearch('')
             }}
             aria-label="Go to dashboard"
           >
@@ -2605,6 +2630,8 @@ function PharmacyApp({ session }) {
               onClick={() => {
                 setActiveNav(item)
                 setSidebarOpen(false)
+                setSearchOpen(false)
+                setGlobalSearch('')
               }}
             >
               <AppIcon name={{
@@ -2654,15 +2681,17 @@ function PharmacyApp({ session }) {
             <AppIcon name="menu" size={22} />
           </button>
 
-          <form className="global-search" onSubmit={submitGlobalSearch}>
+          <form ref={globalSearchRef} className="global-search" onSubmit={submitGlobalSearch}>
             <AppIcon name="search" size={18} />
             <input
               aria-label="Search PharmDesk"
               value={globalSearch}
-              onFocus={() => setSearchOpen(true)}
+              onFocus={() => {
+                if (globalSearch.trim()) setSearchOpen(true)
+              }
               onChange={(event) => {
                 setGlobalSearch(event.target.value)
-                setSearchOpen(true)
+                setSearchOpen(Boolean(event.target.value.trim()))
               }}
               onKeyDown={(event) => {
                 if (event.key === 'Escape') {
