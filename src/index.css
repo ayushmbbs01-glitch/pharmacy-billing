@@ -57,7 +57,10 @@ h1, h2, h3, p { overflow-wrap: anywhere; }
 .auth-card p, .loading-card p { color: var(--muted); margin: 0 0 18px; line-height: 1.5; }
 .brand-mark {
   width: 52px; height: 52px; display: grid; place-items: center; border-radius: 15px;
-  background: var(--navy); color: #fff; font-size: 24px; font-weight: 800; margin-bottom: 20px;
+  background: var(--navy); color: #fff; font-size: 24px; font-weight: 800; margin-bottom: 20px; overflow: hidden;
+}
+.brand-mark img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.brand-mark.small img { width: 100%; height: 100%; object-fit: contain; display: block; }
 }
 .brand-mark.small { width: 38px; height: 38px; border-radius: 11px; font-size: 18px; margin: 0; }
 .form-stack { display: flex; flex-direction: column; gap: 16px; }
