@@ -2439,8 +2439,6 @@ function PharmacyApp({ session }) {
   }
 }
 
-  if (loading) return <LoadingScreen />  
-  
   useEffect(() => {
     const query = globalSearch.trim()
     if (!query || !store?.id) {
@@ -2497,6 +2495,8 @@ function PharmacyApp({ session }) {
     }
   }, [globalSearch, store?.id])
 
+  if (loading) return <LoadingScreen />  
+  
   const renderPage = () => {  
     switch (activeNav) {  
       case 'Dashboard':  
