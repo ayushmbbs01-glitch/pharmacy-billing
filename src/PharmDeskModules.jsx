@@ -2372,7 +2372,7 @@ function PharmacyApp({ session }) {
   const renderPage = () => {  
     switch (activeNav) {  
       case 'Dashboard':  
-        return <Dashboard store={store} />  
+        return <Dashboard store={store} onNavigate={setActiveNav} />  
   
       case 'Sales':  
         return <SalesModule store={store} session={session} />  
@@ -2460,14 +2460,14 @@ function PharmacyApp({ session }) {
    DASHBOARD  
 ========================================================= */  
   
-function Dashboard({ store }) {  
-  const [stats, setStats] = useState({  
-    sales: 0,  
-    purchases: 0,  
-    batches: 0,  
-    expiry: 0,  
-  })  
-  
+function Dashboard({ store, onNavigate }) {
+  const [stats, setStats] = useState({
+    sales: 0,
+    purchases: 0,
+    batches: 0,
+    expiry: 0,
+  })
+
   useEffect(() => {
     if (!store?.id) return
     const load = async () => {
@@ -2485,45 +2485,68 @@ function Dashboard({ store }) {
       }
     }
     load()
-  }, [store?.id])  
-  
-  return (  
-    <div>  
-      <ModuleHeader  
-        title="Dashboard"  
-        subtitle={store?.name || 'Pharmacy overview'}  
-      />  
-  
-      <div className="stats-grid">  
-        <StatCard  
-          title="Today's Sales"  
-          value={money(stats.sales)}  
-        />  
-  
-        <StatCard  
-          title="Today's Purchases"  
-          value={money(stats.purchases)}  
-        />  
-  
-        <StatCard  
-          title="Stock Batches"  
-          value={stats.batches}  
-        />  
-  
-        <StatCard  
-          title="Near Expiry"  
-          value={stats.expiry}  
-        />  
-      </div>  
-  
-      <PanelList title="PharmDesk">  
-        <p className="muted">  
-          Your pharmacy data is stored in Supabase and is not  
-          dependent on the browser remaining open.  
-        </p>  
-      </PanelList>  
-    </div>  
-  )  
+  }, [store?.id])
+
+  const hour = new Date().getHours()
+  const greeting = hour < 12 ? 'Good Morning' : hour < 17 ? 'Good Afternoon' : 'Good Evening'
+
+  return (
+    <div>
+      <ModuleHeader
+        title={greeting}
+        subtitle={store?.name ? `Here's what's happening at  today.` : 'Here’s your pharmacy overview for today.'}
+      />
+
+      <div className="stats-grid dashboard-stats">
+        <StatCard title="Today's Sales" value={money(stats.sales)} />
+        <StatCard title="Today's Purchases" value={money(stats.purchases)} />
+        <StatCard title="Stock Batches" value={stats.batches} />
+        <StatCard title="Near Expiry" value={stats.expiry} />
+      </div>
+
+      <section className="dashboard-quick panel">
+        <div className="panel-header">
+          <div>
+            <h2>Quick Actions</h2>
+            <p className="muted">Jump directly into the tasks you use most.</p>
+          </div>
+        </div>
+        <div className="quick-action-grid">
+          <button type="button" className="quick-action" onClick={() => onNavigate?.('Sales')}>
+            <span className="quick-action-icon">₹</span>
+            <strong>New Sale</strong>
+            <small>Create a bill</small>
+          </button>
+          <button type="button" className="quick-action" onClick={() => onNavigate?.('Purchases')}>
+            <span className="quick-action-icon">+</span>
+            <strong>New Purchase</strong>
+            <small>Record stock</small>
+          </button>
+          <button type="button" className="quick-action" onClick={() => onNavigate?.('Inventory')}>
+            <span className="quick-action-icon">▣</span>
+            <strong>Inventory</strong>
+            <small>Manage products</small>
+          </button>
+          <button type="button" className="quick-action" onClick={() => onNavigate?.('Customers')}>
+            <span className="quick-action-icon">◉</span>
+            <strong>Customers</strong>
+            <small>View customer records</small>
+          </button>
+          <button type="button" className="quick-action" onClick={() => onNavigate?.('Reports')}>
+            <span className="quick-action-icon">↗</span>
+            <strong>Reports</strong>
+            <small>Review performance</small>
+          </button>
+        </div>
+      </section>
+
+      <PanelList title="PharmDesk">
+        <p className="muted">
+          Your pharmacy data is stored in Supabase and is not dependent on the browser remaining open.
+        </p>
+      </PanelList>
+    </div>
+  )
 }  
   
 function StatCard({ title, value }) {  
