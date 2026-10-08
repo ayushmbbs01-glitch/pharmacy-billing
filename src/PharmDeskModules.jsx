@@ -2441,43 +2441,6 @@ function PharmacyApp({ session }) {
 
   if (loading) return <LoadingScreen />  
   
-  const renderPage = () => {  
-    switch (activeNav) {  
-      case 'Dashboard':  
-        return <Dashboard store={store} profile={profile} onNavigate={setActiveNav} />  
-  
-      case 'Sales':  
-        return <SalesModule store={store} session={session} />  
-  
-      case 'Purchases':  
-        return <PurchasesModule store={store} session={session} />  
-  
-      case 'Inventory':  
-        return <InventoryModule store={store} session={session} />  
-  
-      case 'Customers':  
-        return <CustomersModule store={store} />  
-  
-      case 'Reports':  
-        return <Reports store={store} />  
-  
-      case 'Alerts':  
-        return <AlertsModule store={store} />  
-  
-      case 'Settings':  
-        return (  
-          <SettingsModule  
-            store={store}  
-            profile={profile}  
-            onStoreUpdated={setStore}  
-          />  
-        )  
-  
-      default:  
-        return null  
-    }  
-  }  
-  
   useEffect(() => {
     const query = globalSearch.trim()
     if (!query || !store?.id) {
@@ -2534,6 +2497,43 @@ function PharmacyApp({ session }) {
     }
   }, [globalSearch, store?.id])
 
+  const renderPage = () => {  
+    switch (activeNav) {  
+      case 'Dashboard':  
+        return <Dashboard store={store} profile={profile} onNavigate={setActiveNav} />  
+  
+      case 'Sales':  
+        return <SalesModule store={store} session={session} />  
+  
+      case 'Purchases':  
+        return <PurchasesModule store={store} session={session} />  
+  
+      case 'Inventory':  
+        return <InventoryModule store={store} session={session} />  
+  
+      case 'Customers':  
+        return <CustomersModule store={store} />  
+  
+      case 'Reports':  
+        return <Reports store={store} />  
+  
+      case 'Alerts':  
+        return <AlertsModule store={store} />  
+  
+      case 'Settings':  
+        return (  
+          <SettingsModule  
+            store={store}  
+            profile={profile}  
+            onStoreUpdated={setStore}  
+          />  
+        )  
+  
+      default:  
+        return null  
+    }  
+  }  
+  
   const navSearchItems = NAV_ITEMS.map((item) => ({
     type: 'nav',
     label: item,
