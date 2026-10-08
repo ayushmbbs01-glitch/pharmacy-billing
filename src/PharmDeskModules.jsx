@@ -480,7 +480,7 @@ function LoadingScreen() {
   return (
     <div className="loading-screen">
       <div className="loading-card">
-        <div className="loading-logo primary-logo-display"><img src="/icons/pharmdesk-primary.svg" alt="PharmDesk" /></div>
+        <div className="loading-logo primary-logo-display"><img src="/icons/pharmdesk-primary-light.svg" alt="PharmDesk" /></div>
         <p>Loading…</p>
       </div>
     </div>
