@@ -2688,7 +2688,7 @@ function PharmacyApp({ session }) {
               value={globalSearch}
               onFocus={() => {
                 if (globalSearch.trim()) setSearchOpen(true)
-              }
+              }}
               onChange={(event) => {
                 setGlobalSearch(event.target.value)
                 setSearchOpen(Boolean(event.target.value.trim()))
