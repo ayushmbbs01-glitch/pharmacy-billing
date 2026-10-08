@@ -2382,10 +2382,7 @@ function PharmacyApp({ session }) {
   const [searchOpen, setSearchOpen] = useState(false)
   const [globalSearchData, setGlobalSearchData] = useState([])
   const globalSearchRef = useRef(null)
-  const storeSwitcherRef = useRef(null)
-  const [store, setStore] = useState(null)
-  const [stores, setStores] = useState([])
-  const [storeSwitcherOpen, setStoreSwitcherOpen] = useState(false)  
+  const [store, setStore] = useState(null)  
   const [profile, setProfile] = useState(null)  
   const [loading, setLoading] = useState(true)  
   
@@ -2430,20 +2427,13 @@ function PharmacyApp({ session }) {
       userProfile || null,
     )
 
-    const storesForUser =
+    const stores =
       await PharmDeskAPI.getStoresForUser(
         session.user.id,
       )
 
-    setStores(storesForUser || [])
-
-    const savedStoreId = window.localStorage.getItem('pharmdesk_active_store_id')
-    const savedStore = (storesForUser || []).find(
-      (candidate) => candidate.id === savedStoreId,
-    )
-
     setStore(
-      savedStore || storesForUser?.[0] || null,
+      stores?.[0] || null,
     )
   } finally {
     setLoading(false)
@@ -2455,15 +2445,11 @@ function PharmacyApp({ session }) {
       if (!globalSearchRef.current?.contains(event.target)) {
         setSearchOpen(false)
       }
-      if (!storeSwitcherRef.current?.contains(event.target)) {
-        setStoreSwitcherOpen(false)
-      }
     }
 
     const handleSearchEscape = (event) => {
       if (event.key === 'Escape') {
         setSearchOpen(false)
-        setStoreSwitcherOpen(false)
       }
     }
 
@@ -2663,55 +2649,13 @@ function PharmacyApp({ session }) {
           ))}
         </nav>
 
-        <div className="sidebar-store-wrap" ref={storeSwitcherRef}>
-          <button
-            className="sidebar-store"
-            type="button"
-            onClick={() => setStoreSwitcherOpen((current) => !current)}
-            aria-expanded={storeSwitcherOpen}
-            aria-label="Switch pharmacy store"
-          >
-            <div className="sidebar-store-icon"><AppIcon name="inventory" size={18} /></div>
-            <div>
-              <strong>{store?.name || 'Medical Store'}</strong>
-              <span>{stores.length > 1 ? 'Switch store' : 'Main Store'}</span>
-            </div>
-            <AppIcon name="arrow" size={16} />
-          </button>
-
-          {storeSwitcherOpen && (
-            <div className="store-switcher-menu">
-              <div className="store-switcher-title">Your stores</div>
-              {stores.map((candidate) => (
-                <button
-                  key={candidate.id}
-                  type="button"
-                  className={candidate.id === store?.id ? 'store-switcher-option active' : 'store-switcher-option'}
-                  onClick={() => {
-                    setStore(candidate)
-                    window.localStorage.setItem('pharmdesk_active_store_id', candidate.id)
-                    setStoreSwitcherOpen(false)
-                    setActiveNav('Dashboard')
-                    setSidebarOpen(false)
-                    setSearchOpen(false)
-                    setGlobalSearch('')
-                  }}
-                >
-                  <span className="store-option-icon"><AppIcon name="inventory" size={15} /></span>
-                  <span>
-                    <strong>{candidate.name || 'Medical Store'}</strong>
-                    <small>{candidate.id === store?.id ? 'Currently selected' : 'Switch to this store'}</small>
-                  </span>
-                  {candidate.id === store?.id && <span className="store-option-check">✓</span>}
-                </button>
-              ))}
-              {stores.length <= 1 && (
-                <div className="store-switcher-note">
-                  Your account currently has access to one store.
-                </div>
-              )}
-            </div>
-          )}
+        <div className="sidebar-store">
+          <div className="sidebar-store-icon"><AppIcon name="inventory" size={18} /></div>
+          <div>
+            <strong>{store?.name || 'Medical Store'}</strong>
+            <span>Main Store</span>
+          </div>
+          <AppIcon name="arrow" size={16} />
         </div>
 
         <button className="logout-button" onClick={() => PharmDeskAPI.signOut()}>
