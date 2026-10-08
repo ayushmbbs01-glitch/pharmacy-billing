@@ -371,16 +371,16 @@ export const PharmDeskAPI = {
 
   async dashboardSnapshot(storeId, date, expiryDays = 90) {
     const start = date || new Date().toISOString().slice(0, 10)
-    const startDate = new Date(\`${start}T00:00:00\`)
+    const startDate = new Date(`${start}T00:00:00`)
     const nextDate = new Date(startDate)
     nextDate.setDate(nextDate.getDate() + 1)
     const weekStart = new Date(startDate)
     weekStart.setDate(weekStart.getDate() - 6)
 
     const isoDate = (value) => value.toISOString().slice(0, 10)
-    const dayStart = \`${start}T00:00:00\`
-    const dayEnd = \`${isoDate(nextDate)}T00:00:00\`
-    const weekStartIso = \`${isoDate(weekStart)}T00:00:00\`
+    const dayStart = `${start}T00:00:00`
+    const dayEnd = `${isoDate(nextDate)}T00:00:00`
+    const weekStartIso = `${isoDate(weekStart)}T00:00:00`
 
     const expiryLimit = new Date(startDate)
     expiryLimit.setDate(expiryLimit.getDate() + Number(expiryDays || 90))
