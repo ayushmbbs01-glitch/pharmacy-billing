@@ -2306,6 +2306,52 @@ function StoreApplicationGate({ session }) {
    MAIN SHELL  
 ========================================================= */  
   
+function AppIcon({ name, size = 19 }) {
+  const paths = {
+    dashboard: <><rect x="3" y="3" width="7" height="7" rx="1.2"/><rect x="14" y="3" width="7" height="7" rx="1.2"/><rect x="3" y="14" width="7" height="7" rx="1.2"/><rect x="14" y="14" width="7" height="7" rx="1.2"/></>,
+    sales: <><path d="M4 5h17l-2 9H7L5 3H2"/><circle cx="9" cy="19" r="1.5"/><circle cx="18" cy="19" r="1.5"/></>,
+    purchases: <><path d="M6 3h12l3 5v12H3V8l3-5Z"/><path d="M3 8h18M9 3v5m6-5v5"/></>,
+    inventory: <><path d="m12 3 8 4.5v9L12 21l-8-4.5v-9L12 3Z"/><path d="m4 7.5 8 4.5 8-4.5M12 12v9"/></>,
+    customers: <><circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.2 2.7-5 6-5s6 1.8 6 5"/><circle cx="17" cy="9" r="2.5"/><path d="M16 14c2.8.2 4.5 1.8 4.5 4"/></>,
+    reports: <><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></>,
+    alerts: <><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></>,
+    settings: <><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/><circle cx="12" cy="12" r="4"/></>,
+    menu: <><path d="M4 7h16M4 12h16M4 17h16"/></>,
+    search: <><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></>,
+    bell: <><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></>,
+    calendar: <><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4M17 3v4M3 10h18"/></>,
+    arrow: <><path d="M5 12h14M13 6l6 6-6 6"/></>,
+  }
+  return (
+    <svg className="app-icon" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {paths[name] || paths.dashboard}
+    </svg>
+  )
+}
+
+function AuthBrandPanel() {
+  return (
+    <section className="auth-brand-panel">
+      <div className="auth-brand-glow" />
+      <div className="auth-brand-content">
+        <img className="auth-brand-icon" src="/icons/pharmdesk-icon.svg" alt="PharmDesk" />
+        <h2>Pharm<span>Desk</span></h2>
+        <strong>Smart Pharmacy Management</strong>
+        <p>Billing&nbsp;&nbsp;•&nbsp;&nbsp;Inventory&nbsp;&nbsp;•&nbsp;&nbsp;Purchases&nbsp;&nbsp;•&nbsp;&nbsp;Reports</p>
+      </div>
+    </section>
+  )
+}
+
+function AuthShell({ children }) {
+  return (
+    <div className="auth-screen">
+      <AuthBrandPanel />
+      <div className="auth-form-side">{children}</div>
+    </div>
+  )
+}
+
 function PharmacyApp({ session }) {  
   const [activeNav, setActiveNav] = useState('Dashboard')
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -2406,54 +2452,83 @@ function PharmacyApp({ session }) {
     }  
   }  
   
-  return (  
-    <div className="app-shell">  
-    {sidebarOpen && (
-  <div
-    className="nav-overlay"
-    onClick={() => setSidebarOpen(false)}
-  />
-)}
+  return (
+    <div className="app-shell">
+      {sidebarOpen && (
+        <div className="nav-overlay" onClick={() => setSidebarOpen(false)} />
+      )}
 
-<aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
-  <div className="brand">
-    <div className="brand-logo"><img src="/icons/pharmdesk-logo.svg" alt="PharmDesk" /></div>
-  <div className="brand-caption">
-    <strong>PharmDesk</strong>
-    <span>Pharmacy Management</span>
-  </div>
-  </div>
+      <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
+        <div className="brand">
+          <div className="brand-logo compact">
+            <img src="/icons/pharmdesk-logo.svg" alt="PharmDesk" />
+          </div>
+        </div>
 
-  <nav>
-    {NAV_ITEMS.map((item) => (
-      <button
-        key={item}
-        className={
-          activeNav === item
-            ? 'nav-item active'
-            : 'nav-item'
-        }
-        onClick={() => {
-          setActiveNav(item)
-          setSidebarOpen(false)
-        }}
-      >
-        {item}
-      </button>
-    ))}
-  </nav>
+        <nav>
+          {NAV_ITEMS.map((item) => (
+            <button
+              key={item}
+              className={activeNav === item ? 'nav-item active' : 'nav-item'}
+              onClick={() => {
+                setActiveNav(item)
+                setSidebarOpen(false)
+              }}
+            >
+              <AppIcon name={{
+                Dashboard: 'dashboard',
+                Sales: 'sales',
+                Purchases: 'purchases',
+                Inventory: 'inventory',
+                Customers: 'customers',
+                Reports: 'reports',
+                Alerts: 'alerts',
+                Settings: 'settings',
+              }[item]} />
+              <span>{item}</span>
+            </button>
+          ))}
+        </nav>
 
-  <button
-    className="logout-button"
-    onClick={() => PharmDeskAPI.signOut()}
-  >
-    Sign out
-  </button>
-</aside>
-  
-      <main className="main-content">{renderPage()}</main>  
-    </div>  
-  )  
+        <div className="sidebar-store">
+          <div className="sidebar-store-icon"><AppIcon name="inventory" size={18} /></div>
+          <div>
+            <strong>{store?.name || 'Medical Store'}</strong>
+            <span>Main Store</span>
+          </div>
+          <AppIcon name="arrow" size={16} />
+        </div>
+
+        <button className="logout-button" onClick={() => PharmDeskAPI.signOut()}>
+          Sign out
+        </button>
+      </aside>
+
+      <main className="main-content">
+        <header className="topbar">
+          <button className="topbar-menu" type="button" onClick={() => setSidebarOpen(true)} aria-label="Open menu">
+            <AppIcon name="menu" size={21} />
+          </button>
+          <div className="global-search">
+            <AppIcon name="search" size={18} />
+            <input aria-label="Search" placeholder="Search products, customers, invoices..." />
+          </div>
+          <div className="topbar-actions">
+            <button className="icon-button notification-button" type="button" aria-label="Notifications">
+              <AppIcon name="bell" size={20} />
+              <span className="notification-dot" />
+            </button>
+            <div className="profile-pill">
+              <span className="profile-avatar">{(profile?.full_name || session.user.email || 'A').charAt(0).toUpperCase()}</span>
+              <strong>{profile?.full_name || 'Admin'}</strong>
+              <span className="profile-chevron">⌄</span>
+            </div>
+          </div>
+        </header>
+        {renderPage()}
+      </main>
+    </div>
+  )
 }  
   
 /* =========================================================  
@@ -2498,10 +2573,56 @@ function Dashboard({ store, onNavigate }) {
       />
 
       <div className="stats-grid dashboard-stats">
-        <StatCard title="Today's Sales" value={money(stats.sales)} />
-        <StatCard title="Today's Purchases" value={money(stats.purchases)} />
-        <StatCard title="Stock Batches" value={stats.batches} />
-        <StatCard title="Near Expiry" value={stats.expiry} />
+        <StatCard title="Today's Sales" value={money(stats.sales)} icon="sales" />
+        <StatCard title="Today's Purchases" value={money(stats.purchases)} icon="purchases" />
+        <StatCard title="Stock Batches" value={stats.batches} icon="customers" />
+        <StatCard title="Near Expiry" value={stats.expiry} icon="inventory" />
+      </div>
+
+      <div className="dashboard-columns">
+        <section className="panel sales-overview">
+          <div className="panel-header">
+            <div>
+              <h2>Sales Overview</h2>
+              <p className="muted">Today's completed sales</p>
+            </div>
+            <span className="range-pill">Today</span>
+          </div>
+          <div className="mini-chart">
+            <div className="chart-y"><span>₹</span><span>0</span></div>
+            <div className="chart-bars">
+              {[28, 42, 35, 55, 46, 68, 58].map((height, index) => (
+                <div className="chart-column" key={index}>
+                  <div className="chart-bar" style={{height: `${height}%`}} />
+                  <span>{['Mon','Tue','Wed','Thu','Fri','Sat','Sun'][index]}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="panel recent-activity">
+          <div className="panel-header">
+            <div>
+              <h2>Quick Actions</h2>
+              <p className="muted">Common tasks</p>
+            </div>
+          </div>
+          <div className="activity-list">
+            <button type="button" className="activity-item" onClick={() => onNavigate?.('Sales')}>
+              <span className="activity-icon"><AppIcon name="sales" size={17} /></span>
+              <span><strong>New Sale</strong><small>Create a customer bill</small></span>
+            </button>
+            <button type="button" className="activity-item" onClick={() => onNavigate?.('Purchases')}>
+              <span className="activity-icon"><AppIcon name="purchases" size={17} /></span>
+              <span><strong>New Purchase</strong><small>Record incoming stock</small></span>
+            </button>
+            <button type="button" className="activity-item" onClick={() => onNavigate?.('Inventory')}>
+              <span className="activity-icon"><AppIcon name="inventory" size={17} /></span>
+              <span><strong>Inventory</strong><small>Check products and stock</small></span>
+            </button>
+          </div>
+        </section>
       </div>
 
       <section className="dashboard-quick panel">
@@ -2513,49 +2634,44 @@ function Dashboard({ store, onNavigate }) {
         </div>
         <div className="quick-action-grid">
           <button type="button" className="quick-action" onClick={() => onNavigate?.('Sales')}>
-            <span className="quick-action-icon">₹</span>
+            <span className="quick-action-icon"><AppIcon name="sales" size={18} /></span>
             <strong>New Sale</strong>
             <small>Create a bill</small>
           </button>
           <button type="button" className="quick-action" onClick={() => onNavigate?.('Purchases')}>
-            <span className="quick-action-icon">+</span>
+            <span className="quick-action-icon"><AppIcon name="purchases" size={18} /></span>
             <strong>New Purchase</strong>
             <small>Record stock</small>
           </button>
           <button type="button" className="quick-action" onClick={() => onNavigate?.('Inventory')}>
-            <span className="quick-action-icon">▣</span>
+            <span className="quick-action-icon"><AppIcon name="inventory" size={18} /></span>
             <strong>Inventory</strong>
             <small>Manage products</small>
           </button>
           <button type="button" className="quick-action" onClick={() => onNavigate?.('Customers')}>
-            <span className="quick-action-icon">◉</span>
+            <span className="quick-action-icon"><AppIcon name="customers" size={18} /></span>
             <strong>Customers</strong>
             <small>View customer records</small>
           </button>
           <button type="button" className="quick-action" onClick={() => onNavigate?.('Reports')}>
-            <span className="quick-action-icon">↗</span>
+            <span className="quick-action-icon"><AppIcon name="reports" size={18} /></span>
             <strong>Reports</strong>
             <small>Review performance</small>
           </button>
         </div>
       </section>
-
-      <PanelList title="PharmDesk">
-        <p className="muted">
-          Your pharmacy data is stored in Supabase and is not dependent on the browser remaining open.
-        </p>
-      </PanelList>
     </div>
   )
 }  
   
-function StatCard({ title, value }) {  
-  return (  
-    <div className="stat-card">  
-      <span>{title}</span>  
-      <strong>{value}</strong>  
-    </div>  
-  )  
+function StatCard({ title, value, icon }) {
+  return (
+    <div className="stat-card">
+      <span className="stat-icon"><AppIcon name={icon || 'dashboard'} size={17} /></span>
+      <span>{title}</span>
+      <strong>{value}</strong>
+    </div>
+  )
 }  
   
 
