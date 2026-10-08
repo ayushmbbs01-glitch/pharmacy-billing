@@ -1072,6 +1072,7 @@ function LoginScreen() {
 
 function PlatformAdminDashboard({ session }) {
   const [activeTab, setActiveTab] = useState('Applications')
+  const [sidebarOpen, setSidebarOpen] = useState(false)
   const [adminStores, setAdminStores] = useState([])
   const [adminApplications, setAdminApplications] = useState([])
   const [adminLoading, setAdminLoading] = useState(false)
@@ -1156,6 +1157,34 @@ function PlatformAdminDashboard({ session }) {
 
   useEffect(() => {
     refreshAdminData()
+  }, [])
+
+  /*
+    Match the normal pharmacy interface on phones/tablets:
+    tapping the module header toggles the off-canvas sidebar.
+  */
+  useEffect(() => {
+    const handleModuleHeaderClick = (event) => {
+      if (window.innerWidth > 800) return
+
+      const header = event.target.closest('.module-header')
+
+      if (!header) return
+
+      setSidebarOpen((current) => !current)
+    }
+
+    document.addEventListener(
+      'click',
+      handleModuleHeaderClick,
+    )
+
+    return () => {
+      document.removeEventListener(
+        'click',
+        handleModuleHeaderClick,
+      )
+    }
   }, [])
 
   const createAdminStore = async (event) => {
@@ -1407,7 +1436,7 @@ function PlatformAdminDashboard({ session }) {
 
   return (
     <div className="app-shell">
-      <aside className="sidebar">
+      <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
         <div className="brand">
           <div className="brand-mark">P</div>
 
@@ -1430,7 +1459,10 @@ function PlatformAdminDashboard({ session }) {
                   ? 'nav-item active'
                   : 'nav-item'
               }
-              onClick={() => setActiveTab(item)}
+              onClick={() => {
+                setActiveTab(item)
+                setSidebarOpen(false)
+              }}
             >
               {item}
             </button>
