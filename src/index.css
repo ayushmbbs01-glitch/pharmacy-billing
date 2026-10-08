@@ -1324,3 +1324,42 @@ h1, h2, h3, p { overflow-wrap: anywhere; }
   .auth-card h1 { font-size: 22px; }
   .auth-card > p { font-size: 12px; margin-bottom: 22px; }
 }
+
+
+/* =========================================================
+   PRIMARY PHARMDESK LOGO — transparent master artwork
+========================================================= */
+.loading-logo.primary-logo-display {
+  width: min(350px, 100%);
+  height: 250px;
+  margin: 0 auto 8px;
+  border-radius: 0;
+  overflow: visible;
+}
+.loading-logo.primary-logo-display img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.auth-brand-primary-logo {
+  width: min(390px, 100%);
+  height: auto;
+  display: block;
+  object-fit: contain;
+  margin: 0 0 30px;
+}
+@media (max-width: 900px) {
+  .auth-brand-primary-logo {
+    width: min(300px, 100%);
+    margin: 0 auto 18px;
+  }
+}
+@media (max-width: 600px) {
+  .loading-logo.primary-logo-display {
+    width: min(300px, 100%);
+    height: 215px;
+  }
+  .auth-brand-primary-logo {
+    width: min(250px, 100%);
+  }
+}
