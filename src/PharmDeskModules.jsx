@@ -722,7 +722,7 @@ function LoginScreen() {
     return (
       <div className="auth-screen">
         <form className="auth-card" onSubmit={requestPasswordReset}>
-          <div className="brand-mark"><img src="/icons/pharmdesk-icon-180.png" alt="PharmDesk" /></div>
+          <div className="brand-mark"><img src="/icons/pharmdesk-icon.svg" alt="PharmDesk" /></div>
           <h1>Forgot your password?</h1>
           <p>Enter your registered email and we’ll send you a 6-digit reset OTP.</p>
 
@@ -763,7 +763,7 @@ function LoginScreen() {
     return (
       <div className="auth-screen">
         <form className="auth-card" onSubmit={verifyResetOtp}>
-          <div className="brand-mark"><img src="/icons/pharmdesk-icon-180.png" alt="PharmDesk" /></div>
+          <div className="brand-mark"><img src="/icons/pharmdesk-icon.svg" alt="PharmDesk" /></div>
           <h1>Enter reset OTP</h1>
           <p>Enter the 6-digit code sent to your email address.</p>
 
@@ -817,7 +817,7 @@ function LoginScreen() {
     return (
       <div className="auth-screen">
         <form className="auth-card" onSubmit={completePasswordReset}>
-          <div className="brand-mark"><img src="/icons/pharmdesk-icon-180.png" alt="PharmDesk" /></div>
+          <div className="brand-mark"><img src="/icons/pharmdesk-icon.svg" alt="PharmDesk" /></div>
           <h1>Create a new password</h1>
           <p>Your email has been verified. Choose a new password for your PharmDesk account.</p>
 
@@ -865,7 +865,7 @@ function LoginScreen() {
         className="auth-card"
         onSubmit={signup}
       >
-        <div className="brand-mark"><img src="/icons/pharmdesk-icon-180.png" alt="PharmDesk" /></div>
+        <div className="brand-mark"><img src="/icons/pharmdesk-icon.svg" alt="PharmDesk" /></div>
 
         <h1>Create your PharmDesk account</h1>
 
@@ -977,7 +977,7 @@ function LoginScreen() {
         className="auth-card"
         onSubmit={login}
       >
-        <div className="brand-mark"><img src="/icons/pharmdesk-icon-180.png" alt="PharmDesk" /></div>
+        <div className="brand-mark"><img src="/icons/pharmdesk-icon.svg" alt="PharmDesk" /></div>
 
         <h1>PharmDesk</h1>
 
@@ -1434,7 +1434,7 @@ function PlatformAdminDashboard({ session }) {
     <div className="app-shell">
       <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
         <div className="brand">
-          <div className="brand-mark"><img src="/icons/pharmdesk-icon-180.png" alt="PharmDesk" /></div>
+          <div className="brand-mark"><img src="/icons/pharmdesk-icon.svg" alt="PharmDesk" /></div>
 
           <div>
             <strong>PharmDesk</strong>
@@ -2418,7 +2418,7 @@ function PharmacyApp({ session }) {
 
 <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
   <div className="brand">
-    <div className="brand-mark"><img src="/icons/pharmdesk-icon-180.png" alt="PharmDesk" /></div>
+    <div className="brand-mark"><img src="/icons/pharmdesk-icon.svg" alt="PharmDesk" /></div>
 
     <div>
       <strong>PharmDesk</strong>
