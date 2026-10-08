@@ -685,3 +685,20 @@ h1, h2, h3, p { overflow-wrap: anywhere; }
   .dashboard-stats .stat-card strong { font-size:18px; }
   .quick-action-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
 }
+
+
+.date-pill {
+  min-height:36px;
+  display:flex;
+  align-items:center;
+  gap:7px;
+  padding:0 11px;
+  border:1px solid #e0e8f1;
+  border-radius:9px;
+  background:#fff;
+  color:#5f7185;
+  font-size:10px;
+  font-weight:700;
+  white-space:nowrap;
+  box-shadow:0 3px 12px rgba(10,38,71,.04);
+}
