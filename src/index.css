@@ -1065,3 +1065,262 @@ h1, h2, h3, p { overflow-wrap: anywhere; }
     width: auto;
   }
 }
+
+
+/* =========================================================
+   PHARMDESK AUTH — FINAL SPLIT SCREEN
+   Real JSX panel; no pseudo-element artwork.
+========================================================= */
+.auth-screen {
+  min-height: 100dvh;
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(430px, 44%) minmax(520px, 56%);
+  align-items: stretch;
+  padding: 0;
+  background: #f5f8fc;
+  overflow: hidden;
+}
+.auth-screen::before,
+.auth-screen::after {
+  display: none !important;
+  content: none !important;
+}
+.auth-brand-panel {
+  position: relative;
+  min-width: 0;
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  padding: 54px;
+  color: #fff;
+  background:
+    radial-gradient(circle at 76% 18%, rgba(56,182,255,.24), transparent 31%),
+    radial-gradient(circle at 10% 88%, rgba(19,115,214,.22), transparent 38%),
+    linear-gradient(145deg, #041d42 0%, #07386e 58%, #052650 100%);
+}
+.auth-brand-panel::before {
+  content: "";
+  position: absolute;
+  width: 520px;
+  height: 520px;
+  right: -250px;
+  top: -170px;
+  border-radius: 50%;
+  border: 1px solid rgba(111,213,255,.13);
+  box-shadow:
+    0 0 0 55px rgba(76,190,255,.025),
+    0 0 0 110px rgba(76,190,255,.018);
+}
+.auth-brand-panel::after {
+  content: "";
+  position: absolute;
+  width: 440px;
+  height: 440px;
+  left: -280px;
+  bottom: -240px;
+  border-radius: 50%;
+  border: 1px solid rgba(111,213,255,.10);
+}
+.auth-brand-orb {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  filter: blur(1px);
+}
+.auth-brand-orb.orb-one {
+  width: 180px;
+  height: 180px;
+  right: 7%;
+  bottom: 7%;
+  background: radial-gradient(circle, rgba(44,174,255,.16), transparent 68%);
+}
+.auth-brand-orb.orb-two {
+  width: 120px;
+  height: 120px;
+  left: 7%;
+  top: 9%;
+  background: radial-gradient(circle, rgba(116,221,255,.12), transparent 70%);
+}
+.auth-brand-content {
+  position: relative;
+  z-index: 2;
+  width: min(410px, 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+}
+.auth-brand-content .pharmdesk-logo-code {
+  width: auto;
+  justify-content: flex-start;
+  gap: 14px;
+  margin-bottom: 28px;
+}
+.auth-brand-content .pharmdesk-mark-code {
+  width: 76px;
+  height: 76px;
+  flex-basis: 76px;
+}
+.auth-brand-content .pharmdesk-wordmark {
+  font-size: 42px;
+  letter-spacing: -1.8px;
+}
+.auth-brand-content h2 {
+  margin: 0;
+  max-width: 380px;
+  color: #fff;
+  font-size: clamp(27px, 3vw, 40px);
+  line-height: 1.08;
+  letter-spacing: -.045em;
+}
+.auth-brand-content p {
+  margin: 15px 0 0;
+  max-width: 370px;
+  color: rgba(235,247,255,.72);
+  font-size: 14px;
+  line-height: 1.65;
+}
+.auth-brand-features {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 22px;
+}
+.auth-brand-features span {
+  padding: 7px 10px;
+  border: 1px solid rgba(146,220,255,.18);
+  border-radius: 999px;
+  background: rgba(255,255,255,.055);
+  color: rgba(240,250,255,.82);
+  font-size: 10px;
+  font-weight: 700;
+}
+.auth-form-side {
+  min-width: 0;
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px clamp(24px, 7vw, 100px);
+  background:
+    radial-gradient(circle at 88% 8%, rgba(56,174,245,.09), transparent 28%),
+    #f7f9fc;
+}
+.auth-form-side > .auth-card {
+  width: min(500px, 100%);
+  margin: 0;
+}
+.auth-card {
+  padding: 42px 42px 38px;
+  border-radius: 24px;
+  background: rgba(255,255,255,.98);
+  border: 1px solid #e0e8f1;
+  box-shadow: 0 25px 70px rgba(15,42,75,.10);
+}
+.auth-card .brand-mark { display: none; }
+.auth-card h1 {
+  text-align: center;
+  margin: 0 0 7px;
+  color: #10294a;
+  font-size: 27px;
+  line-height: 1.2;
+  letter-spacing: -.035em;
+}
+.auth-card > p {
+  text-align: center;
+  margin: 0 0 28px;
+  color: #77879a;
+  font-size: 14px;
+}
+.auth-card .form-stack { gap: 16px; }
+.auth-card label {
+  gap: 7px;
+  color: #43556a;
+  font-size: 12px;
+  font-weight: 700;
+}
+.auth-card input {
+  min-height: 52px;
+  padding: 0 14px;
+  border-radius: 11px;
+  background: #fbfdff;
+  border-color: #dce5ee;
+  font-size: 13px;
+}
+.auth-card input:focus {
+  background: #fff;
+  border-color: #2896df;
+  box-shadow: 0 0 0 3px rgba(40,150,223,.10);
+}
+.auth-card .primary-button {
+  min-height: 52px;
+  border-radius: 11px;
+  font-size: 14px;
+}
+.auth-card .secondary-button {
+  min-height: 48px;
+  border-radius: 11px;
+  font-size: 13px;
+}
+
+/* Tablet/mobile auth */
+@media (max-width: 900px) {
+  .auth-screen {
+    grid-template-columns: 1fr;
+    overflow-y: auto;
+  }
+  .auth-brand-panel {
+    min-height: 300px;
+    padding: 42px 28px 34px;
+  }
+  .auth-brand-content {
+    align-items: center;
+    text-align: center;
+  }
+  .auth-brand-content .pharmdesk-logo-code {
+    justify-content: center;
+    margin-bottom: 18px;
+  }
+  .auth-brand-content .pharmdesk-mark-code {
+    width: 58px;
+    height: 58px;
+    flex-basis: 58px;
+  }
+  .auth-brand-content .pharmdesk-wordmark { font-size: 32px; }
+  .auth-brand-content h2 { font-size: 25px; }
+  .auth-brand-content p { font-size: 12px; }
+  .auth-form-side {
+    min-height: auto;
+    padding: 24px 18px 40px;
+  }
+}
+@media (max-width: 600px) {
+  .auth-brand-panel {
+    min-height: 245px;
+    padding: 28px 20px 24px;
+  }
+  .auth-brand-content .pharmdesk-logo-code {
+    gap: 9px;
+    margin-bottom: 15px;
+  }
+  .auth-brand-content .pharmdesk-mark-code {
+    width: 48px;
+    height: 48px;
+    flex-basis: 48px;
+  }
+  .auth-brand-content .pharmdesk-wordmark { font-size: 27px; }
+  .auth-brand-content h2 { font-size: 21px; }
+  .auth-brand-content p { margin-top: 9px; font-size: 11px; }
+  .auth-brand-features { margin-top: 13px; justify-content: center; }
+  .auth-brand-features span { padding: 6px 8px; font-size: 8px; }
+  .auth-form-side { padding: 16px 12px 30px; }
+  .auth-card {
+    padding: 28px 19px 24px;
+    border-radius: 18px;
+  }
+  .auth-card h1 { font-size: 22px; }
+  .auth-card > p { font-size: 12px; margin-bottom: 22px; }
+}
