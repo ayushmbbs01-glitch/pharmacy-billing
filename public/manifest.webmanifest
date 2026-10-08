@@ -1,7 +1,7 @@
 {
-  "name": "PharmDesk — LABDHI PHARMA",
+  "name": "PharmDesk",
   "short_name": "PharmDesk",
-  "description": "Pharmacy billing and management",
+  "description": "PharmDesk pharmacy billing and management",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
@@ -10,15 +10,9 @@
   "theme_color": "#0a2647",
   "icons": [
     {
-      "src": "/icons/pharmdesk.svg",
+      "src": "/icons/pharmdesk-icon-180.png",
       "sizes": "180x180",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "/icons/pharmdesk.svg",
-      "sizes": "512x512",
-      "type": "image/svg+xml",
+      "type": "image/png",
       "purpose": "any maskable"
     }
   ]
