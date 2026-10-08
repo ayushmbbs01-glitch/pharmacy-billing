@@ -2332,41 +2332,19 @@ function AppIcon({ name, size = 19 }) {
 function PharmDeskLogo({ compact = false }) {
   return (
     <div className={compact ? 'pharmdesk-logo-code compact' : 'pharmdesk-logo-code'}>
-      <svg className="pharmdesk-mark-code" viewBox="0 0 512 512" aria-hidden="true">
+      <svg className="pharmdesk-mark-code" viewBox="0 0 64 64" aria-hidden="true">
         <defs>
-          <linearGradient id="pdBg" x1="0" y1="0" x2="1" y2="1">
-            <stop stopColor="#061a36" />
-            <stop offset=".55" stopColor="#0a3262" />
-            <stop offset="1" stopColor="#05172f" />
+          <linearGradient id="pdMarkBlue" x1="10" y1="8" x2="54" y2="56" gradientUnits="userSpaceOnUse">
+            <stop stopColor="#8be7ff" />
+            <stop offset=".48" stopColor="#3dbcf7" />
+            <stop offset="1" stopColor="#1688df" />
           </linearGradient>
-          <linearGradient id="pdP" x1=".05" y1=".05" x2=".9" y2=".95">
-            <stop stopColor="#e8fbff" />
-            <stop offset=".35" stopColor="#70d2ff" />
-            <stop offset=".72" stopColor="#22a8f4" />
-            <stop offset="1" stopColor="#0871cc" />
-          </linearGradient>
-          <linearGradient id="pdInner" x1="0" y1="0" x2="1" y2="1">
-            <stop stopColor="#062d69" />
-            <stop offset=".55" stopColor="#0757aa" />
-            <stop offset="1" stopColor="#16a7f1" />
-          </linearGradient>
-          <radialGradient id="pdGlow">
-            <stop stopColor="#2db7ff" stopOpacity=".35" />
-            <stop offset="1" stopColor="#2db7ff" stopOpacity="0" />
-          </radialGradient>
-          <filter id="pdShadow">
-            <feDropShadow dx="0" dy="9" stdDeviation="9" floodColor="#00152e" floodOpacity=".5" />
-          </filter>
         </defs>
-        <rect width="512" height="512" rx="108" fill="url(#pdBg)" />
-        <circle cx="330" cy="210" r="190" fill="url(#pdGlow)" />
-        <g filter="url(#pdShadow)">
-          <path d="M184 52h154c82 0 148 66 148 148s-66 148-148 148H260v38c0 58-47 105-105 105S50 444 50 386V184C50 111 111 52 184 52z" fill="url(#pdP)" />
-          <path d="M184 141h154c33 0 59 26 59 59s-26 59-59 59H260v-70h78c9 0 16-7 16-16s-7-16-16-16H184c-51 0-92 41-92 92v-26c0-45 37-82 82-82h10z" fill="url(#pdInner)" />
-          <rect x="190" y="151" width="126" height="59" rx="29.5" fill="url(#pdP)" />
-          <path d="M205 151h48v59h-48c-16 0-29-13-29-29.5s13-29.5 29-29.5z" fill="#fff" />
-          <rect x="267" y="164" width="38" height="8" rx="4" fill="#eafaff" />
-        </g>
+        <rect x="3" y="3" width="58" height="58" rx="16" fill="#0b2f5f" stroke="rgba(126,216,255,.22)" />
+        <path d="M18 48V16h16.5c9.2 0 15.5 5.1 15.5 13.1S43.7 42.2 34.5 42.2H26V48h-8Zm8-12.8h8c4.1 0 6.1-2.1 6.1-6.1 0-3.8-2-5.8-6.1-5.8h-8v11.9Z" fill="url(#pdMarkBlue)" />
+        <path d="M27 24.1h7.1c4 0 6 1.7 6 5 0 3.5-2 5.3-6 5.3H27V24.1Z" fill="#f7fdff" />
+        <path d="M46.5 17.5v8.2" stroke="#9cecff" strokeWidth="2.5" strokeLinecap="round" />
+        <circle cx="46.5" cy="31.5" r="1.25" fill="#9cecff" />
       </svg>
       <span className="pharmdesk-wordmark"><span>Pharm</span><b>Desk</b></span>
     </div>
@@ -2399,6 +2377,9 @@ function AuthShell({ children }) {
 function PharmacyApp({ session }) {  
   const [activeNav, setActiveNav] = useState('Dashboard')
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [globalSearch, setGlobalSearch] = useState('')
+  const [searchOpen, setSearchOpen] = useState(false)
   const [store, setStore] = useState(null)  
   const [profile, setProfile] = useState(null)  
   const [loading, setLoading] = useState(true)  
@@ -2496,17 +2477,63 @@ function PharmacyApp({ session }) {
     }  
   }  
   
+  const navSearchItems = NAV_ITEMS.map((item) => ({
+    type: 'nav',
+    label: item,
+    hint: `Open ${item}`,
+    action: () => {
+      setActiveNav(item)
+      setSearchOpen(false)
+      setGlobalSearch('')
+      setSidebarOpen(false)
+    },
+  }))
+
+  const quickSearchItems = [
+    { type: 'action', label: 'New Sale', hint: 'Open Sales → New Sale', target: 'Sales' },
+    { type: 'action', label: 'New Purchase', hint: 'Open Purchases → New Purchase', target: 'Purchases' },
+    { type: 'action', label: 'Inventory', hint: 'Open inventory and batches', target: 'Inventory' },
+    { type: 'action', label: 'Customers', hint: 'Open customer records', target: 'Customers' },
+  ].map((item) => ({
+    ...item,
+    action: () => {
+      setActiveNav(item.target)
+      setSearchOpen(false)
+      setGlobalSearch('')
+      setSidebarOpen(false)
+    },
+  }))
+
+  const searchResults = [...navSearchItems, ...quickSearchItems].filter((item) =>
+    !globalSearch.trim() ||
+    matchesSearch(globalSearch, item.label, item.hint),
+  )
+
+  const submitGlobalSearch = (event) => {
+    event.preventDefault()
+    const first = searchResults[0]
+    if (first) first.action()
+  }
+
   return (
     <div className="app-shell">
       {sidebarOpen && (
         <div className="nav-overlay" onClick={() => setSidebarOpen(false)} />
       )}
 
-      <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
+      <aside className={`sidebar ${sidebarOpen ? 'open' : ''} ${sidebarCollapsed ? 'collapsed' : ''}`}>
         <div className="brand">
-          <div className="brand-logo compact">
-            <img src="/icons/pharmdesk-logo.svg" alt="PharmDesk" />
-          </div>
+          <button
+            className="brand-logo-button"
+            type="button"
+            onClick={() => {
+              setActiveNav('Dashboard')
+              setSidebarOpen(false)
+            }}
+            aria-label="Go to dashboard"
+          >
+            <PharmDeskLogo compact />
+          </button>
         </div>
 
         <nav>
@@ -2550,23 +2577,80 @@ function PharmacyApp({ session }) {
 
       <main className="main-content">
         <header className="topbar">
-          <button className="topbar-menu" type="button" onClick={() => setSidebarOpen(true)} aria-label="Open menu">
-            <AppIcon name="menu" size={21} />
+          <button
+            className="topbar-menu"
+            type="button"
+            onClick={() => {
+              if (window.innerWidth <= 800) {
+                setSidebarOpen((current) => !current)
+              } else {
+                setSidebarCollapsed((current) => !current)
+              }
+            }}
+            aria-label="Toggle navigation menu"
+            title="Toggle navigation menu"
+          >
+            <AppIcon name="menu" size={22} />
           </button>
-          <div className="global-search">
+
+          <form className="global-search" onSubmit={submitGlobalSearch}>
             <AppIcon name="search" size={18} />
-            <input aria-label="Search" placeholder="Search products, customers, invoices..." />
-          </div>
+            <input
+              aria-label="Search PharmDesk"
+              value={globalSearch}
+              onFocus={() => setSearchOpen(true)}
+              onChange={(event) => {
+                setGlobalSearch(event.target.value)
+                setSearchOpen(true)
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') {
+                  setSearchOpen(false)
+                  event.currentTarget.blur()
+                }
+              }}
+              placeholder="Search products, customers, invoices..."
+            />
+            {searchOpen && (
+              <div className="global-search-results">
+                {searchResults.slice(0, 7).map((item) => (
+                  <button key={item.label} type="button" onClick={item.action}>
+                    <span>{item.label}</span>
+                    <small>{item.hint}</small>
+                  </button>
+                ))}
+                {!searchResults.length && (
+                  <div className="global-search-empty">No matching PharmDesk section or action.</div>
+                )}
+              </div>
+            )}
+          </form>
+
           <div className="topbar-actions">
-            <button className="icon-button notification-button" type="button" aria-label="Notifications">
+            <button
+              className="icon-button notification-button"
+              type="button"
+              aria-label="Open alerts"
+              title="Open alerts"
+              onClick={() => {
+                setActiveNav('Alerts')
+                setSidebarOpen(false)
+              }}
+            >
               <AppIcon name="bell" size={20} />
               <span className="notification-dot" />
             </button>
-            <div className="profile-pill">
+            <button
+              className="profile-pill"
+              type="button"
+              onClick={() => setActiveNav('Settings')}
+              aria-label="Open profile settings"
+              title="Open profile settings"
+            >
               <span className="profile-avatar">{(profile?.full_name || session.user.email || 'A').charAt(0).toUpperCase()}</span>
               <strong>{profile?.full_name || session.user.email?.split('@')[0] || 'User'}</strong>
               <span className="profile-chevron">⌄</span>
-            </div>
+            </button>
           </div>
         </header>
         {renderPage()}
