@@ -720,8 +720,7 @@ function LoginScreen() {
 
   if (mode === 'forgot') {
     return (
-      <div className="auth-screen">
-        <form className="auth-card" onSubmit={requestPasswordReset}>
+      <AuthShell><form className="auth-card" onSubmit={requestPasswordReset}>
           <div className="brand-mark"><img src="/icons/pharmdesk-logo.svg" alt="PharmDesk" /></div>
           <h1>Forgot your password?</h1>
           <p>Enter your registered email and we’ll send you a 6-digit reset OTP.</p>
@@ -754,15 +753,13 @@ function LoginScreen() {
               Back to sign in
             </button>
           </div>
-        </form>
-      </div>
+        </form></AuthShell>
     )
   }
 
   if (mode === 'reset') {
     return (
-      <div className="auth-screen">
-        <form className="auth-card" onSubmit={verifyResetOtp}>
+      <AuthShell><form className="auth-card" onSubmit={verifyResetOtp}>
           <div className="brand-mark"><img src="/icons/pharmdesk-logo.svg" alt="PharmDesk" /></div>
           <h1>Enter reset OTP</h1>
           <p>Enter the 6-digit code sent to your email address.</p>
@@ -808,15 +805,13 @@ function LoginScreen() {
               Send a new OTP
             </button>
           </div>
-        </form>
-      </div>
+        </form></AuthShell>
     )
   }
 
   if (mode === 'reset-password') {
     return (
-      <div className="auth-screen">
-        <form className="auth-card" onSubmit={completePasswordReset}>
+      <AuthShell><form className="auth-card" onSubmit={completePasswordReset}>
           <div className="brand-mark"><img src="/icons/pharmdesk-logo.svg" alt="PharmDesk" /></div>
           <h1>Create a new password</h1>
           <p>Your email has been verified. Choose a new password for your PharmDesk account.</p>
@@ -853,15 +848,13 @@ function LoginScreen() {
               {busy ? 'Updating password…' : 'Reset Password'}
             </button>
           </div>
-        </form>
-      </div>
+        </form></AuthShell>
     )
   }
 
  if (mode === 'signup') {
   return (
-    <div className="auth-screen">
-      <form
+    <AuthShell><form
         className="auth-card"
         onSubmit={signup}
       >
@@ -966,14 +959,12 @@ function LoginScreen() {
             Already have an account? Sign in
           </button>
         </div>
-      </form>
-    </div>
+      </form></AuthShell>
   )
 }
 
   return (
-    <div className="auth-screen">
-      <form
+    <AuthShell><form
         className="auth-card"
         onSubmit={login}
       >
@@ -1056,8 +1047,7 @@ function LoginScreen() {
             New medical store? Sign up
           </button>
         </div>
-      </form>
-    </div>
+      </form></AuthShell>
   )
 }
   
@@ -2354,12 +2344,18 @@ function PharmDeskLogo({ compact = false }) {
 function AuthBrandPanel() {
   return (
     <section className="auth-brand-panel">
-      <div className="auth-brand-glow" />
+      <div className="auth-brand-orb orb-one" />
+      <div className="auth-brand-orb orb-two" />
       <div className="auth-brand-content">
-        <img className="auth-brand-icon" src="/icons/pharmdesk-icon.svg" alt="PharmDesk" />
-        <h2>Pharm<span>Desk</span></h2>
-        <strong>Smart Pharmacy Management</strong>
-        <p>Billing&nbsp;&nbsp;•&nbsp;&nbsp;Inventory&nbsp;&nbsp;•&nbsp;&nbsp;Purchases&nbsp;&nbsp;•&nbsp;&nbsp;Reports</p>
+        <PharmDeskLogo />
+        <h2>Smart Pharmacy Management</h2>
+        <p>Everything your pharmacy needs in one place.</p>
+        <div className="auth-brand-features">
+          <span>Billing</span>
+          <span>Inventory</span>
+          <span>Purchases</span>
+          <span>Reports</span>
+        </div>
       </div>
     </section>
   )
