@@ -63,6 +63,8 @@ h1, h2, h3, p { overflow-wrap: anywhere; }
 .brand-mark.small img { width: 100%; height: 100%; object-fit: contain; display: block; }
 }
 .brand-mark.small { width: 38px; height: 38px; border-radius: 11px; font-size: 18px; margin: 0; }
+.auth-card .brand-mark { width: min(250px, 100%); height: 125px; background: transparent; border-radius: 0; margin-bottom: 16px; }
+.auth-card .brand-mark img { object-fit: contain; }
 .form-stack { display: flex; flex-direction: column; gap: 16px; }
 .full { width: 100%; }
 .error-box, .success-box, .info-box, .message-box {
