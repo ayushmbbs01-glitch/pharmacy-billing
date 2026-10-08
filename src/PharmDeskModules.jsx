@@ -480,7 +480,7 @@ function LoadingScreen() {
   return (
     <div className="loading-screen">
       <div className="loading-card">
-        <h2>PharmDesk</h2>
+        <div className="loading-logo"><img src="/icons/pharmdesk-logo.svg" alt="PharmDesk" /></div>
         <p>Loading…</p>
       </div>
     </div>
@@ -1434,9 +1434,8 @@ function PlatformAdminDashboard({ session }) {
     <div className="app-shell">
       <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
         <div className="brand">
-          <div className="brand-mark"><img src="/icons/pharmdesk-icon.svg" alt="PharmDesk" /></div>
-
-          <div>
+          <div className="brand-logo"><img src="/icons/pharmdesk-logo.svg" alt="PharmDesk" /></div>
+          <div className="brand-caption">
             <strong>PharmDesk</strong>
             <span>Platform Administration</span>
           </div>
@@ -2418,12 +2417,11 @@ function PharmacyApp({ session }) {
 
 <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
   <div className="brand">
-    <div className="brand-mark"><img src="/icons/pharmdesk-icon.svg" alt="PharmDesk" /></div>
-
-    <div>
-      <strong>PharmDesk</strong>
-      <span>{store?.name || 'Pharmacy'}</span>
-    </div>
+    <div className="brand-logo"><img src="/icons/pharmdesk-logo.svg" alt="PharmDesk" /></div>
+  <div className="brand-caption">
+    <strong>PharmDesk</strong>
+    <span>Pharmacy Management</span>
+  </div>
   </div>
 
   <nav>
