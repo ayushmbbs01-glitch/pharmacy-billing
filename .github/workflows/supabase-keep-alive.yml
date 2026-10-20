@@ -1,0 +1,40 @@
+name: Supabase Keep Alive
+
+on:
+  schedule:
+    # Daily at 03:30 UTC (09:00 IST)
+    - cron: "30 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  keep-alive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Check Supabase database endpoint
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          set -eu
+
+          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_ANON_KEY:-}" ]; then
+            echo "::error::Add SUPABASE_URL and SUPABASE_ANON_KEY in GitHub repository Actions secrets."
+            exit 1
+          fi
+
+          # A read-only, limited request to an existing PharmDesk table.
+          # RLS remains enabled; no rows are modified.
+          curl --silent --show-error --fail-with-body \
+            --max-time 20 \
+            --output /dev/null \
+            --write-out "Supabase request completed with HTTP %{http_code}\n" \
+            "${SUPABASE_URL%/}/rest/v1/user_profiles?select=id&limit=1" \
+            --header "apikey: ${SUPABASE_ANON_KEY}" \
+            --header "Authorization: Bearer ${SUPABASE_ANON_KEY}" \
+            --header "Accept: application/json"
+
+          echo "Keep-alive check completed."
