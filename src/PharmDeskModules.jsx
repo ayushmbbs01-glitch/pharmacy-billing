@@ -2406,6 +2406,7 @@ function PharmacyApp({ session }) {
       return {}
     }
   })
+  const navigationLoadedFor = useRef(null)
   const [activeNav, setActiveNav] = useState(() =>
     NAV_ITEMS.includes(savedNavigation.activeNav) ? savedNavigation.activeNav : 'Dashboard'
   )
@@ -2414,6 +2415,29 @@ function PharmacyApp({ session }) {
   const [requestedPurchasesTab, setRequestedPurchasesTab] = useState(savedNavigation.requestedPurchasesTab || null)
 
   useEffect(() => {
+    navigationLoadedFor.current = null
+    try {
+      const raw = window.localStorage.getItem(navigationStorageKey)
+      const parsed = raw ? JSON.parse(raw) : null
+      const saved = parsed && typeof parsed === 'object' ? parsed : {}
+      setActiveNav(NAV_ITEMS.includes(saved.activeNav) ? saved.activeNav : 'Dashboard')
+      setRequestedSalesTab(saved.requestedSalesTab || null)
+      setRequestedInventoryTab(saved.requestedInventoryTab || null)
+      setRequestedPurchasesTab(saved.requestedPurchasesTab || null)
+    } catch (error) {
+      console.warn('Could not restore last visited page:', error)
+      setActiveNav('Dashboard')
+      setRequestedSalesTab(null)
+      setRequestedInventoryTab(null)
+      setRequestedPurchasesTab(null)
+    }
+    navigationLoadedFor.current = navigationStorageKey
+  }, [navigationStorageKey])
+
+  useEffect(() => {
+    // Do not write the previous user's navigation under a newly selected
+    // account's key while authentication/session state is changing.
+    if (navigationLoadedFor.current !== navigationStorageKey) return
     try {
       window.localStorage.setItem(navigationStorageKey, JSON.stringify({
         activeNav,
