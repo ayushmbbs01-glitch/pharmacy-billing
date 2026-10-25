@@ -481,7 +481,7 @@ function LoadingScreen() {
   return (
     <div className="loading-screen">
       <div className="loading-card">
-        <div className="loading-logo primary-logo-display"><img src="/icons/pharmdesk-primary-light.svg?v=4" alt="PharmDesk" /></div>
+        <div className="loading-logo primary-logo-display"><img src="/icons/pharmdesk-primary-light.svg?v=5" alt="PharmDesk" /></div>
         <p className="loading-status">Setting up your workspace…</p>
         <div className="loading-progress" role="presentation"><span /></div>
       </div>
@@ -2324,10 +2324,10 @@ function AppIcon({ name, size = 19 }) {
 function PharmDeskLogo({ compact = false }) {
   return (
     <div className={compact ? 'pharmdesk-logo-code compact' : 'pharmdesk-logo-code'}>
-      <img className="pharmdesk-mark-code" src="/icons/pharmdesk-icon.svg?v=4" alt="" />
+      <img className="pharmdesk-mark-code" src="/icons/pharmdesk-icon.svg?v=5" alt="" />
       <span className="pharmdesk-logo-type">
         <span className="pharmdesk-wordmark"><span>Pharm</span><b>Desk</b></span>
-        {!compact && <span className="pharmdesk-tagline">MANAGE · SELL · TRACK · GROW</span>}
+        <span className="pharmdesk-tagline">MANAGE · SELL · TRACK · GROW</span>
       </span>
     </div>
   )
@@ -2339,7 +2339,7 @@ function AuthBrandPanel() {
       <div className="auth-brand-orb orb-one" />
       <div className="auth-brand-orb orb-two" />
       <div className="auth-brand-content">
-        <img className="auth-brand-primary-logo" src="/icons/pharmdesk-logo.svg?v=4" alt="PharmDesk — Manage, Sell, Track, Grow" />
+        <img className="auth-brand-primary-logo" src="/icons/pharmdesk-logo.svg?v=5" alt="PharmDesk — Manage, Sell, Track, Grow" />
         <h2>Smart Pharmacy Management</h2>
         <p>Manage · Sell · Track · Grow</p>
         <div className="auth-brand-features">
@@ -2725,12 +2725,22 @@ function PharmacyApp({ session }) {
             type="button"
             aria-expanded={storeMenuOpen}
             aria-haspopup="menu"
-            onClick={() => setStoreMenuOpen((open) => !open)}
+            onClick={() => {
+              if (availableStores.length > 1) {
+                setStoreMenuOpen((open) => !open)
+              } else {
+                setStoreMenuOpen(false)
+                setActiveNav('Settings')
+                setSidebarOpen(false)
+                setSearchOpen(false)
+                setGlobalSearch('')
+              }
+            }}
           >
             <div className="sidebar-store-icon"><AppIcon name="inventory" size={18} /></div>
             <div className="sidebar-store-copy">
               <strong>{store?.name || 'Medical Store'}</strong>
-              <span>{availableStores.length > 1 ? 'Switch store' : 'Store details'}</span>
+              <span>{availableStores.length > 1 ? 'Switch store' : 'Open store settings'}</span>
             </div>
             <AppIcon name="arrow" size={16} />
           </button>
