@@ -19037,7 +19037,7 @@ const [
           1  
       ) {  
         throw new Error(  
-          'The stock unit must be the lowest packaging level.',  
+          'The stock unit must be the smallest unit, at the end of the packaging hierarchy.',  
         )  
       }  
     }  
@@ -19633,7 +19633,7 @@ const [
                 </React.Fragment>
               ))}
             </div>
-            <p className="muted" style={{ marginBottom: 0, marginTop: 8 }}>Choose one purchase unit and one stock unit below. Turn on any units you want to offer for sale.</p>
+            <p className="muted" style={{ marginBottom: 0, marginTop: 8 }}>Start with the largest package and add progressively smaller units. The final level is the stock unit you count individually. Choose one purchase unit and any units you offer for sale.</p>
           </div>
 
           {packagingLevels.map(  
@@ -19647,9 +19647,9 @@ const [
               >  
                 <div className="packaging-title">  
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                    <strong>{index === 0 ? 'Smallest unit' : `Packaging step ${index}`}</strong>
+                    <strong>{index === 0 ? 'Largest package' : index === packagingLevels.length - 1 ? 'Smallest stock unit' : `Packaging step ${index}`}</strong>
                     <span className="muted" style={{ fontSize: 12 }}>
-                      {index === 0 ? 'The individual unit you count in stock' : `1 ${level.unit_name || 'unit'} = ${safeNumber(level.units_per_parent) || 1} ${packagingLevels[index - 1]?.unit_name || 'previous unit' + 's'}`}
+                      {index === 0 ? 'The outer package that contains the smaller units' : `1 ${packagingLevels[index - 1]?.unit_name || 'larger unit'} contains ${safeNumber(level.units_per_parent) || 1} ${level.unit_name || 'smaller units'}`}
                     </span>
                   </div>  
   
@@ -19690,7 +19690,7 @@ const [
                   </label>  
   
                   <label>  
-                    {index === 0 ? 'Units in this smallest unit' : `How many ${packagingLevels[index - 1]?.unit_name || 'smaller units'} fit in 1 ${level.unit_name || 'pack'}`}  
+                    {index === 0 ? 'Units in this outer package' : `How many ${level.unit_name || 'smaller units'} fit in 1 ${packagingLevels[index - 1]?.unit_name || 'larger package'}`}  
                     <input  
                       type="number"  
                       min="1"  
