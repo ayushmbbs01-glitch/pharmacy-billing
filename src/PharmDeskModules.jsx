@@ -9809,7 +9809,7 @@ function PendingSupplierPayments({
             type="button"
             className="secondary-button"
             onClick={toggleAllFiltered}
-            disabled={!filteredRows.some((row) => row.payment_status !== 'partial')}
+            disabled={!filteredRows.some((row) => safeNumber(row.due_amount ?? row.total_amount) > 0)}
           >
             {filteredRows.length > 0 &&
             filteredRows.every((row) =>
