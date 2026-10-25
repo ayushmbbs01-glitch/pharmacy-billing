@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import PharmDeskAPI, { pharmdeskDb } from './pharmdeskApi'
+import { useWorkingDraft } from './useWorkingDraft'
 import { supabase } from './supabaseClient'
 
 /* =========================================================  
@@ -3258,7 +3259,6 @@ function SalesModule({ store, session, initialTab = null }) {
   
 function NewSale({ store }) {  
   const draftStorageKey = `pharmdesk:sale-draft:${store?.id || 'no-store'}`
-  const [savedDraftLoaded, setSavedDraftLoaded] = useState(false)
   const [customers, setCustomers] = useState([])  
   const [products, setProducts] = useState([])  
   const [stockByProduct, setStockByProduct] = useState({})  
@@ -3280,46 +3280,23 @@ function NewSale({ store }) {
   const [message, setMessage] = useState('')  
   const [alternatives, setAlternatives] = useState([])  
 
-  // Keep an unfinished bill on this device so a refresh or accidental close
-  // cannot wipe the cashier's current work. Data is isolated per store.
-  useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(draftStorageKey)
-      if (raw) {
-        const draft = JSON.parse(raw)
-        if (draft && typeof draft === 'object') {
-          setCustomerQuery(draft.customerQuery || '')
-          setSelectedCustomer(draft.selectedCustomer || null)
-          setProductQuery(draft.productQuery || '')
-          setItems(Array.isArray(draft.items) && draft.items.length ? draft.items : [emptySaleItem()])
-          setPayments(Array.isArray(draft.payments) && draft.payments.length ? draft.payments : [{ method: 'cash', amount: 0 }])
-          setBillDiscount(draft.billDiscount ?? 0)
-          setBillDate(draft.billDate || todayISO())
-        }
-      }
-    } catch (draftError) {
-      console.warn('Could not restore unfinished bill:', draftError)
-    } finally {
-      setSavedDraftLoaded(true)
-    }
-  }, [draftStorageKey])
-
-  useEffect(() => {
-    if (!savedDraftLoaded || !store?.id) return
-    const hasWork = Boolean(selectedCustomer || items.some((item) => item.product) || customerQuery.trim() || productQuery.trim() || safeNumber(billDiscount) > 0)
-    try {
-      if (hasWork) {
-        window.localStorage.setItem(draftStorageKey, JSON.stringify({
-          customerQuery, selectedCustomer, productQuery, items, payments,
-          billDiscount, billDate, savedAt: new Date().toISOString(),
-        }))
-      } else {
-        window.localStorage.removeItem(draftStorageKey)
-      }
-    } catch (draftError) {
-      console.warn('Could not save unfinished bill locally:', draftError)
-    }
-  }, [savedDraftLoaded, draftStorageKey, customerQuery, selectedCustomer, productQuery, items, payments, billDiscount, billDate, store?.id])
+  const { ready: saleDraftReady } = useWorkingDraft({
+    storeId: store?.id,
+    moduleKey: 'sales',
+    draftKey: 'new-sale',
+    localStorageKey: draftStorageKey,
+    value: { customerQuery, selectedCustomer, productQuery, items, payments, billDiscount, billDate },
+    hasWork: Boolean(selectedCustomer || items.some((item) => item.product) || customerQuery.trim() || productQuery.trim() || safeNumber(billDiscount) > 0),
+    onRestore: (draft) => {
+      setCustomerQuery(draft.customerQuery || '')
+      setSelectedCustomer(draft.selectedCustomer || null)
+      setProductQuery(draft.productQuery || '')
+      setItems(Array.isArray(draft.items) && draft.items.length ? draft.items : [emptySaleItem()])
+      setPayments(Array.isArray(draft.payments) && draft.payments.length ? draft.payments : [{ method: 'cash', amount: 0 }])
+      setBillDiscount(draft.billDiscount ?? 0)
+      setBillDate(draft.billDate || todayISO())
+    },
+  })
 
   useEffect(() => {  
     if (!store?.id) return  
