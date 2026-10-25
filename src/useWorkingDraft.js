@@ -25,7 +25,9 @@ export function useWorkingDraft({
   const latestHasWorkRef = useRef(hasWork)
   const saveTimerRef = useRef(null)
   const generationRef = useRef(0)
-  const localKey = localStorageKey || `pharmdesk:working-draft:${storeId || 'no-store'}:${moduleKey}:${draftKey}`
+  const baseLocalKey = localStorageKey || `pharmdesk:working-draft:${storeId || 'no-store'}:${moduleKey}:${draftKey}`
+  const [scopedLocalKey, setScopedLocalKey] = useState(null)
+  const localKey = scopedLocalKey || baseLocalKey
 
   useEffect(() => { restoreRef.current = onRestore }, [onRestore])
   useEffect(() => { latestValueRef.current = value }, [value])
@@ -40,10 +42,26 @@ export function useWorkingDraft({
     }
 
     const restore = async () => {
+      let userId = null
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        userId = user?.id || null
+      } catch {}
+
+      const resolvedKey = `${baseLocalKey}:user:${userId || 'guest'}`
       let localDraft = null
       try {
-        const raw = window.localStorage.getItem(localKey)
+        const raw = window.localStorage.getItem(resolvedKey)
         if (raw) localDraft = JSON.parse(raw)
+        // One-time migration for drafts saved by the previous store-only key.
+        if (!localDraft && resolvedKey !== baseLocalKey) {
+          const legacyRaw = window.localStorage.getItem(baseLocalKey)
+          if (legacyRaw) {
+            localDraft = JSON.parse(legacyRaw)
+            window.localStorage.setItem(resolvedKey, JSON.stringify(localDraft))
+            window.localStorage.removeItem(baseLocalKey)
+          }
+        }
       } catch (error) {
         console.warn('Could not read local working draft:', error)
       }
@@ -70,6 +88,7 @@ export function useWorkingDraft({
       }
 
       if (cancelled) return
+      setScopedLocalKey(resolvedKey)
       const localTime = Date.parse(localDraft?.savedAt || 0) || 0
       const cloudTime = Date.parse(cloudDraft?.savedAt || 0) || 0
       const chosen = cloudTime > localTime ? cloudDraft : localDraft || cloudDraft
@@ -83,7 +102,7 @@ export function useWorkingDraft({
 
     restore()
     return () => { cancelled = true }
-  }, [storeId, moduleKey, draftKey, localKey, enabled])
+  }, [storeId, moduleKey, draftKey, baseLocalKey, enabled])
 
   useEffect(() => {
     if (!ready || !enabled || !storeId || !moduleKey) return
@@ -129,7 +148,7 @@ export function useWorkingDraft({
       window.clearTimeout(timer)
       if (saveTimerRef.current === timer) saveTimerRef.current = null
     }
-  }, [ready, enabled, storeId, moduleKey, draftKey, localKey, value, hasWork])
+  }, [ready, enabled, storeId, moduleKey, draftKey, baseLocalKey, localKey, value, hasWork])
 
   const clearDraft = async () => {
     generationRef.current += 1
