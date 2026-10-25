@@ -6387,6 +6387,7 @@ function SaleEditModal({
   
   const [items, setItems] =  
     useState([])  
+  const [itemsLoading, setItemsLoading] = useState(true)
   
   const [payments, setPayments] =  
     useState(  
@@ -6406,9 +6407,9 @@ function SaleEditModal({
     storeId: store?.id,
     moduleKey: 'sales-bill-edit',
     draftKey: `edit-${sale.id}`,
-    enabled: items.length > 0,
+    enabled: !itemsLoading && items.length > 0,
     value: { customerId, billDate, billDiscount, notes, items, payments },
-    hasWork: items.length > 0,
+    hasWork: !itemsLoading && items.length > 0,
     onRestore: (draft) => {
       setCustomerId(draft.customerId || '')
       setBillDate(draft.billDate || todayISO())
@@ -6436,67 +6437,45 @@ function SaleEditModal({
   }  
   
   const loadItems = async () => {  
-    const source =  
-      sale.sale_items || []  
+    setItemsLoading(true)
+    try {
+      const source = sale.sale_items || []  
   
-    const next =  
-      await Promise.all(  
-        source.map(async (item) => {  
-          const { data: batches } =  
-            await supabase  
-              .from('batches')  
-              .select('*')  
-              .eq(  
-                'store_id',  
-                store.id,  
-              )  
-              .eq(  
-                'product_id',  
-                item.product_id,  
-              )  
-              .eq(  
-                'is_active',  
-                true,  
-              )  
-              .gt(  
-                'current_stock_units',  
-                0,  
-              )  
-              .order(  
-                'expiry_date',  
-                {  
-                  ascending: true,  
-                },  
-              )  
-  
-          const existingBatch =  
-            (batches || []).find(  
-              (b) =>  
-                b.id ===  
-                item.batch_id,  
-            )  
-  
-          return {  
-            ...item,  
-            batches: [  
-              ...(existingBatch  
-                ? [existingBatch]  
-                : []),  
-              ...(batches || []).filter(  
-                (b) =>  
-                  b.id !==  
-                  item.batch_id,  
-              ),  
-            ],  
-            batch:  
-              existingBatch ||  
-              item.batches ||  
-              null,  
-          }  
-        }),  
-      )  
-  
-    setItems(next)  
+      const next = await Promise.all(
+        source.map(async (item) => {
+          const { data: batchRows, error: batchError } = await supabase
+            .from('batches')
+            .select('*')
+            .eq('store_id', store.id)
+            .eq('product_id', item.product_id)
+            .order('expiry_date', { ascending: true })
+
+          if (batchError) throw batchError
+
+          // Keep the original batch available for editing even when its
+          // current stock is zero: the sale-edit transaction restores the
+          // original quantity before applying the revised sale quantity.
+          const batches = (batchRows || []).filter(
+            (batch) => (batch.is_active && safeNumber(batch.current_stock_units) > 0) || batch.id === item.batch_id,
+          )
+          const existingBatch = batches.find((batch) => batch.id === item.batch_id)
+
+          return {
+            ...item,
+            batches: [
+              ...(existingBatch ? [existingBatch] : []),
+              ...batches.filter((batch) => batch.id !== item.batch_id),
+            ],
+            batch: existingBatch || item.batches || null,
+          }
+        }),
+      )
+      setItems(next)
+    } catch (loadError) {
+      setError(loadError?.message || 'Could not load the items for this sale.')
+    } finally {
+      setItemsLoading(false)
+    }
   }  
   
   const updateItem = (  
