@@ -1690,3 +1690,91 @@ a:hover { color: var(--navy); }
   .pharmdesk-logo-code.compact .pharmdesk-wordmark { font-size:19px; }
   .pharmdesk-logo-code.compact .pharmdesk-tagline { font-size:4.5px; letter-spacing:.4px; }
 }
+
+/* SIGN-IN PAGE — approved PharmDesk reference layout; dashboard styles remain untouched. */
+.auth-screen {
+  grid-template-columns: minmax(330px, 1fr) minmax(390px, 1.05fr);
+  min-height: 100vh;
+  background: #eef6fc;
+}
+.auth-screen::before, .auth-screen::after { display: none; }
+.auth-brand-panel {
+  display:flex; position:relative; min-width:0; min-height:100vh;
+  align-items:center; justify-content:center; padding:clamp(28px,5vw,72px); overflow:hidden;
+  background:radial-gradient(ellipse at 4% 8%,rgba(208,239,255,.9),transparent 42%),
+    radial-gradient(ellipse at 96% 88%,rgba(195,243,238,.72),transparent 45%),
+    linear-gradient(135deg,#f7fbff 0%,#edf6fc 60%,#e7f8f6 100%);
+}
+.auth-brand-panel::before,.auth-brand-panel::after {
+  content:"";position:absolute;pointer-events:none;border:1px solid rgba(81,174,209,.12);border-radius:50%;
+}
+.auth-brand-panel::before { width:560px;height:560px;left:-340px;bottom:-150px; }
+.auth-brand-panel::after { width:460px;height:460px;right:-320px;top:-170px; }
+.auth-brand-content {
+  width:min(410px,100%);position:relative;z-index:1;display:flex;flex-direction:column;
+  align-items:flex-start;text-align:left;
+}
+.auth-brand-primary-logo {
+  display:block;width:min(250px,78%);height:auto;max-height:155px;object-fit:contain;
+  object-position:left center;margin:0 0 28px;
+}
+.auth-brand-content h2 {
+  margin:0;color:#092b50;font-size:clamp(27px,2.8vw,36px);font-weight:800;
+  line-height:1.08;letter-spacing:-.045em;
+}
+.auth-brand-content .auth-brand-intro { margin:14px 0 22px;color:#455c73;font-size:15px;line-height:1.55; }
+.auth-brand-features { display:flex;flex-direction:column;gap:14px;width:100%;margin-top:0; }
+.auth-feature { display:flex;align-items:center;gap:12px;color:#102d4d; }
+.auth-feature-icon {
+  display:grid;place-items:center;flex:0 0 38px;width:38px;height:38px;border-radius:50%;
+  background:linear-gradient(145deg,#e2f4ff,#d8f0f0);color:#087ca8;font-size:21px;font-weight:800;
+}
+.auth-feature>span:last-child { display:flex;flex-direction:column;gap:3px; }
+.auth-feature strong { color:#102d4d;font-size:12px;font-weight:800; }
+.auth-feature small { color:#536b80;font-size:11px;line-height:1.3; }
+.auth-form-side {
+  min-height:100vh;padding:clamp(24px,5vw,72px);
+  background:linear-gradient(135deg,rgba(228,241,249,.5),rgba(255,255,255,.82)),#f7f9fc;
+}
+.auth-form-side>.auth-card {
+  width:min(450px,100%);padding:28px 30px 24px;border:1px solid rgba(218,229,239,.95);
+  border-radius:16px;background:rgba(255,255,255,.97);box-shadow:0 22px 60px rgba(20,55,84,.12);
+}
+.auth-form-side>.auth-card h1 {
+  text-align:left;margin:0 0 5px;color:#0a2548;font-size:24px;line-height:1.2;letter-spacing:-.035em;
+}
+.auth-form-side>.auth-card>p { text-align:left;margin:0 0 24px;color:#728196;font-size:13px; }
+.auth-form-side>.auth-card label { color:#43556a;font-size:12px;font-weight:700; }
+.auth-form-side>.auth-card input {
+  min-height:45px;border:1px solid #dce5ee;border-radius:10px;background:#fbfdff;
+  box-shadow:inset 0 1px 2px rgba(20,55,84,.025);
+}
+.auth-form-side>.auth-card .form-stack { gap:13px; }
+.auth-form-side>.auth-card .primary-button {
+  min-height:46px;border-radius:10px;background:linear-gradient(100deg,#092b50,#075274);
+  box-shadow:0 8px 18px rgba(7,55,86,.14);font-size:14px;font-weight:800;
+}
+.auth-form-side>.auth-card .secondary-button {
+  min-height:43px;border:1px solid #dce5ee;border-radius:10px;background:#fff;color:#173654;font-size:12px;font-weight:700;
+}
+.auth-form-side>.auth-card .secondary-button:hover { background:#f5faff; }
+@media (max-width:760px) {
+  .auth-screen { grid-template-columns:minmax(0,1fr);overflow:visible; }
+  .auth-brand-panel { min-height:auto;padding:28px 24px 22px;justify-content:flex-start; }
+  .auth-brand-content { width:100%;max-width:520px; }
+  .auth-brand-primary-logo { width:175px;max-height:105px;margin-bottom:18px; }
+  .auth-brand-content h2 { font-size:26px; }
+  .auth-brand-content .auth-brand-intro { margin:8px 0 15px;font-size:13px; }
+  .auth-brand-features { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px; }
+  .auth-feature { gap:8px;align-items:flex-start; }
+  .auth-feature-icon { flex-basis:30px;width:30px;height:30px;font-size:16px; }
+  .auth-feature strong { font-size:10px; }.auth-feature small { font-size:9px; }
+  .auth-form-side { min-height:auto;padding:18px 16px 28px; }
+  .auth-form-side>.auth-card { padding:24px 20px 20px; }
+}
+@media (max-width:390px) {
+  .auth-brand-panel { padding:22px 18px 18px; }
+  .auth-brand-features { grid-template-columns:minmax(0,1fr);gap:9px; }
+  .auth-feature-icon { flex-basis:32px;width:32px;height:32px; }
+  .auth-form-side { padding:14px 12px 24px; }
+}
