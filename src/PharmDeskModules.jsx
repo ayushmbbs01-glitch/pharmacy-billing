@@ -481,7 +481,7 @@ function LoadingScreen() {
   return (
     <div className="loading-screen">
       <div className="loading-card">
-        <div className="loading-logo primary-logo-display"><img src="/icons/pharmdesk-primary-light.svg?v=6" alt="PharmDesk" /></div>
+        <div className="loading-logo primary-logo-display"><img src="/icons/pharmdesk-primary-light.svg?v=7" alt="PharmDesk" /></div>
         <p className="loading-status">Setting up your workspace…</p>
         <div className="loading-progress" role="presentation"><span /></div>
       </div>
@@ -2274,7 +2274,7 @@ function AppIcon({ name, size = 19 }) {
 function PharmDeskLogo({ compact = false }) {
   return (
     <div className={compact ? 'pharmdesk-logo-code compact' : 'pharmdesk-logo-code'}>
-      <img className="pharmdesk-mark-code" src="/icons/pharmdesk-icon-sidebar.svg?v=8" alt="" />
+      <img className="pharmdesk-mark-code" src="/icons/pharmdesk-icon-sidebar.svg?v=9" alt="" />
       <span className="pharmdesk-logo-type">
         <span className="pharmdesk-wordmark"><span>Pharm</span><b>Desk</b></span>
         <span className="pharmdesk-tagline">MANAGE · SELL · TRACK · GROW</span>
