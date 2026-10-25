@@ -2110,3 +2110,20 @@ a:hover { color: var(--navy); }
   .auth-brand-features .auth-feature strong { font-size: 11px !important; }
   .auth-brand-features .auth-feature small { font-size: 10px !important; }
 }
+
+
+/* Final logo aspect-ratio correction: artwork is 1.619:1, never stretch it */
+.auth-brand-primary-logo {
+  width: min(390px, 100%) !important;
+  height: auto !important;
+  aspect-ratio: 1.619 / 1;
+  max-height: none !important;
+  object-fit: contain !important;
+  object-position: center !important;
+}
+@media (max-width: 760px) {
+  .auth-brand-primary-logo { width: 174px !important; height: auto !important; aspect-ratio: 1.619 / 1; }
+}
+@media (max-width: 390px) {
+  .auth-brand-primary-logo { width: 164px !important; height: auto !important; aspect-ratio: 1.619 / 1; }
+}
