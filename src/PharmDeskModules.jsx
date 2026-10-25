@@ -724,7 +724,7 @@ function LoginScreen() {
   if (mode === 'forgot') {
     return (
       <AuthShell><form className="auth-card" onSubmit={requestPasswordReset}>
-          <div className="brand-mark"><img src="/icons/pharmdesk-logo.svg?v=10" alt="PharmDesk" /></div>
+          <div className="brand-mark"><img src="/icons/pharmdesk-logo.svg?v=11" alt="PharmDesk" /></div>
           <h1>Forgot your password?</h1>
           <p>Enter your registered email and we’ll send you a 6-digit reset OTP.</p>
 
@@ -763,7 +763,7 @@ function LoginScreen() {
   if (mode === 'reset') {
     return (
       <AuthShell><form className="auth-card" onSubmit={verifyResetOtp}>
-          <div className="brand-mark"><img src="/icons/pharmdesk-logo.svg?v=10" alt="PharmDesk" /></div>
+          <div className="brand-mark"><img src="/icons/pharmdesk-logo.svg?v=11" alt="PharmDesk" /></div>
           <h1>Enter reset OTP</h1>
           <p>Enter the 6-digit code sent to your email address.</p>
 
@@ -815,7 +815,7 @@ function LoginScreen() {
   if (mode === 'reset-password') {
     return (
       <AuthShell><form className="auth-card" onSubmit={completePasswordReset}>
-          <div className="brand-mark"><img src="/icons/pharmdesk-logo.svg?v=10" alt="PharmDesk" /></div>
+          <div className="brand-mark"><img src="/icons/pharmdesk-logo.svg?v=11" alt="PharmDesk" /></div>
           <h1>Create a new password</h1>
           <p>Your email has been verified. Choose a new password for your PharmDesk account.</p>
 
@@ -861,7 +861,7 @@ function LoginScreen() {
         className="auth-card"
         onSubmit={signup}
       >
-        <div className="brand-mark"><img src="/icons/pharmdesk-logo.svg?v=10" alt="PharmDesk" /></div>
+        <div className="brand-mark"><img src="/icons/pharmdesk-logo.svg?v=11" alt="PharmDesk" /></div>
 
         <h1>Create your PharmDesk account</h1>
 
@@ -1376,7 +1376,7 @@ function PlatformAdminDashboard({ session }) {
     <div className="app-shell">
       <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
         <div className="brand">
-          <div className="brand-logo"><img src="/icons/pharmdesk-logo.svg?v=10" alt="PharmDesk" /></div>
+          <div className="brand-logo"><img src="/icons/pharmdesk-logo.svg?v=11" alt="PharmDesk" /></div>
           <div className="brand-caption">
             <strong>PharmDesk</strong>
             <span>Platform Administration</span>
@@ -2274,7 +2274,7 @@ function AppIcon({ name, size = 19 }) {
 function PharmDeskLogo({ compact = false }) {
   return (
     <div className={compact ? 'pharmdesk-logo-code compact' : 'pharmdesk-logo-code'}>
-      <img className="pharmdesk-mark-code" src="/icons/pharmdesk-icon-sidebar.svg?v=5" alt="" />
+      <img className="pharmdesk-mark-code" src="/icons/pharmdesk-icon-sidebar.svg?v=6" alt="" />
       <span className="pharmdesk-logo-type">
         <span className="pharmdesk-wordmark"><span>Pharm</span><b>Desk</b></span>
         <span className="pharmdesk-tagline">MANAGE · SELL · TRACK · GROW</span>
@@ -2287,7 +2287,7 @@ function AuthBrandPanel() {
   return (
     <section className="auth-brand-panel">
       <div className="auth-brand-content">
-        <img className="auth-brand-primary-logo" src="/icons/pharmdesk-logo.svg?v=10" alt="PharmDesk — Manage, Sell, Track, Grow" />
+        <img className="auth-brand-primary-logo" src="/icons/pharmdesk-logo.svg?v=11" alt="PharmDesk — Manage, Sell, Track, Grow" />
         <h2>Smarter Pharmacy<br />Management</h2>
         <p className="auth-brand-intro">Everything you need to run<br className="auth-desktop-break" /> your pharmacy, in one place.</p>
         <div className="auth-brand-features">
