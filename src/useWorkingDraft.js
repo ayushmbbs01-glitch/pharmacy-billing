@@ -117,7 +117,15 @@ export function useWorkingDraft({
           try { restoreRef.current?.(chosen) } catch (error) {
             console.warn('Could not restore working draft:', error)
           }
-          lastSyncedValueRef.current = valueSignature(chosen)
+          // A local-only draft is not yet synchronized. Mark it dirty so a
+          // realtime event from the cloud cannot overwrite it before its
+          // pending upsert finishes. Matching local/cloud payloads are safe
+          // to treat as synchronized even if their timestamps differ.
+          const chosenSignature = valueSignature(chosen)
+          lastSyncedValueRef.current =
+            cloudDraft && valueSignature(cloudDraft) === chosenSignature
+              ? chosenSignature
+              : null
         } else {
           lastSyncedValueRef.current = valueSignature(latestValueRef.current)
         }
