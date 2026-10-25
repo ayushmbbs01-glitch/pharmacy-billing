@@ -2274,7 +2274,7 @@ function AppIcon({ name, size = 19 }) {
 function PharmDeskLogo({ compact = false }) {
   return (
     <div className={compact ? 'pharmdesk-logo-code compact' : 'pharmdesk-logo-code'}>
-      <img className="pharmdesk-mark-code" src={compact ? "/icons/pharmdesk-icon-sidebar.svg?v=1" : "/icons/pharmdesk-icon.svg?v=5"} alt="" />
+      <img className="pharmdesk-mark-code" src={compact ? "/icons/pharmdesk-icon-sidebar.svg?v=2" : "/icons/pharmdesk-icon.svg?v=6"} alt="" />
       <span className="pharmdesk-logo-type">
         <span className="pharmdesk-wordmark"><span>Pharm</span><b>Desk</b></span>
         <span className="pharmdesk-tagline">MANAGE · SELL · TRACK · GROW</span>
@@ -2287,7 +2287,7 @@ function AuthBrandPanel() {
   return (
     <section className="auth-brand-panel">
       <div className="auth-brand-content">
-        <img className="auth-brand-primary-logo" src="/icons/pharmdesk-logo.svg?v=7" alt="PharmDesk — Manage, Sell, Track, Grow" />
+        <img className="auth-brand-primary-logo" src="/icons/pharmdesk-logo.svg?v=8" alt="PharmDesk — Manage, Sell, Track, Grow" />
         <h2>Smarter Pharmacy<br />Management</h2>
         <p className="auth-brand-intro">Everything you need to run<br className="auth-desktop-break" /> your pharmacy, in one place.</p>
         <div className="auth-brand-features">
