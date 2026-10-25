@@ -2464,6 +2464,21 @@ function PharmacyApp({ session }) {
   const [store, setStore] = useState(null)  
   const [profile, setProfile] = useState(null)  
   const [loading, setLoading] = useState(true)  
+
+  useWorkingDraft({
+    storeId: store?.id,
+    moduleKey: 'navigation',
+    draftKey: 'last-page',
+    localStorageKey: navigationStorageKey,
+    value: { activeNav, requestedSalesTab, requestedInventoryTab, requestedPurchasesTab },
+    hasWork: true,
+    onRestore: (draft) => {
+      setActiveNav(NAV_ITEMS.includes(draft.activeNav) ? draft.activeNav : 'Dashboard')
+      setRequestedSalesTab(draft.requestedSalesTab || null)
+      setRequestedInventoryTab(draft.requestedInventoryTab || null)
+      setRequestedPurchasesTab(draft.requestedPurchasesTab || null)
+    },
+  })
   
   useEffect(() => {
   const handleModuleHeaderClick = (event) => {
