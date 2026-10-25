@@ -2395,6 +2395,11 @@ function AuthShell({ children }) {
 
 function PharmacyApp({ session }) {  
   const [activeNav, setActiveNav] = useState('Dashboard')
+  const [requestedSalesTab, setRequestedSalesTab] = useState(null)
+  const navigateToModule = (module, tab = null) => {
+    setRequestedSalesTab(module === 'Sales' ? tab : null)
+    setActiveNav(module)
+  }
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [globalSearch, setGlobalSearch] = useState('')
@@ -2542,10 +2547,10 @@ function PharmacyApp({ session }) {
   const renderPage = () => {  
     switch (activeNav) {  
       case 'Dashboard':  
-        return <Dashboard store={store} profile={profile} onNavigate={setActiveNav} />  
+        return <Dashboard store={store} profile={profile} onNavigate={navigateToModule} />  
   
       case 'Sales':  
-        return <SalesModule store={store} session={session} />  
+        return <SalesModule store={store} session={session} initialTab={requestedSalesTab} />  
   
       case 'Purchases':  
         return <PurchasesModule store={store} session={session} />  
@@ -2924,8 +2929,8 @@ function Dashboard({ store, profile, onNavigate }) {
             <strong>Check Inventory</strong>
             <small>Find products and batches</small>
           </button>
-          <button type="button" className="quick-action" onClick={() => onNavigate?.('Sales')}>
-            <span className="quick-action-icon"><AppIcon name="returns" size={18} /></span>
+          <button type="button" className="quick-action" onClick={() => onNavigate?.('Sales', 'Returns')}>
+            <span className="quick-action-icon"><AppIcon name="sales" size={18} /></span>
             <strong>Sales Return</strong>
             <small>Record returned products</small>
           </button>
@@ -3135,8 +3140,8 @@ function AIRecommendations({
    SALES + PURCHASES RESTORED
 ========================================================= */
 
-function SalesModule({ store, session }) {  
-  const [tab, setTab] = useState('New Sale')  
+function SalesModule({ store, session, initialTab = null }) {  
+  const [tab, setTab] = useState(initialTab || 'New Sale')  
   
   return (  
     <div>  
