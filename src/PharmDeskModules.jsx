@@ -12844,6 +12844,73 @@ function Reports({
     if (store?.id) load()  
   }, [store?.id])  
   
+  const exportReportCsv = () => {
+    const quote = (value) => '"' + String(value ?? '').replace(/"/g, '""') + '"'
+    let filename = 'pharmdesk-report-' + tab.toLowerCase() + '-' + from + '-to-' + to + '.csv'
+    let header = []
+    let rows = []
+
+    if (tab === 'Sales' || tab === 'Overview') {
+      header = ['Invoice', 'Date', 'Customer', 'Phone', 'Status', 'Subtotal', 'CGST', 'SGST', 'IGST', 'Total', 'Paid', 'Due', 'Payment Methods']
+      rows = data.sales.map((sale) => [
+        sale.invoice_number, sale.bill_datetime, sale.customers?.name || 'Walk-in customer',
+        sale.customers?.phone, sale.status, sale.subtotal, sale.cgst_amount, sale.sgst_amount,
+        sale.igst_amount, sale.grand_total, sale.amount_paid, sale.amount_due,
+        [...new Set((sale.sale_payments || []).map((payment) => payment.payment_method).filter(Boolean))].join('; '),
+      ])
+    } else if (tab === 'Purchases') {
+      header = ['Invoice', 'Date', 'Supplier', 'Subtotal', 'CGST', 'SGST', 'IGST', 'Total']
+      rows = data.purchases.map((purchase) => [
+        purchase.invoice_number, purchase.invoice_date, purchase.suppliers?.supplier_name || 'Supplier',
+        purchase.subtotal, purchase.cgst_amount, purchase.sgst_amount, purchase.igst_amount, purchase.total_amount,
+      ])
+    } else if (tab === 'Customers') {
+      header = ['Customer', 'Phone', 'Bills in selected period', 'Sales total']
+      const totals = new Map()
+      data.sales.forEach((sale) => {
+        const key = sale.customer_id || 'walk_in'
+        const current = totals.get(key) || { customer: sale.customers?.name || 'Walk-in customer', phone: sale.customers?.phone || '', count: 0, total: 0 }
+        current.count += 1
+        current.total += safeNumber(sale.grand_total)
+        totals.set(key, current)
+      })
+      rows = Array.from(totals.values()).map((item) => [item.customer, item.phone, item.count, item.total])
+    } else if (tab === 'Suppliers') {
+      header = ['Supplier', 'Invoices in selected period', 'Purchase total']
+      const totals = new Map()
+      data.purchases.forEach((purchase) => {
+        const key = purchase.supplier_id || 'unknown'
+        const current = totals.get(key) || { supplier: purchase.suppliers?.supplier_name || 'Supplier', count: 0, total: 0 }
+        current.count += 1
+        current.total += safeNumber(purchase.total_amount)
+        totals.set(key, current)
+      })
+      rows = Array.from(totals.values()).map((item) => [item.supplier, item.count, item.total])
+    } else if (tab === 'Products') {
+      header = ['Product', 'Generic', 'Manufacturer', 'Units sold', 'Sales value']
+      const totals = new Map()
+      data.saleItems.forEach((item) => {
+        const key = item.product_id || item.products?.id || item.id
+        const current = totals.get(key) || { name: item.products?.product_name || 'Product', generic: item.products?.generic_display_name || '', manufacturer: item.products?.manufacturer || '', units: 0, total: 0 }
+        current.units += safeNumber(item.quantity_units)
+        current.total += safeNumber(item.line_total)
+        totals.set(key, current)
+      })
+      rows = Array.from(totals.values()).map((item) => [item.name, item.generic, item.manufacturer, item.units, item.total])
+    }
+
+    const csv = '\uFEFF' + [header.map(quote).join(','), ...rows.map((row) => row.map(quote).join(','))].join('\r\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  }
+
   const salesTotal = sum(  
     data.sales.map(  
       (x) => x.grand_total,  
@@ -12893,6 +12960,11 @@ function Reports({
         subtitle="Sales, purchases, customers, suppliers and product details"  
       />  
   
+      <div className="button-row" style={{ justifyContent: 'flex-end', marginBottom: 12 }}>
+        <button type="button" className="secondary-button" onClick={exportReportCsv} disabled={loading}>
+          Export {tab === 'Overview' ? 'sales' : tab.toLowerCase()} CSV
+        </button>
+      </div>
       <PanelList title="Report Period">  
         <div className="inline-fields">  
           <label>  
