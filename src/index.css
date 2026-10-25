@@ -1628,3 +1628,63 @@ a:hover { color: var(--navy); }
   .sidebar-store-wrap { margin-top:auto; }
   .store-switcher-menu { left:0; right:0; width:auto; }
 }
+
+/* Final PharmDesk sidebar logo and functional store shortcut */
+.pharmdesk-logo-code.compact {
+  display:grid;
+  grid-template-columns:44px minmax(0,1fr);
+  align-items:center;
+  justify-content:flex-start;
+  gap:2px 9px;
+  padding:0 2px;
+}
+.pharmdesk-logo-code.compact .pharmdesk-mark-code {
+  grid-column:1;
+  grid-row:1 / span 2;
+  width:44px;
+  height:44px;
+  flex-basis:44px;
+}
+.pharmdesk-logo-code.compact .pharmdesk-logo-type {
+  min-width:0;
+  display:flex;
+  flex-direction:column;
+  align-items:flex-start;
+  gap:4px;
+}
+.pharmdesk-logo-code.compact .pharmdesk-wordmark {
+  font-size:21px;
+  line-height:1;
+  letter-spacing:-.8px;
+}
+.pharmdesk-logo-code.compact .pharmdesk-tagline {
+  display:block;
+  margin:0;
+  color:#b8dce9;
+  font-size:5px;
+  font-weight:700;
+  letter-spacing:.55px;
+  white-space:nowrap;
+}
+.sidebar.collapsed .pharmdesk-logo-code.compact {
+  display:flex;
+  justify-content:center;
+  padding:0;
+}
+.sidebar.collapsed .pharmdesk-logo-code.compact .pharmdesk-mark-code {
+  width:38px;
+  height:38px;
+  flex-basis:38px;
+}
+.sidebar.collapsed .pharmdesk-logo-code.compact .pharmdesk-logo-type { display:none; }
+.sidebar-store-wrap .sidebar-store { cursor:pointer; }
+.sidebar-store-wrap .sidebar-store:focus-visible {
+  outline:2px solid #5ad9d2;
+  outline-offset:3px;
+}
+@media (max-width: 800px) {
+  .pharmdesk-logo-code.compact { grid-template-columns:40px minmax(0,1fr); }
+  .pharmdesk-logo-code.compact .pharmdesk-mark-code { width:40px; height:40px; flex-basis:40px; }
+  .pharmdesk-logo-code.compact .pharmdesk-wordmark { font-size:19px; }
+  .pharmdesk-logo-code.compact .pharmdesk-tagline { font-size:4.5px; letter-spacing:.4px; }
+}
