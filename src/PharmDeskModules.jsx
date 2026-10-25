@@ -2395,6 +2395,15 @@ function AuthShell({ children }) {
 
 function PharmacyApp({ session }) {  
   const [activeNav, setActiveNav] = useState('Dashboard')
+  const [requestedSalesTab, setRequestedSalesTab] = useState(null)
+  const [requestedInventoryTab, setRequestedInventoryTab] = useState(null)
+  const [requestedPurchasesTab, setRequestedPurchasesTab] = useState(null)
+  const navigateToModule = (module, tab = null) => {
+    setRequestedSalesTab(module === 'Sales' ? tab : null)
+    setRequestedInventoryTab(module === 'Inventory' ? tab : null)
+    setRequestedPurchasesTab(module === 'Purchases' ? tab : null)
+    setActiveNav(module)
+  }
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [globalSearch, setGlobalSearch] = useState('')
@@ -2542,16 +2551,16 @@ function PharmacyApp({ session }) {
   const renderPage = () => {  
     switch (activeNav) {  
       case 'Dashboard':  
-        return <Dashboard store={store} profile={profile} onNavigate={setActiveNav} />  
+        return <Dashboard store={store} profile={profile} onNavigate={navigateToModule} />  
   
       case 'Sales':  
-        return <SalesModule store={store} session={session} />  
+        return <SalesModule store={store} session={session} initialTab={requestedSalesTab} />  
   
-      case 'Purchases':  
-        return <PurchasesModule store={store} session={session} />  
+      case 'Purchases':
+        return <PurchasesModule store={store} session={session} initialTab={requestedPurchasesTab} />  
   
-      case 'Inventory':  
-        return <InventoryModule store={store} session={session} />  
+      case 'Inventory':
+        return <InventoryModule store={store} session={session} initialTab={requestedInventoryTab} />  
   
       case 'Customers':  
         return <CustomersModule store={store} />  
@@ -2763,6 +2772,41 @@ function PharmacyApp({ session }) {
           </div>
         </header>
         {renderPage()}
+
+        <nav className="mobile-bottom-nav" aria-label="Primary navigation">
+          {[
+            { label: 'Home', target: 'Dashboard', icon: 'dashboard' },
+            { label: 'Sales', target: 'Sales', icon: 'sales' },
+            { label: 'Purchases', target: 'Purchases', icon: 'purchases' },
+            { label: 'Inventory', target: 'Inventory', icon: 'inventory' },
+            { label: 'Customers', target: 'Customers', icon: 'customers' },
+          ].map((item) => (
+            <button
+              key={item.target}
+              type="button"
+              className={activeNav === item.target ? 'mobile-nav-item active' : 'mobile-nav-item'}
+              onClick={() => {
+                setActiveNav(item.target)
+                setSidebarOpen(false)
+                setSearchOpen(false)
+                setGlobalSearch('')
+                window.scrollTo({ top: 0, behavior: 'auto' })
+              }}
+            >
+              <AppIcon name={item.icon} size={19} />
+              <span>{item.label}</span>
+            </button>
+          ))}
+          <button
+            type="button"
+            className="mobile-nav-item"
+            onClick={() => setSidebarOpen(true)}
+            aria-label="Open all navigation options"
+          >
+            <AppIcon name="menu" size={19} />
+            <span>More</span>
+          </button>
+        </nav>
       </main>
     </div>
   )
@@ -2775,30 +2819,52 @@ function PharmacyApp({ session }) {
 function Dashboard({ store, profile, onNavigate }) {
   const [stats, setStats] = useState({
     sales: 0,
-    purchases: 0,
-    batches: 0,
+    purchaseBills: 0,
+    lowStock: 0,
     expiry: 0,
-    sales7d: [],
   })
 
   useEffect(() => {
     if (!store?.id) return
+    let cancelled = false
     const load = async () => {
       try {
         const start = todayISO()
-        const snapshot = await PharmDeskAPI.dashboardSnapshot(store.id, start, 90)
+        const [snapshot, inventory, stockResult] = await Promise.all([
+          PharmDeskAPI.dashboardSnapshot(store.id, start, 90),
+          PharmDeskAPI.inventory(store.id),
+          supabase
+            .from('batches')
+            .select('product_id,current_stock_units')
+            .eq('store_id', store.id)
+            .eq('is_active', true),
+        ])
+        if (stockResult.error) throw stockResult.error
+
+        const stockTotals = {}
+        ;(stockResult.data || []).forEach((batch) => {
+          stockTotals[batch.product_id] =
+            (stockTotals[batch.product_id] || 0) + safeNumber(batch.current_stock_units)
+        })
+        const lowStockCount = (inventory || []).filter((row) => {
+          const product = row.products || {}
+          const threshold = safeNumber(row.reorder_level || row.minimum_stock || 0)
+          return threshold > 0 && safeNumber(stockTotals[product.id]) <= threshold
+        }).length
+
+        if (cancelled) return
         setStats({
           sales: sum((snapshot.sales || []).map((x) => x.grand_total)),
-          purchases: sum((snapshot.purchases || []).map((x) => x.total_amount)),
-          batches: snapshot.batches?.length || 0,
+          purchaseBills: (snapshot.purchases || []).length,
+          lowStock: lowStockCount,
           expiry: snapshot.expiry?.length || 0,
-          sales7d: snapshot.sales7d || [],
         })
       } catch (error) {
         console.error('Dashboard load error:', error)
       }
     }
     load()
+    return () => { cancelled = true }
   }, [store?.id])
 
   const hour = new Date().getHours()
@@ -2818,77 +2884,37 @@ function Dashboard({ store, profile, onNavigate }) {
       />
 
       <div className="stats-grid dashboard-stats">
-        <StatCard title="Today's Sales" value={money(stats.sales)} icon="sales" />
-        <StatCard title="Today's Purchases" value={money(stats.purchases)} icon="purchases" />
-        <StatCard title="Stock Batches" value={stats.batches} icon="customers" />
-        <StatCard title="Near Expiry" value={stats.expiry} icon="inventory" />
-      </div>
-
-      <div className="dashboard-columns">
-        <section className="panel sales-overview">
-          <div className="panel-header">
-            <div>
-              <h2>Sales Overview</h2>
-              <p className="muted">Today's completed sales</p>
-            </div>
-            <span className="range-pill">Today</span>
-          </div>
-          <div className="mini-chart">
-            <div className="chart-y"><span>₹</span><span>0</span></div>
-            <div className="chart-bars">
-              {(() => {
-                const days = Array.from({ length: 7 }, (_, index) => {
-                  const day = new Date()
-                  day.setDate(day.getDate() - (6 - index))
-                  const key = localDateISO(day)
-                  const total = sum(
-                    (stats.sales7d || [])
-                      .filter((sale) => localDateISO(sale.bill_datetime) === key)
-                      .map((sale) => sale.grand_total),
-                  )
-                  return { key, label: day.toLocaleDateString('en-IN', { weekday: 'short' }), total }
-                })
-                const max = Math.max(...days.map((day) => day.total), 1)
-                return days.map((day) => (
-                  <div className="chart-column" key={day.key}>
-                    <div className="chart-bar" style={{ height: `${Math.max(4, (day.total / max) * 100)}%` }} title={money(day.total)} />
-                    <span>{day.label}</span>
-                  </div>
-                ))
-              })()}
-            </div>
-          </div>
-        </section>
-
-        <section className="panel recent-activity">
-          <div className="panel-header">
-            <div>
-              <h2>Quick Actions</h2>
-              <p className="muted">Common tasks</p>
-            </div>
-          </div>
-          <div className="activity-list">
-            <button type="button" className="activity-item" onClick={() => onNavigate?.('Sales')}>
-              <span className="activity-icon"><AppIcon name="sales" size={17} /></span>
-              <span><strong>New Sale</strong><small>Create a customer bill</small></span>
-            </button>
-            <button type="button" className="activity-item" onClick={() => onNavigate?.('Purchases')}>
-              <span className="activity-icon"><AppIcon name="purchases" size={17} /></span>
-              <span><strong>New Purchase</strong><small>Record incoming stock</small></span>
-            </button>
-            <button type="button" className="activity-item" onClick={() => onNavigate?.('Inventory')}>
-              <span className="activity-icon"><AppIcon name="inventory" size={17} /></span>
-              <span><strong>Inventory</strong><small>Check products and stock</small></span>
-            </button>
-          </div>
-        </section>
+        <button type="button" className="stat-card stat-card-action" onClick={() => onNavigate?.('Sales')}>
+          <span className="stat-icon"><AppIcon name="sales" size={17} /></span>
+          <span>Today's Sales</span>
+          <strong>{money(stats.sales)}</strong>
+          <small>Open sales</small>
+        </button>
+        <button type="button" className="stat-card stat-card-action" onClick={() => onNavigate?.('Purchases', 'Supplier Invoices')}>
+          <span className="stat-icon"><AppIcon name="purchases" size={17} /></span>
+          <span>Purchase Bills Today</span>
+          <strong>{stats.purchaseBills}</strong>
+          <small>Open purchases</small>
+        </button>
+        <button type="button" className="stat-card stat-card-action" onClick={() => onNavigate?.('Inventory', 'Low Stock')}>
+          <span className="stat-icon"><AppIcon name="inventory" size={17} /></span>
+          <span>Low-stock Items</span>
+          <strong>{stats.lowStock}</strong>
+          <small>Review stock levels</small>
+        </button>
+        <button type="button" className="stat-card stat-card-action" onClick={() => onNavigate?.('Inventory', 'Expiry')}>
+          <span className="stat-icon"><AppIcon name="alerts" size={17} /></span>
+          <span>Expiry Alerts</span>
+          <strong>{stats.expiry}</strong>
+          <small>Review expiring batches</small>
+        </button>
       </div>
 
       <section className="dashboard-quick panel">
         <div className="panel-header">
           <div>
             <h2>Quick Actions</h2>
-            <p className="muted">Jump directly into the tasks you use most.</p>
+            <p className="muted">Common tasks, one tap away.</p>
           </div>
         </div>
         <div className="quick-action-grid">
@@ -2900,29 +2926,29 @@ function Dashboard({ store, profile, onNavigate }) {
           <button type="button" className="quick-action" onClick={() => onNavigate?.('Purchases')}>
             <span className="quick-action-icon"><AppIcon name="purchases" size={18} /></span>
             <strong>New Purchase</strong>
-            <small>Record stock</small>
+            <small>Record incoming stock</small>
           </button>
           <button type="button" className="quick-action" onClick={() => onNavigate?.('Inventory')}>
             <span className="quick-action-icon"><AppIcon name="inventory" size={18} /></span>
-            <strong>Inventory</strong>
-            <small>Manage products</small>
+            <strong>Check Inventory</strong>
+            <small>Find products and batches</small>
+          </button>
+          <button type="button" className="quick-action" onClick={() => onNavigate?.('Sales', 'Returns')}>
+            <span className="quick-action-icon"><AppIcon name="sales" size={18} /></span>
+            <strong>Sales Return</strong>
+            <small>Record returned products</small>
           </button>
           <button type="button" className="quick-action" onClick={() => onNavigate?.('Customers')}>
             <span className="quick-action-icon"><AppIcon name="customers" size={18} /></span>
-            <strong>Customers</strong>
-            <small>View customer records</small>
-          </button>
-          <button type="button" className="quick-action" onClick={() => onNavigate?.('Reports')}>
-            <span className="quick-action-icon"><AppIcon name="reports" size={18} /></span>
-            <strong>Reports</strong>
-            <small>Review performance</small>
+            <strong>Collect Payment</strong>
+            <small>Open customer balances</small>
           </button>
         </div>
       </section>
     </div>
   )
-}  
-  
+}
+
 function StatCard({ title, value, icon }) {
   return (
     <div className="stat-card">
@@ -3118,8 +3144,8 @@ function AIRecommendations({
    SALES + PURCHASES RESTORED
 ========================================================= */
 
-function SalesModule({ store, session }) {  
-  const [tab, setTab] = useState('New Sale')  
+function SalesModule({ store, session, initialTab = null }) {  
+  const [tab, setTab] = useState(initialTab || 'New Sale')  
   
   return (  
     <div>  
@@ -4519,8 +4545,8 @@ function CustomerLedgerReceiptModal({
         .replaceAll('>', '&gt;')
         .replaceAll('"', '&quot;')
         .replaceAll("'", '&#039;')
-    printDocument.open()
-  printDocument.write(`
+    printWindow.document.open()
+  printWindow.document.write(`
       <!doctype html>
       <html>
         <head>
@@ -5305,110 +5331,165 @@ function DraftBills({ store }) {
   )  
 }  
   
-function CompletedBills({ store }) {  
-  const [rows, setRows] = useState([])  
-  const [query, setQuery] = useState('')  
-  const [selected, setSelected] =  
-    useState(null)  
-  
-  const load = async () => {  
-    const { data } = await supabase  
-      .from('sales')  
-      .select('*')  
-      .eq('store_id', store.id)  
-      .in('status', [  
-        'completed',  
-        'returned',  
-      ])  
-      .order('bill_datetime', {  
-        ascending: false,  
-      })  
-      .limit(300)  
-  
-    setRows(data || [])  
-  }  
-  
-  useEffect(() => {  
-    if (store?.id) load()  
-  }, [store?.id])  
-  
-  const filtered = rows.filter((x) =>  
-    matchesSearch(  
-      query,  
-      x.invoice_number,  
-      x.bill_datetime,  
-      x.status,  
-    ),  
-  )  
-  
-  return (  
-    <>  
-      <PanelList title="Completed Bills">  
-        <input  
-          placeholder="Search invoice"  
-          value={query}  
-          onChange={(e) =>  
-            setQuery(e.target.value)  
-          }  
-        />  
-  
-        <div className="record-list">  
-          {filtered.map((row) => (  
-            <button  
-              className="record-row"  
-              key={row.id}  
-              onClick={() =>  
-                setSelected(row)  
-              }  
-            >  
-              <div>  
-                <strong>  
-                  {row.invoice_number ||  
-                    'Bill'}  
-                </strong>  
-  
-                <span>  
-                  {dateTimeText(  
-                    row.bill_datetime,  
-                  )}  
-                </span>  
-              </div>  
-  
-              <div className="record-right">  
-                <span>  
-                  {row.status}  
-                </span>  
-  
-                <strong>  
-                  {money(  
-                    row.grand_total,  
-                  )}  
-                </strong>  
-  
-                <span>View →</span>  
-              </div>  
-            </button>  
-          ))}  
-        </div>  
-      </PanelList>  
-  
-      {selected && (  
-        <SaleBillModal  
-          store={store}  
-          sale={selected}  
-          onClose={() =>  
-            setSelected(null)  
-          }  
-          onUpdated={() => {  
-            setSelected(null)  
-            load()  
-          }}  
-        />  
-      )}  
-    </>  
-  )  
-}  
-  
+function CompletedBills({ store }) {
+  const [rows, setRows] = useState([])
+  const [query, setQuery] = useState('')
+  const [selected, setSelected] = useState(null)
+  const [fromDate, setFromDate] = useState('')
+  const [toDate, setToDate] = useState('')
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [paymentFilter, setPaymentFilter] = useState('all')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  const load = async () => {
+    if (!store?.id) return
+    setLoading(true)
+    setError('')
+    try {
+      const data = await PharmDeskAPI.sales(store.id, fromDate || null, toDate || null)
+      setRows((data || []).filter((sale) => ['completed', 'returned'].includes(sale.status)))
+    } catch (loadError) {
+      console.error('Completed bills load error:', loadError)
+      setError('Could not load bills. Please try again.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (store?.id) load()
+  }, [store?.id, fromDate, toDate])
+
+  const filtered = rows.filter((sale) => {
+    const paymentMethods = (sale.sale_payments || []).map((payment) => payment.payment_method)
+    const matchesPayment = paymentFilter === 'all' || paymentMethods.includes(paymentFilter)
+    const matchesStatus = statusFilter === 'all' || sale.status === statusFilter
+    return matchesPayment && matchesStatus && matchesSearch(
+      query,
+      sale.invoice_number,
+      sale.bill_datetime,
+      sale.status,
+      sale.customers?.name,
+      sale.customers?.phone,
+      ...(sale.sale_items || []).flatMap((item) => [
+        item.products?.product_name,
+        item.products?.generic_display_name,
+        item.batches?.batch_number,
+      ]),
+    )
+  })
+
+  const exportCsv = () => {
+    const quote = (value) => '"' + String(value ?? '').replace(/"/g, '""') + '"'
+    const header = ['Invoice', 'Date', 'Customer', 'Phone', 'Status', 'Subtotal', 'Tax', 'Total', 'Paid', 'Due', 'Payment Methods']
+    const lines = filtered.map((sale) => [
+      sale.invoice_number,
+      sale.bill_datetime,
+      sale.customers?.name || 'Walk-in customer',
+      sale.customers?.phone || '',
+      sale.status,
+      sale.subtotal,
+      safeNumber(sale.cgst_amount) + safeNumber(sale.sgst_amount) + safeNumber(sale.igst_amount),
+      sale.grand_total,
+      sale.amount_paid,
+      sale.amount_due,
+      [...new Set((sale.sale_payments || []).map((payment) => payment.payment_method).filter(Boolean))].join(', '),
+    ].map(quote).join(','))
+    const csv = '\uFEFF' + [header.map(quote).join(','), ...lines].join('\r\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'pharmdesk-sales-' + todayISO() + '.csv'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  }
+
+  return (
+    <>
+      <PanelList title="Completed Bills">
+        <div className="search-row">
+          <input
+            placeholder="Search invoice, customer, phone, product or batch"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+          <button type="button" className="secondary-button" onClick={exportCsv} disabled={!filtered.length}>
+            Export CSV
+          </button>
+        </div>
+        <div className="form-grid">
+          <label>From date
+            <input type="date" value={fromDate} max={toDate || undefined} onChange={(event) => setFromDate(event.target.value)} />
+          </label>
+          <label>To date
+            <input type="date" value={toDate} min={fromDate || undefined} onChange={(event) => setToDate(event.target.value)} />
+          </label>
+          <label>Bill status
+            <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+              <option value="all">All statuses</option>
+              <option value="completed">Completed</option>
+              <option value="returned">Returned</option>
+            </select>
+          </label>
+          <label>Payment method
+            <select value={paymentFilter} onChange={(event) => setPaymentFilter(event.target.value)}>
+              <option value="all">All payment methods</option>
+              <option value="cash">Cash</option>
+              <option value="upi">UPI</option>
+              <option value="card">Card</option>
+              <option value="credit">Credit</option>
+              <option value="bank_transfer">Bank transfer</option>
+              <option value="cheque">Cheque</option>
+              <option value="other">Other</option>
+            </select>
+          </label>
+        </div>
+        {error && <div className="error-box">{error}</div>}
+        {loading && <div className="muted">Loading bills…</div>}
+        <div className="muted">{filtered.length} bill(s) match the current filters.</div>
+        <div className="record-list">
+          {filtered.map((sale) => (
+            <button
+              type="button"
+              className="record-row"
+              key={sale.id}
+              onClick={() => setSelected(sale)}
+            >
+              <div>
+                <strong>{sale.invoice_number || 'Bill'}</strong>
+                <span>{sale.customers?.name || 'Walk-in customer'} · {dateTimeText(sale.bill_datetime)}</span>
+                <span>{[...new Set((sale.sale_payments || []).map((payment) => payment.payment_method).filter(Boolean))].map(paymentLabel).join(', ') || 'Payment details unavailable'}</span>
+              </div>
+              <div className="record-right">
+                <span>{sale.status}</span>
+                <strong>{money(sale.grand_total)}</strong>
+                <span>View →</span>
+              </div>
+            </button>
+          ))}
+          {!loading && !filtered.length && <EmptyState text="No bills match these filters." />}
+        </div>
+      </PanelList>
+
+      {selected && (
+        <SaleBillModal
+          store={store}
+          sale={selected}
+          onClose={() => setSelected(null)}
+          onUpdated={() => {
+            setSelected(null)
+            load()
+          }}
+        />
+      )}
+    </>
+  )
+}
+
   function printSaleInvoice(details, store) {
   if (!details) return
 
@@ -5475,7 +5556,7 @@ function CompletedBills({ store }) {
     )
     .join('')
 
-  printWindow.document.write(`
+  printDocument.write(`
     <!DOCTYPE html>
     <html>
       <head>
@@ -6807,61 +6888,251 @@ function SaleEditModal({
   )  
 }  
   
-function SalesReturns({ store }) {  
-  const [rows, setRows] = useState([])  
-  
-  useEffect(() => {  
-    if (!store?.id) return  
-  
-    supabase  
-      .from('sales_returns')  
-      .select('*')  
-      .eq('store_id', store.id)  
-      .order('created_at', {  
-        ascending: false,  
-      })  
-      .limit(100)  
-      .then(({ data }) =>  
-        setRows(data || []),  
-      )  
-  }, [store?.id])  
-  
-  return (  
-    <PanelList title="Sales Returns">  
-      {rows.length === 0 ? (  
-        <EmptyState text="No sales returns recorded." />  
-      ) : (  
-        <div className="record-list">  
-          {rows.map((row) => (  
-            <div  
-              className="record-row static"  
-              key={row.id}  
-            >  
-              <div>  
-                <strong>  
-                  {row.id.slice(0, 8)}  
-                </strong>  
-  
-                <span>  
-                  {dateTimeText(  
-                    row.created_at,  
-                  )}  
-                </span>  
-              </div>  
-  
-              <strong>  
-                {money(  
-                  row.refund_amount,  
-                )}  
-              </strong>  
-            </div>  
-          ))}  
-        </div>  
-      )}  
-    </PanelList>  
-  )  
-}  
-  
+function SalesReturns({ store }) {
+  const [rows, setRows] = useState([])
+  const [sales, setSales] = useState([])
+  const [selectedSaleId, setSelectedSaleId] = useState('')
+  const [quantities, setQuantities] = useState({})
+  const [returnedUnits, setReturnedUnits] = useState({})
+  const [restock, setRestock] = useState({})
+  const [refundMethod, setRefundMethod] = useState('cash')
+  const [reason, setReason] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
+
+  const loadReturns = async () => {
+    if (!store?.id) return
+    const [{ data, error: returnsError }, saleRows] = await Promise.all([
+      supabase
+        .from('sales_returns')
+        .select('*')
+        .eq('store_id', store.id)
+        .order('created_at', { ascending: false })
+        .limit(100),
+      PharmDeskAPI.sales(store.id),
+    ])
+    if (returnsError) throw returnsError
+    setRows(data || [])
+    setSales((saleRows || []).filter((sale) =>
+      ['completed', 'returned'].includes(sale.status) &&
+      (sale.sale_items || []).length > 0
+    ))
+  }
+
+  useEffect(() => {
+    if (!store?.id) return
+    loadReturns().catch((loadError) => {
+      console.error('Sales return load error:', loadError)
+      setError('Could not load sales and returns. Please refresh and try again.')
+    })
+  }, [store?.id])
+
+  const selectedSale = sales.find((sale) => sale.id === selectedSaleId)
+  useEffect(() => {
+    let cancelled = false
+    const loadPriorReturns = async () => {
+      setReturnedUnits({})
+      if (!selectedSaleId) return
+      try {
+        const { data, error: queryError } = await supabase
+          .from('sales_return_items')
+          .select('original_sale_item_id,quantity_units,sales_returns!inner(original_sale_id)')
+          .eq('sales_returns.original_sale_id', selectedSaleId)
+        if (queryError) throw queryError
+        if (cancelled) return
+        const totals = {}
+        ;(data || []).forEach((item) => {
+          totals[item.original_sale_item_id] = (totals[item.original_sale_item_id] || 0) + safeNumber(item.quantity_units)
+        })
+        setReturnedUnits(totals)
+      } catch (queryError) {
+        console.error('Prior sales return quantities load error:', queryError)
+        if (!cancelled) setError('Could not verify previous returns for this bill. Please reselect the bill and try again.')
+      }
+    }
+    loadPriorReturns()
+    return () => { cancelled = true }
+  }, [selectedSaleId])
+  const saleItems = selectedSale?.sale_items || []
+  const selectedLines = saleItems.filter((item) => safeNumber(quantities[item.id]) > 0)
+  const refundAmount = selectedLines.reduce((total, item) => {
+    const units = safeNumber(item.quantity_units)
+    const quantity = safeNumber(quantities[item.id])
+    const lineAmount = safeNumber(item.line_total)
+    return total + (units > 0 ? lineAmount * quantity / units : 0)
+  }, 0)
+
+  const submitReturn = async (event) => {
+    event.preventDefault()
+    setError('')
+    setSuccess('')
+    if (!selectedSale) {
+      setError('Select the original bill first.')
+      return
+    }
+    if (!selectedLines.length) {
+      setError('Enter a return quantity for at least one item.')
+      return
+    }
+    if (refundMethod === 'store_credit' && !selectedSale.customer_id) {
+      setError('Store credit is available only when the original bill has a linked customer.')
+      return
+    }
+
+    setBusy(true)
+    try {
+      const items = selectedLines.map((item) => ({
+        original_sale_item_id: item.id,
+        quantity_units: safeNumber(quantities[item.id]),
+        amount: (() => {
+          const units = safeNumber(item.quantity_units)
+          return units > 0 ? safeNumber(item.line_total) * safeNumber(quantities[item.id]) / units : 0
+        })(),
+        return_to_stock: Boolean(restock[item.id]),
+        notes: restock[item.id] ? 'Marked for stock return by operator; verify condition before making saleable.' : 'Not returned to saleable stock.',
+      }))
+      await PharmDeskAPI.processSalesReturn({
+        storeId: store.id,
+        originalSaleId: selectedSale.id,
+        refundMethod,
+        refundAmount: Number(refundAmount.toFixed(2)),
+        reason: reason.trim() || null,
+        items,
+      })
+      setSuccess('Sales return recorded successfully.')
+      setSelectedSaleId('')
+      setQuantities({})
+      setRestock({})
+      setReason('')
+      await loadReturns()
+    } catch (submitError) {
+      console.error('Sales return processing error:', submitError)
+      setError(submitError?.message || 'Could not process this return. Check the quantities and try again.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="module-stack">
+      <PanelList title="Process a Sales Return">
+        <form className="form-stack" onSubmit={submitReturn}>
+          <label>
+            Original bill
+            <select
+              value={selectedSaleId}
+              onChange={(event) => {
+                setSelectedSaleId(event.target.value)
+                setQuantities({})
+                setRestock({})
+                setError('')
+                setSuccess('')
+              }}
+              required
+            >
+              <option value="">Select a completed bill</option>
+              {sales.map((sale) => (
+                <option key={sale.id} value={sale.id}>
+                  {(sale.invoice_number || sale.id.slice(0, 8))} · {sale.customers?.name || 'Walk-in customer'} · {dateText(sale.bill_datetime)} · {money(sale.grand_total)}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          {selectedSale && (
+            <>
+              <div className="message-box">
+                Refund estimate is calculated proportionally from the original bill line totals. The database validates returned quantities against prior returns.
+              </div>
+              {saleItems.map((item) => {
+                const availableUnits = safeNumber(item.quantity_units)
+                const quantity = quantities[item.id] || ''
+                const remainingUnits = Math.max(0, availableUnits - safeNumber(returnedUnits[item.id]))
+                return (
+                  <div className="panel" key={item.id}>
+                    <div className="record-row">
+                      <div>
+                        <strong>{item.products?.product_name || item.products?.generic_display_name || 'Product'}</strong>
+                        <div className="muted">
+                          Batch: {item.batches?.batch_number || '—'} · Sold units: {availableUnits} · Already returned: {safeNumber(returnedUnits[item.id])} · Remaining: {remainingUnits} · Line total: {money(item.line_total)}
+                        </div>
+                      </div>
+                    </div>
+                    <label>
+                      Return quantity (individual units)
+                      <input
+                        type="number"
+                        min="0"
+                        max={remainingUnits}
+                        step="1"
+                        value={quantity}
+                        onChange={(event) => setQuantities((current) => ({
+                          ...current,
+                          [item.id]: event.target.value === '' ? '' : Math.max(0, Math.min(remainingUnits, Number(event.target.value))),
+                        }))}
+                      />
+                    </label>
+                    <label className="checkbox-row">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(restock[item.id])}
+                        onChange={(event) => setRestock((current) => ({ ...current, [item.id]: event.target.checked }))}
+                      />
+                      Mark for stock restoration (only after verifying condition; do not resell unsafe/returned medicines)
+                    </label>
+                  </div>
+                )
+              })}
+              <label>
+                Refund method
+                <select value={refundMethod} onChange={(event) => setRefundMethod(event.target.value)}>
+                  <option value="cash">Cash</option>
+                  <option value="upi">UPI</option>
+                  <option value="card">Card</option>
+                  <option value="store_credit" disabled={!selectedSale.customer_id}>Store credit</option>
+                </select>
+              </label>
+              <label>
+                Return reason (optional)
+                <textarea value={reason} onChange={(event) => setReason(event.target.value)} rows="2" placeholder="Reason for return" />
+              </label>
+              <div className="record-row">
+                <strong>Estimated refund</strong>
+                <strong>{money(refundAmount)}</strong>
+              </div>
+              <button className="primary-button" type="submit" disabled={busy || !selectedLines.length}>
+                {busy ? 'Processing return…' : 'Process Sales Return'}
+              </button>
+            </>
+          )}
+          {error && <div className="error-box">{error}</div>}
+          {success && <div className="success-box">{success}</div>}
+          {!sales.length && <EmptyState text="No completed bills with items are available for return." />}
+        </form>
+      </PanelList>
+
+      <PanelList title="Recent Sales Returns">
+        {rows.length === 0 ? (
+          <EmptyState text="No sales returns recorded." />
+        ) : (
+          <div className="record-list">
+            {rows.map((row) => (
+              <div className="record-row" key={row.id}>
+                <div>
+                  <strong>Return {row.id.slice(0, 8).toUpperCase()}</strong>
+                  <span>{dateTimeText(row.created_at)} · {paymentLabel(row.refund_method)}</span>
+                </div>
+                <strong>{money(row.refund_amount)}</strong>
+              </div>
+            ))}
+          </div>
+        )}
+      </PanelList>
+    </div>
+  )
+}
+
 function CustomerCredit({ store }) {
   const [rows, setRows] = useState([])
   const [query, setQuery] = useState('')
@@ -7195,9 +7466,14 @@ function CustomerSettlementModal({
    PURCHASES  
 ========================================================= */  
   
-function PurchasesModule({ store }) {  
-  const [tab, setTab] =  
-    useState('New Purchase')  
+function PurchasesModule({ store, initialTab }) {
+  const [tab, setTab] = useState(initialTab || 'New Purchase')
+
+  useEffect(() => {
+    if (initialTab && PURCHASE_TABS.includes(initialTab)) {
+      setTab(initialTab)
+    }
+  }, [initialTab])  
   
   return (  
     <div>  
@@ -8447,149 +8723,123 @@ function PurchaseItemRow({
    SUPPLIER HISTORY  
 ========================================================= */  
   
-function SupplierInvoices({  
-  store,  
-}) {  
-  const [rows, setRows] =  
-    useState([])  
-  const [selected, setSelected] =  
-    useState(null)  
-  const [searchQuery, setSearchQuery] =  
-    useState('')  
+function SupplierInvoices({ store }) {
+  const [rows, setRows] = useState([])
+  const [selected, setSelected] = useState(null)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [fromDate, setFromDate] = useState('')
+  const [toDate, setToDate] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
 
-  const filteredRows = useMemo(() => {  
-    const q = String(searchQuery || '').trim()  
+  const filteredRows = useMemo(() => {
+    const q = String(searchQuery || '').trim()
+    return rows.filter((row) => {
+      if (fromDate && row.invoice_date < fromDate) return false
+      if (toDate && row.invoice_date > toDate) return false
+      if (!q) return true
+      return fuzzyScore(q, [
+        row.invoice_number,
+        row.suppliers?.supplier_name,
+        row.invoice_date,
+        row.total_amount,
+      ].filter((value) => value !== null && value !== undefined).join(' ')) > 0
+    })
+  }, [rows, searchQuery, fromDate, toDate])
 
-    if (!q) return rows  
+  const load = async () => {
+    if (!store?.id) return
+    setLoading(true)
+    setError('')
+    try {
+      const { data, error: queryError } = await supabase
+        .from('purchase_invoices')
+        .select('*, suppliers(*)')
+        .eq('store_id', store.id)
+        .order('invoice_date', { ascending: false })
+        .limit(1000)
+      if (queryError) throw queryError
+      setRows(data || [])
+    } catch (loadError) {
+      console.error('Supplier invoices load error:', loadError)
+      setError('Could not load supplier invoices. Please try again.')
+    } finally {
+      setLoading(false)
+    }
+  }
 
-    return rows  
-      .map((row) => ({  
-        row,  
-        score: fuzzyScore(  
-          q,  
-          [  
-            row.invoice_number,  
-            row.suppliers?.supplier_name,  
-            row.invoice_date,  
-            row.total_amount,  
-          ]  
-            .filter((value) => value !== null && value !== undefined)  
-            .join(' '),  
-        ),  
-      }))  
-      .filter((entry) => entry.score > 0)  
-      .sort((a, b) => b.score - a.score)  
-      .map((entry) => entry.row)  
-  }, [rows, searchQuery])  
-  
-  const load = async () => {  
-    const { data } =  
-      await supabase  
-        .from('purchase_invoices')  
-        .select(`  
-          *,  
-          suppliers (  
-            *  
-          )  
-        `)  
-        .eq(  
-          'store_id',  
-          store.id,  
-        )  
-        .order(  
-          'invoice_date',  
-          {  
-            ascending: false,  
-          },  
-        )  
-        .limit(200)  
-  
-    setRows(data || [])  
-  }  
-  
-  useEffect(() => {  
-    if (store?.id) load()  
-  }, [store?.id])  
-  
-  return (  
-    <PanelList title="Supplier Invoices">  
-      <div style={{ marginBottom: '12px' }}>  
-        <input  
-          type="search"  
-          value={searchQuery}  
-          onChange={(e) =>  
-            setSearchQuery(e.target.value)  
-          }  
-          placeholder="Search invoice number or supplier…"  
-          aria-label="Search supplier invoices"  
-        />  
-      </div>  
+  useEffect(() => {
+    if (store?.id) load()
+  }, [store?.id])
 
-      {!filteredRows.length ? (  
-        <EmptyState  
-          text={  
-            searchQuery.trim()  
-              ? 'No supplier invoices match your search.'  
-              : 'No supplier invoices found.'  
-          }  
-        />  
-      ) : (  
-        <div className="record-list">  
-          {filteredRows.map((row) => (  
-          <button  
-            className="record-row"  
-            key={row.id}  
-            onClick={() =>  
-              setSelected(  
-                row.suppliers,  
-              )  
-            }  
-          >  
-            <div>  
-              <strong>  
-                {  
-                  row.invoice_number  
-                }  
-              </strong>  
-  
-              <span>  
-                {row.suppliers  
-                  ?.supplier_name ||  
-                  'Supplier'}  
-              </span>  
-            </div>  
-  
-            <div className="record-right">  
-              <span>  
-                {dateText(  
-                  row.invoice_date,  
-                )}  
-              </span>  
-  
-              <strong>  
-                {money(  
-                  row.total_amount,  
-                )}  
-              </strong>  
-            </div>  
-          </button>  
-          ))}  
-        </div>  
-      )}  
-  
-      {selected && (  
-        <SupplierHistoryModal  
-          supplier={selected}  
-          store={store}  
-          onClose={() =>  
-            setSelected(null)  
-          }  
-        />  
-      )}  
-    </PanelList>  
-  )  
-}  
-  
+  const exportCsv = () => {
+    const quote = (value) => '"' + String(value ?? '').replace(/"/g, '""') + '"'
+    const header = ['Invoice Number', 'Invoice Date', 'Supplier', 'Supplier Invoice Total']
+    const lines = filteredRows.map((row) => [
+      row.invoice_number,
+      row.invoice_date,
+      row.suppliers?.supplier_name || 'Supplier',
+      row.total_amount,
+    ].map(quote).join(','))
+    const blob = new Blob(['\uFEFF' + [header.map(quote).join(','), ...lines].join('\r\n')], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'pharmdesk-purchases-' + todayISO() + '.csv'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  }
+
+  return (
+    <PanelList title="Supplier Invoices">
+      <div className="search-row">
+        <input
+          type="search"
+          value={searchQuery}
+          onChange={(event) => setSearchQuery(event.target.value)}
+          placeholder="Search invoice number or supplier…"
+          aria-label="Search supplier invoices"
+        />
+        <button type="button" className="secondary-button" onClick={exportCsv} disabled={!filteredRows.length}>Export CSV</button>
+      </div>
+      <div className="form-grid">
+        <label>From date
+          <input type="date" value={fromDate} max={toDate || undefined} onChange={(event) => setFromDate(event.target.value)} />
+        </label>
+        <label>To date
+          <input type="date" value={toDate} min={fromDate || undefined} onChange={(event) => setToDate(event.target.value)} />
+        </label>
+      </div>
+      {error && <div className="error-box">{error}</div>}
+      {loading && <div className="muted">Loading supplier invoices…</div>}
+      <div className="muted">{filteredRows.length} invoice(s) match the current filters.</div>
+      {!filteredRows.length ? (
+        <EmptyState text={searchQuery.trim() || fromDate || toDate ? 'No supplier invoices match these filters.' : 'No supplier invoices found.'} />
+      ) : (
+        <div className="record-list">
+          {filteredRows.map((row) => (
+            <button type="button" className="record-row" key={row.id} onClick={() => setSelected(row.suppliers)}>
+              <div>
+                <strong>{row.invoice_number || 'Supplier invoice'}</strong>
+                <span>{row.suppliers?.supplier_name || 'Supplier'}</span>
+              </div>
+              <div className="record-right">
+                <span>{dateText(row.invoice_date)}</span>
+                <strong>{money(row.total_amount)}</strong>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+      {selected && (
+        <SupplierHistoryModal supplier={selected} store={store} onClose={() => setSelected(null)} />
+      )}
+    </PanelList>
+  )
+}
+
 function SupplierHistoryModal({  
   supplier,  
   store,  
@@ -11010,11 +11260,17 @@ function PurchaseOrders({
   
 
 
-function InventoryModule({  
-  store,  
-}) {  
-  const [tab, setTab] =  
-    useState('Products')  
+function InventoryModule({
+  store,
+  initialTab,
+}) {
+  const [tab, setTab] = useState(initialTab || 'Products')
+
+  useEffect(() => {
+    if (initialTab && INVENTORY_TABS.includes(initialTab)) {
+      setTab(initialTab)
+    }
+  }, [initialTab])  
   
   return (  
     <div>  
@@ -11344,388 +11600,351 @@ function BatchesInventory({
   )  
 }  
   
-function ExpiryInventory({  
-  store,  
-}) {  
-  const [rows, setRows] =  
-    useState([])  
-  const [query, setQuery] =  
-    useState('')  
-  
-  useEffect(() => {  
-    if (!store?.id) return  
-  
-    const limit =  
-      new Date()  
-  
-    limit.setDate(  
-      limit.getDate() +  
-        90,  
-    )  
-  
-    pharmdeskDb  
-      .from('batches')  
-      .select(`  
-        *,  
-        products (  
-          product_name,  
-          generic_display_name,  
-          manufacturer,  
-          strength_display  
-        )  
-      `)  
-      .eq(  
-        'store_id',  
-        store.id,  
-      )  
-      .gt(  
-        'current_stock_units',  
-        0,  
-      )  
-      .lte(  
-        'expiry_date',  
-        limit  
-          .toISOString()  
-          .slice(  
-            0,  
-            10,  
-          ),  
-      )  
-      .order(  
-        'expiry_date',  
-      )  
-      .then(({ data }) =>  
-        setRows(  
-          data || [],  
-        ),  
-      )  
-  }, [store?.id])  
-  
-  const filtered =  
-    rows.filter((row) =>  
-      matchesSearch(  
-        query,  
-        row.batch_number,  
-        row.products?.product_name,  
-        row.products?.generic_display_name,  
-        row.products?.manufacturer,  
-        row.products?.strength_display,  
-        dateText(row.expiry_date),  
-      ),  
-    )  
-  
-  return (  
-    <PanelList title="Expiry">  
-      <div className="search-row">  
-        <input  
-          placeholder="Search product, batch number, manufacturer or expiry"  
-          value={query}  
-          onChange={(e) =>  
-            setQuery(e.target.value)  
-          }  
-        />  
-      </div>  
+function ExpiryInventory({ store }) {
+  const [rows, setRows] = useState([])
+  const [query, setQuery] = useState('')
+  const [windowDays, setWindowDays] = useState('90')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
 
-      <div className="record-list">  
-        {filtered.map(  
-          (row) => (  
-            <div  
-              className="record-row static"  
-              key={row.id}  
-            >  
-              <div>  
-                <strong>  
-                  {  
-                    row.products  
-                      ?.product_name  
-                  }  
-                </strong>  
-  
-                <span>  
-                  Batch{' '}  
-                  {  
-                    row.batch_number  
-                  }  
-                </span>  
-              </div>  
-  
-              <div className="record-right">  
-                <span>  
-                  {dateText(  
-                    row.expiry_date,  
-                  )}  
-                </span>  
-  
-                <strong>  
-                  {  
-                    row.current_stock_units  
-                  }  
-                </strong>  
-              </div>  
-            </div>  
-          ),  
-        )}  
-      </div>  
-    </PanelList>  
-  )  
-}  
-  
-function LowStockInventory({  
-  store,  
-}) {  
-  const [rows, setRows] =  
-    useState([])  
-  const [query, setQuery] =  
-    useState('')  
-  
-  useEffect(() => {  
-    if (!store?.id) return  
-  
-    const load =  
-      async () => {  
-        const { data } =  
-          await pharmdeskDb  
-            .from(  
-              'store_products',  
-            )  
-            .select(`  
-              *,  
-              products (  
-                product_name  
-              )  
-            `)  
-            .eq(  
-              'store_id',  
-              store.id,  
-            )  
-            .eq(  
-              'is_active',  
-              true,  
-            )  
-  
-        const result =  
-          []  
-  
-        for (const row of  
-          data || []) {  
-          const {  
-            data: batches,  
-          } =  
-            await pharmdeskDb  
-              .from(  
-                'batches',  
-              )  
-              .select(  
-                'current_stock_units',  
-              )  
-              .eq(  
-                'store_id',  
-                store.id,  
-              )  
-              .eq(  
-                'product_id',  
-                row.product_id,  
-              )  
-              .eq(  
-                'is_active',  
-                true,  
-              )  
-  
-          const stock =  
-            sum(  
-              (  
-                batches ||  
-                []  
-              ).map(  
-                (x) =>  
-                  x.current_stock_units,  
-              ),  
-            )  
-  
-          if (  
-            stock <=  
-            safeNumber(  
-              row.minimum_stock,  
-            )  
-          ) {  
-            result.push({  
-              ...row,  
-              stock,  
-            })  
-          }  
-        }  
-  
-        setRows(  
-          result,  
-        )  
-      }  
-  
-    load()  
-  }, [store?.id])  
-  
-  const filtered =  
-    rows.filter((row) =>  
-      matchesSearch(  
-        query,  
-        row.products?.product_name,  
-        row.products?.generic_display_name,  
-        row.products?.manufacturer,  
-        row.products?.strength_display,  
-        row.minimum_stock,  
-        row.stock,  
-      ),  
-    )  
-  
-  return (  
-    <PanelList title="Low Stock">  
-      <div className="search-row">  
-        <input  
-          placeholder="Search product, manufacturer or stock"  
-          value={query}  
-          onChange={(e) =>  
-            setQuery(e.target.value)  
-          }  
-        />  
-      </div>  
+  const load = async () => {
+    if (!store?.id) return
+    setLoading(true)
+    setError('')
+    try {
+      const limit = new Date()
+      limit.setDate(limit.getDate() + 90)
+      const { data, error: queryError } = await pharmdeskDb
+        .from('batches')
+        .select('*, products(product_name, generic_display_name, manufacturer, strength_display)')
+        .eq('store_id', store.id)
+        .gt('current_stock_units', 0)
+        .lte('expiry_date', limit.toISOString().slice(0, 10))
+        .order('expiry_date')
+        .limit(5000)
+      if (queryError) throw queryError
+      setRows(data || [])
+    } catch (loadError) {
+      console.error('Expiry inventory load error:', loadError)
+      setError('Could not load expiry data. Please refresh and try again.')
+    } finally {
+      setLoading(false)
+    }
+  }
 
-      {filtered.length ===  
-      0 ? (  
-        <EmptyState text="No products currently below minimum stock." />  
-      ) : (  
-        <div className="record-list">  
-          {filtered.map(  
-            (row) => (  
-              <div  
-                className="record-row static"  
-                key={row.id}  
-              >  
-                <div>  
-                  <strong>  
-                    {  
-                      row.products  
-                        ?.product_name  
-                    }  
-                  </strong>  
-  
-                  <span>  
-                    Minimum{' '}  
-                    {  
-                      row.minimum_stock  
-                    }  
-                  </span>  
-                </div>  
-  
-                <strong>  
-                  {row.stock}  
-                </strong>  
-              </div>  
-            ),  
-          )}  
-        </div>  
-      )}  
-    </PanelList>  
-  )  
-}  
-  
-function DeadStockInventory({  
-  store,  
-}) {  
-  const [rows, setRows] =  
-    useState([])  
-  const [query, setQuery] =  
-    useState('')  
-  
-  useEffect(() => {  
-    if (!store?.id) return  
-  
-    pharmdeskDb  
-      .from(  
-        'stock_risk_snapshots',  
-      )  
-      .select('*')  
-      .eq(  
-        'store_id',  
-        store.id,  
-      )  
-      .eq(  
-        'risk_type',  
-        'dead_stock',  
-      )  
-      .order(  
-        'created_at',  
-        {  
-          ascending: false,  
-        },  
-      )  
-      .then(({ data }) =>  
-        setRows(  
-          data || [],  
-        ),  
-      )  
-  }, [store?.id])  
-  
-  const filtered =  
-    rows.filter((row) =>  
-      matchesSearch(  
-        query,  
-        row.product_name,  
-        row.product_id,  
-        row.current_stock_units,  
-        row.created_at,  
-      ),  
-    )  
-  
-  return (  
-    <PanelList title="Dead Stock">  
-      <div className="search-row">  
-        <input  
-          placeholder="Search dead stock"  
-          value={query}  
-          onChange={(e) =>  
-            setQuery(e.target.value)  
-          }  
-        />  
-      </div>  
+  useEffect(() => {
+    if (store?.id) load()
+  }, [store?.id])
 
-      {filtered.length ===  
-      0 ? (  
-        <EmptyState text="No dead-stock snapshots available." />  
-      ) : (  
-        <div className="record-list">  
-          {filtered.map(  
-            (row) => (  
-              <div  
-                className="record-row static"  
-                key={row.id}  
-              >  
-                <div>  
-                  <strong>  
-                    {row.product_name ||  
-                      row.product_id ||  
-                      'Product'}  
-                  </strong>  
-  
-                  <span>  
-                    {dateText(  
-                      row.created_at,  
-                    )}  
-                  </span>  
-                </div>  
-  
-                <span>  
-                  {  
-                    row.current_stock_units  
-                  }  
-                </span>  
-              </div>  
-            ),  
-          )}  
-        </div>  
-      )}  
-    </PanelList>  
-  )  
-}  
-  
+  const today = todayISO()
+  const horizon = new Date()
+  horizon.setDate(horizon.getDate() + Number(windowDays))
+  const horizonISO = horizon.toISOString().slice(0, 10)
+  const filtered = rows.filter((row) => {
+    const expiry = row.expiry_date || ''
+    const windowMatches = windowDays === 'all' || expiry <= horizonISO
+    return windowMatches && matchesSearch(
+      query,
+      row.batch_number,
+      row.products?.product_name,
+      row.products?.generic_display_name,
+      row.products?.manufacturer,
+      row.products?.strength_display,
+      dateText(row.expiry_date),
+    )
+  })
+
+  const exportCsv = () => {
+    const quote = (value) => '"' + String(value ?? '').replace(/"/g, '""') + '"'
+    const header = ['Product', 'Generic', 'Manufacturer', 'Batch', 'Expiry Date', 'Days to Expiry', 'Stock Units']
+    const lines = filtered.map((row) => {
+      const days = row.expiry_date ? Math.ceil((new Date(row.expiry_date + 'T00:00:00').getTime() - new Date(today + 'T00:00:00').getTime()) / 86400000) : ''
+      return [
+        row.products?.product_name,
+        row.products?.generic_display_name,
+        row.products?.manufacturer,
+        row.batch_number,
+        row.expiry_date,
+        days,
+        row.current_stock_units,
+      ].map(quote).join(',')
+    })
+    const blob = new Blob(['\uFEFF' + [header.map(quote).join(','), ...lines].join('\r\n')], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'pharmdesk-expiry-' + today + '.csv'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  }
+
+  return (
+    <PanelList title="Expiry">
+      <div className="search-row">
+        <input
+          placeholder="Search product, batch, manufacturer or expiry"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+        />
+        <select value={windowDays} onChange={(event) => setWindowDays(event.target.value)} aria-label="Expiry window">
+          <option value="30">Next 30 days + overdue</option>
+          <option value="60">Next 60 days + overdue</option>
+          <option value="90">Next 90 days + overdue</option>
+          <option value="all">All loaded expiry alerts</option>
+        </select>
+        <button type="button" className="secondary-button" onClick={exportCsv} disabled={!filtered.length}>Export CSV</button>
+        <button type="button" className="secondary-button" onClick={load} disabled={loading}>{loading ? 'Refreshing…' : 'Refresh'}</button>
+      </div>
+      {error && <div className="error-box">{error}</div>}
+      <div className="muted">{filtered.length} batch(es) in the selected expiry window. Overdue batches are included.</div>
+      {loading && <div className="muted">Loading batches…</div>}
+      {!loading && !filtered.length ? (
+        <EmptyState text="No batches match the selected expiry window." />
+      ) : (
+        <div className="record-list">
+          {filtered.map((row) => {
+            const days = row.expiry_date ? Math.ceil((new Date(row.expiry_date + 'T00:00:00').getTime() - new Date(today + 'T00:00:00').getTime()) / 86400000) : null
+            return (
+              <div className="record-row static" key={row.id}>
+                <div>
+                  <strong>{row.products?.product_name || 'Product'}</strong>
+                  <span>Batch {row.batch_number || '—'} · {row.products?.manufacturer || 'Manufacturer not recorded'}</span>
+                  <span>{days !== null && days < 0 ? 'Expired ' + Math.abs(days) + ' day(s) ago' : days === 0 ? 'Expires today' : 'Expires in ' + days + ' day(s)'}</span>
+                </div>
+                <div className="record-right">
+                  <strong>{dateText(row.expiry_date)}</strong>
+                  <span>{safeNumber(row.current_stock_units)} unit(s)</span>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </PanelList>
+  )
+}
+
+function LowStockInventory({ store }) {
+  const [rows, setRows] = useState([])
+  const [query, setQuery] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  const load = async () => {
+    if (!store?.id) return
+    setLoading(true)
+    setError('')
+    try {
+      const { data, error: productError } = await pharmdeskDb
+        .from('store_products')
+        .select('*, products(product_name, generic_display_name, manufacturer, strength_display)')
+        .eq('store_id', store.id)
+        .eq('is_active', true)
+      if (productError) throw productError
+
+      const result = await Promise.all((data || []).map(async (row) => {
+        const { data: batches, error: batchError } = await pharmdeskDb
+          .from('batches')
+          .select('current_stock_units')
+          .eq('store_id', store.id)
+          .eq('product_id', row.product_id)
+          .eq('is_active', true)
+        if (batchError) throw batchError
+        const stock = sum((batches || []).map((batch) => batch.current_stock_units))
+        const threshold = safeNumber(row.reorder_level || row.minimum_stock || 0)
+        return threshold > 0 && stock <= threshold ? { ...row, stock, threshold } : null
+      }))
+      setRows(result.filter(Boolean))
+    } catch (loadError) {
+      console.error('Low-stock inventory load error:', loadError)
+      setError('Could not load low-stock products. Please refresh and try again.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (store?.id) load()
+  }, [store?.id])
+
+  const filtered = rows.filter((row) => matchesSearch(
+    query,
+    row.products?.product_name,
+    row.products?.generic_display_name,
+    row.products?.manufacturer,
+    row.products?.strength_display,
+    row.threshold,
+    row.stock,
+  ))
+
+  const exportCsv = () => {
+    const quote = (value) => '"' + String(value ?? '').replace(/"/g, '""') + '"'
+    const header = ['Product', 'Generic', 'Manufacturer', 'Strength', 'Current Stock Units', 'Minimum Stock Units']
+    const lines = filtered.map((row) => [
+      row.products?.product_name,
+      row.products?.generic_display_name,
+      row.products?.manufacturer,
+      row.products?.strength_display,
+      row.stock,
+      row.threshold,
+    ].map(quote).join(','))
+    const blob = new Blob(['\uFEFF' + [header.map(quote).join(','), ...lines].join('\r\n')], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'pharmdesk-low-stock-' + todayISO() + '.csv'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  }
+
+  return (
+    <PanelList title="Low Stock">
+      <div className="search-row">
+        <input
+          placeholder="Search product, manufacturer or stock"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+        />
+        <button type="button" className="secondary-button" onClick={exportCsv} disabled={!filtered.length}>Export CSV</button>
+        <button type="button" className="secondary-button" onClick={load} disabled={loading}>{loading ? 'Refreshing…' : 'Refresh'}</button>
+      </div>
+      {error && <div className="error-box">{error}</div>}
+      <div className="muted">{filtered.length} product(s) below the configured minimum stock.</div>
+      {loading && <div className="muted">Checking stock levels…</div>}
+      {!loading && !filtered.length ? (
+        <EmptyState text="No products currently below minimum stock." />
+      ) : (
+        <div className="record-list">
+          {filtered.map((row) => (
+            <div className="record-row static" key={row.id}>
+              <div>
+                <strong>{row.products?.product_name || 'Product'}</strong>
+                <span>{row.products?.generic_display_name || row.products?.strength_display || '—'}</span>
+                <span>Minimum {row.threshold}</span>
+              </div>
+              <div className="record-right">
+                <strong>{row.stock}</strong>
+                <span>units in stock</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </PanelList>
+  )
+}
+
+function DeadStockInventory({ store }) {
+  const [rows, setRows] = useState([])
+  const [query, setQuery] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  const load = async () => {
+    if (!store?.id) return
+    setLoading(true)
+    setError('')
+    try {
+      const { data, error: queryError } = await pharmdeskDb
+        .from('stock_risk_snapshots')
+        .select('*, products(product_name, generic_display_name, manufacturer, strength_display), batches(batch_number, expiry_date)')
+        .eq('store_id', store.id)
+        .eq('risk_category', 'dead_stock')
+        .order('snapshot_date', { ascending: false })
+        .limit(5000)
+      if (queryError) throw queryError
+      setRows(data || [])
+    } catch (loadError) {
+      console.error('Dead-stock load error:', loadError)
+      setError('Could not load dead-stock snapshots. Please refresh and try again.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (store?.id) load()
+  }, [store?.id])
+
+  const filtered = rows.filter((row) => matchesSearch(
+    query,
+    row.products?.product_name,
+    row.products?.generic_display_name,
+    row.products?.manufacturer,
+    row.batches?.batch_number,
+    row.product_id,
+    row.stock_units,
+    row.snapshot_date,
+  ))
+
+  const exportCsv = () => {
+    const quote = (value) => '"' + String(value ?? '').replace(/"/g, '""') + '"'
+    const header = ['Product', 'Generic', 'Manufacturer', 'Batch', 'Risk Category', 'Stock Units', 'Units Sold Last 60 Days', 'Monthly Average Movement', 'Snapshot Date', 'Days to Expiry']
+    const lines = filtered.map((row) => [
+      row.products?.product_name,
+      row.products?.generic_display_name,
+      row.products?.manufacturer,
+      row.batches?.batch_number,
+      row.risk_category,
+      row.stock_units,
+      row.units_sold_last_60_days,
+      row.monthly_average_movement,
+      row.snapshot_date,
+      row.days_to_expiry,
+    ].map(quote).join(','))
+    const blob = new Blob(['\uFEFF' + [header.map(quote).join(','), ...lines].join('\r\n')], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'pharmdesk-dead-stock-' + todayISO() + '.csv'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  }
+
+  return (
+    <PanelList title="Dead Stock">
+      <div className="search-row">
+        <input
+          placeholder="Search product, batch or stock"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+        />
+        <button type="button" className="secondary-button" onClick={exportCsv} disabled={!filtered.length}>Export CSV</button>
+        <button type="button" className="secondary-button" onClick={load} disabled={loading}>{loading ? 'Refreshing…' : 'Refresh'}</button>
+      </div>
+      {error && <div className="error-box">{error}</div>}
+      <div className="muted">Dead stock is based on the most recently saved stock-risk snapshots. Refresh snapshots in the system if the data is outdated.</div>
+      {loading && <div className="muted">Loading dead-stock snapshots…</div>}
+      {!loading && !filtered.length ? (
+        <EmptyState text="No dead-stock batches match this search. A recent risk snapshot is required for this list." />
+      ) : (
+        <div className="record-list">
+          {filtered.map((row) => (
+            <div className="record-row static" key={row.id}>
+              <div>
+                <strong>{row.products?.product_name || row.product_id || 'Product'}</strong>
+                <span>Batch {row.batches?.batch_number || '—'} · {row.products?.manufacturer || 'Manufacturer not recorded'}</span>
+                <span>Snapshot {dateText(row.snapshot_date)} · {safeNumber(row.units_sold_last_60_days)} units moved in 60 days</span>
+              </div>
+              <div className="record-right">
+                <strong>{safeNumber(row.stock_units)}</strong>
+                <span>units in stock</span>
+                {row.days_to_expiry !== null && row.days_to_expiry !== undefined && <span>{row.days_to_expiry < 0 ? 'Expired' : row.days_to_expiry + ' days to expiry'}</span>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </PanelList>
+  )
+}
+
 function StockReconciliation({
   store,
 }) {
@@ -12163,14 +12382,21 @@ function CustomersModule({
   const [editing, setEditing] = useState(null)
   const [settlementCustomer, setSettlementCustomer] = useState(null)
   const [creditByCustomer, setCreditByCustomer] = useState({})
+  const [outstandingOnly, setOutstandingOnly] = useState(false)
+  const [loadError, setLoadError] = useState('')
 
   const load = async () => {
-    const { data } = await pharmdeskDb
+    setLoadError('')
+    const { data, error: customerError } = await pharmdeskDb
       .from('customers')
       .select('*')
       .eq('store_id', store.id)
       .order('name')
 
+    if (customerError) {
+      setLoadError('Could not load customer records. Please try again.')
+      return
+    }
     const customers = data || []
     setRows(customers)
 
@@ -12191,7 +12417,9 @@ function CustomersModule({
       })
       setCreditByCustomer(creditMap)
     } else {
+      console.error('Customer credit report error:', creditError)
       setCreditByCustomer({})
+      setLoadError('Customer records loaded, but outstanding balances could not be verified. Refresh before collecting payment.')
     }
   }
 
@@ -12199,9 +12427,11 @@ function CustomersModule({
     if (store?.id) load()
   }, [store?.id])
 
-  const filtered = rows.filter((x) =>
-    matchesSearch(query, x.name, x.phone),
-  )
+  const filtered = rows.filter((customer) => {
+    const outstanding = creditByCustomer[customer.id] || 0
+    return (!outstandingOnly || outstanding > 0.009) &&
+      matchesSearch(query, customer.name, customer.phone, outstanding)
+  })
 
   return (
     <div>
@@ -12225,6 +12455,16 @@ function CustomersModule({
             + Customer
           </button>
         </div>
+        <label className="checkbox-row">
+          <input
+            type="checkbox"
+            checked={outstandingOnly}
+            onChange={(event) => setOutstandingOnly(event.target.checked)}
+          />
+          Show only customers with outstanding credit
+        </label>
+        {loadError && <div className="error-box">{loadError}</div>}
+        <div className="muted">{filtered.length} customer(s) shown.</div>
 
         <div className="record-list">
           {filtered.map((customer) => {
@@ -12261,6 +12501,15 @@ function CustomersModule({
                   )}
                 </div>
                 <div className="record-right">
+                  {outstanding > 0.009 && (
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={() => setSettlementCustomer({ ...customer, outstanding_credit: outstanding })}
+                    >
+                      Collect payment
+                    </button>
+                  )}
                   {outstanding > 0.009 ? (
                     <span
                       style={{
@@ -12298,6 +12547,7 @@ function CustomersModule({
               </div>
             )
           })}
+          {!filtered.length && <EmptyState text={outstandingOnly ? 'No customers with outstanding credit match this search.' : 'No customers match this search.'} />}
         </div>
       </PanelList>
 
@@ -12383,10 +12633,14 @@ function Reports({
   const [error, setError] =  
     useState('')  
   
-  const load = async () => {  
-    if (!store?.id) return  
-  
-    setLoading(true)  
+  const load = async () => {
+    if (!store?.id) return
+    if (from && to && from > to) {
+      setError('The start date must be on or before the end date.')
+      return
+    }
+
+    setLoading(true)
     setError('')  
   
     try {  
@@ -12602,6 +12856,73 @@ function Reports({
     if (store?.id) load()  
   }, [store?.id])  
   
+  const exportReportCsv = () => {
+    const quote = (value) => '"' + String(value ?? '').replace(/"/g, '""') + '"'
+    let filename = 'pharmdesk-report-' + tab.toLowerCase() + '-' + from + '-to-' + to + '.csv'
+    let header = []
+    let rows = []
+
+    if (tab === 'Sales' || tab === 'Overview') {
+      header = ['Invoice', 'Date', 'Customer', 'Phone', 'Status', 'Subtotal', 'CGST', 'SGST', 'IGST', 'Total', 'Paid', 'Due', 'Payment Methods']
+      rows = data.sales.map((sale) => [
+        sale.invoice_number, sale.bill_datetime, sale.customers?.name || 'Walk-in customer',
+        sale.customers?.phone, sale.status, sale.subtotal, sale.cgst_amount, sale.sgst_amount,
+        sale.igst_amount, sale.grand_total, sale.amount_paid, sale.amount_due,
+        [...new Set((sale.sale_payments || []).map((payment) => payment.payment_method).filter(Boolean))].join('; '),
+      ])
+    } else if (tab === 'Purchases') {
+      header = ['Invoice', 'Date', 'Supplier', 'Subtotal', 'CGST', 'SGST', 'IGST', 'Total']
+      rows = data.purchases.map((purchase) => [
+        purchase.invoice_number, purchase.invoice_date, purchase.suppliers?.supplier_name || 'Supplier',
+        purchase.subtotal, purchase.cgst_amount, purchase.sgst_amount, purchase.igst_amount, purchase.total_amount,
+      ])
+    } else if (tab === 'Customers') {
+      header = ['Customer', 'Phone', 'Bills in selected period', 'Sales total']
+      const totals = new Map()
+      data.sales.forEach((sale) => {
+        const key = sale.customer_id || 'walk_in'
+        const current = totals.get(key) || { customer: sale.customers?.name || 'Walk-in customer', phone: sale.customers?.phone || '', count: 0, total: 0 }
+        current.count += 1
+        current.total += safeNumber(sale.grand_total)
+        totals.set(key, current)
+      })
+      rows = Array.from(totals.values()).map((item) => [item.customer, item.phone, item.count, item.total])
+    } else if (tab === 'Suppliers') {
+      header = ['Supplier', 'Invoices in selected period', 'Purchase total']
+      const totals = new Map()
+      data.purchases.forEach((purchase) => {
+        const key = purchase.supplier_id || 'unknown'
+        const current = totals.get(key) || { supplier: purchase.suppliers?.supplier_name || 'Supplier', count: 0, total: 0 }
+        current.count += 1
+        current.total += safeNumber(purchase.total_amount)
+        totals.set(key, current)
+      })
+      rows = Array.from(totals.values()).map((item) => [item.supplier, item.count, item.total])
+    } else if (tab === 'Products') {
+      header = ['Product', 'Generic', 'Manufacturer', 'Units sold', 'Sales value']
+      const totals = new Map()
+      data.saleItems.forEach((item) => {
+        const key = item.product_id || item.products?.id || item.id
+        const current = totals.get(key) || { name: item.products?.product_name || 'Product', generic: item.products?.generic_display_name || '', manufacturer: item.products?.manufacturer || '', units: 0, total: 0 }
+        current.units += safeNumber(item.quantity_units)
+        current.total += safeNumber(item.line_total)
+        totals.set(key, current)
+      })
+      rows = Array.from(totals.values()).map((item) => [item.name, item.generic, item.manufacturer, item.units, item.total])
+    }
+
+    const csv = '\uFEFF' + [header.map(quote).join(','), ...rows.map((row) => row.map(quote).join(','))].join('\r\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  }
+
   const salesTotal = sum(  
     data.sales.map(  
       (x) => x.grand_total,  
@@ -12651,38 +12972,39 @@ function Reports({
         subtitle="Sales, purchases, customers, suppliers and product details"  
       />  
   
+      <div className="button-row" style={{ justifyContent: 'flex-end', marginBottom: 12 }}>
+        <button type="button" className="secondary-button" onClick={exportReportCsv} disabled={loading}>
+          Export {tab === 'Overview' ? 'sales' : tab.toLowerCase()} CSV
+        </button>
+      </div>
       <PanelList title="Report Period">  
         <div className="inline-fields">  
           <label>  
             From  
             <input  
-              type="date"  
-              value={from}  
-              onChange={(e) =>  
-                setFrom(  
-                  e.target.value,  
-                )  
-              }  
+              type="date"
+              value={from}
+              max={to || undefined}
+              onChange={(e) => setFrom(e.target.value)}
             />  
           </label>  
   
           <label>  
             To  
             <input  
-              type="date"  
-              value={to}  
-              onChange={(e) =>  
-                setTo(  
-                  e.target.value,  
-                )  
-              }  
+              type="date"
+              value={to}
+              min={from || undefined}
+              onChange={(e) => setTo(e.target.value)}
             />  
           </label>  
   
-          <button  
-            className="primary-button"  
-            onClick={load}  
-          >  
+          <button
+            type="button"
+            className="primary-button"
+            onClick={load}
+            disabled={loading}
+          >
             {loading  
               ? 'Loading…'  
               : 'Refresh Reports'}  
@@ -14329,108 +14651,125 @@ function ProductReport({
    ALERTS  
 ========================================================= */  
   
-function AlertsModule({  
-  store,  
-}) {  
-  const [rows, setRows] =  
-    useState([])  
-  
-  const load = async () => {  
-    const { data } =  
-      await pharmdeskDb  
-        .from('alerts')  
-        .select('*')  
-        .eq(  
-          'store_id',  
-          store.id,  
-        )  
-        .eq(  
-          'is_resolved',  
-          false,  
-        )  
-        .order(  
-          'created_at',  
-          {  
-            ascending: false,  
-          },  
-        )  
-  
-    setRows(data || [])  
-  }  
-  
-  useEffect(() => {  
-    if (store?.id) load()  
-  }, [store?.id])  
-  
-  const resolve = async (  
-    id,  
-  ) => {  
-    await pharmdeskDb  
-      .from('alerts')  
-      .update({  
-        is_resolved: true,  
-        resolved_at:  
-          new Date().toISOString(),  
-      })  
-      .eq('id', id)  
-  
-    load()  
-  }  
-  
-  return (  
-    <div>  
-      <ModuleHeader  
-        title="Alerts"  
-        subtitle="Expiry, stock and system alerts"  
-      />  
-  
-      <PanelList title="Active Alerts">  
-        {rows.length ===  
-        0 ? (  
-          <EmptyState text="No unresolved alerts." />  
-        ) : (  
-          <div className="record-list">  
-            {rows.map(  
-              (row) => (  
-                <div  
-                  className="record-row static"  
-                  key={row.id}  
-                >  
-                  <div>  
-                    <strong>  
-                      {  
-                        row.alert_type  
-                      }  
-                    </strong>  
-  
-                    <span>  
-                      {row.title ||  
-                        row.message ||  
-                        row.description ||  
-                        'Alert'}  
-                    </span>  
-                  </div>  
-  
-                  <button  
-                    className="secondary-button"  
-                    onClick={() =>  
-                      resolve(  
-                        row.id,  
-                      )  
-                    }  
-                  >  
-                    Resolve  
-                  </button>  
-                </div>  
-              ),  
-            )}  
-          </div>  
-        )}  
-      </PanelList>  
-    </div>  
-  )  
-}  
-  
+function AlertsModule({ store }) {
+  const [rows, setRows] = useState([])
+  const [query, setQuery] = useState('')
+  const [typeFilter, setTypeFilter] = useState('all')
+  const [loading, setLoading] = useState(false)
+  const [resolvingId, setResolvingId] = useState(null)
+  const [error, setError] = useState('')
+  const [message, setMessage] = useState('')
+
+  const load = async () => {
+    if (!store?.id) return
+    setLoading(true)
+    setError('')
+    try {
+      const { data, error: queryError } = await pharmdeskDb
+        .from('alerts')
+        .select('*')
+        .eq('store_id', store.id)
+        .eq('is_resolved', false)
+        .order('created_at', { ascending: false })
+        .limit(1000)
+      if (queryError) throw queryError
+      setRows(data || [])
+    } catch (loadError) {
+      console.error('Alerts load error:', loadError)
+      setError('Could not load alerts. Please refresh and try again.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (store?.id) load()
+  }, [store?.id])
+
+  const resolve = async (id) => {
+    if (resolvingId) return
+    setResolvingId(id)
+    setError('')
+    setMessage('')
+    try {
+      const { error: updateError } = await pharmdeskDb
+        .from('alerts')
+        .update({
+          is_resolved: true,
+          resolved_at: new Date().toISOString(),
+        })
+        .eq('id', id)
+        .eq('store_id', store.id)
+      if (updateError) throw updateError
+      setRows((current) => current.filter((row) => row.id !== id))
+      setMessage('Alert marked as resolved.')
+    } catch (resolveError) {
+      console.error('Alert resolve error:', resolveError)
+      setError('Could not resolve this alert. No changes were confirmed; please try again.')
+    } finally {
+      setResolvingId(null)
+    }
+  }
+
+  const types = [...new Set(rows.map((row) => row.alert_type).filter(Boolean))]
+  const filtered = rows.filter((row) => {
+    const typeMatches = typeFilter === 'all' || row.alert_type === typeFilter
+    return typeMatches && matchesSearch(query, row.alert_type, row.title, row.message, row.description, row.severity)
+  })
+
+  return (
+    <div>
+      <ModuleHeader
+        title="Alerts"
+        subtitle="Expiry, stock and system alerts"
+        right={<button type="button" className="secondary-button" onClick={load} disabled={loading}>{loading ? 'Refreshing…' : 'Refresh alerts'}</button>}
+      />
+
+      <PanelList title="Active Alerts">
+        <div className="search-row">
+          <input
+            type="search"
+            placeholder="Search alert title, message or type"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+          <select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)} aria-label="Filter alerts by type">
+            <option value="all">All alert types</option>
+            {types.map((type) => <option key={type} value={type}>{type}</option>)}
+          </select>
+        </div>
+        {error && <div className="error-box">{error}</div>}
+        {message && <div className="success-box">{message}</div>}
+        <div className="muted">{filtered.length} unresolved alert(s).</div>
+        {loading && <div className="muted">Loading alerts…</div>}
+        {filtered.length === 0 && !loading ? (
+          <EmptyState text={rows.length ? 'No alerts match these filters.' : 'No unresolved alerts.'} />
+        ) : (
+          <div className="record-list">
+            {filtered.map((row) => (
+              <div className="record-row static" key={row.id}>
+                <div>
+                  <strong>{row.title || row.alert_type || 'Alert'}</strong>
+                  <span>{row.message || row.description || 'No additional details'}</span>
+                  <span>{row.alert_type || 'General'}{row.severity ? ' · ' + row.severity : ''}{row.created_at ? ' · ' + dateTimeText(row.created_at) : ''}</span>
+                </div>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  disabled={resolvingId === row.id}
+                  onClick={() => resolve(row.id)}
+                >
+                  {resolvingId === row.id ? 'Resolving…' : 'Resolve'}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </PanelList>
+    </div>
+  )
+}
+
 /* =========================================================  
    SETTINGS  
 ========================================================= */  
