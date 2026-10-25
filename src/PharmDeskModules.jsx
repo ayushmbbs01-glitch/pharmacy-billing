@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import PharmDeskAPI, { pharmdeskDb } from './pharmdeskApi'
+import { useWorkingDraft } from './useWorkingDraft'
 import { supabase } from './supabaseClient'
 
 /* =========================================================  
@@ -2405,6 +2406,7 @@ function PharmacyApp({ session }) {
       return {}
     }
   })
+  const navigationLoadedFor = useRef(null)
   const [activeNav, setActiveNav] = useState(() =>
     NAV_ITEMS.includes(savedNavigation.activeNav) ? savedNavigation.activeNav : 'Dashboard'
   )
@@ -2413,6 +2415,29 @@ function PharmacyApp({ session }) {
   const [requestedPurchasesTab, setRequestedPurchasesTab] = useState(savedNavigation.requestedPurchasesTab || null)
 
   useEffect(() => {
+    navigationLoadedFor.current = null
+    try {
+      const raw = window.localStorage.getItem(navigationStorageKey)
+      const parsed = raw ? JSON.parse(raw) : null
+      const saved = parsed && typeof parsed === 'object' ? parsed : {}
+      setActiveNav(NAV_ITEMS.includes(saved.activeNav) ? saved.activeNav : 'Dashboard')
+      setRequestedSalesTab(saved.requestedSalesTab || null)
+      setRequestedInventoryTab(saved.requestedInventoryTab || null)
+      setRequestedPurchasesTab(saved.requestedPurchasesTab || null)
+    } catch (error) {
+      console.warn('Could not restore last visited page:', error)
+      setActiveNav('Dashboard')
+      setRequestedSalesTab(null)
+      setRequestedInventoryTab(null)
+      setRequestedPurchasesTab(null)
+    }
+    navigationLoadedFor.current = navigationStorageKey
+  }, [navigationStorageKey])
+
+  useEffect(() => {
+    // Do not write the previous user's navigation under a newly selected
+    // account's key while authentication/session state is changing.
+    if (navigationLoadedFor.current !== navigationStorageKey) return
     try {
       window.localStorage.setItem(navigationStorageKey, JSON.stringify({
         activeNav,
@@ -2439,6 +2464,21 @@ function PharmacyApp({ session }) {
   const [store, setStore] = useState(null)  
   const [profile, setProfile] = useState(null)  
   const [loading, setLoading] = useState(true)  
+
+  useWorkingDraft({
+    storeId: store?.id,
+    moduleKey: 'navigation',
+    draftKey: 'last-page',
+    localStorageKey: navigationStorageKey,
+    value: { activeNav, requestedSalesTab, requestedInventoryTab, requestedPurchasesTab },
+    hasWork: true,
+    onRestore: (draft) => {
+      setActiveNav(NAV_ITEMS.includes(draft.activeNav) ? draft.activeNav : 'Dashboard')
+      setRequestedSalesTab(draft.requestedSalesTab || null)
+      setRequestedInventoryTab(draft.requestedInventoryTab || null)
+      setRequestedPurchasesTab(draft.requestedPurchasesTab || null)
+    },
+  })
   
   useEffect(() => {
   const handleModuleHeaderClick = (event) => {
@@ -3258,7 +3298,6 @@ function SalesModule({ store, session, initialTab = null }) {
   
 function NewSale({ store }) {  
   const draftStorageKey = `pharmdesk:sale-draft:${store?.id || 'no-store'}`
-  const [savedDraftLoaded, setSavedDraftLoaded] = useState(false)
   const [customers, setCustomers] = useState([])  
   const [products, setProducts] = useState([])  
   const [stockByProduct, setStockByProduct] = useState({})  
@@ -3280,46 +3319,23 @@ function NewSale({ store }) {
   const [message, setMessage] = useState('')  
   const [alternatives, setAlternatives] = useState([])  
 
-  // Keep an unfinished bill on this device so a refresh or accidental close
-  // cannot wipe the cashier's current work. Data is isolated per store.
-  useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(draftStorageKey)
-      if (raw) {
-        const draft = JSON.parse(raw)
-        if (draft && typeof draft === 'object') {
-          setCustomerQuery(draft.customerQuery || '')
-          setSelectedCustomer(draft.selectedCustomer || null)
-          setProductQuery(draft.productQuery || '')
-          setItems(Array.isArray(draft.items) && draft.items.length ? draft.items : [emptySaleItem()])
-          setPayments(Array.isArray(draft.payments) && draft.payments.length ? draft.payments : [{ method: 'cash', amount: 0 }])
-          setBillDiscount(draft.billDiscount ?? 0)
-          setBillDate(draft.billDate || todayISO())
-        }
-      }
-    } catch (draftError) {
-      console.warn('Could not restore unfinished bill:', draftError)
-    } finally {
-      setSavedDraftLoaded(true)
-    }
-  }, [draftStorageKey])
-
-  useEffect(() => {
-    if (!savedDraftLoaded || !store?.id) return
-    const hasWork = Boolean(selectedCustomer || items.some((item) => item.product) || customerQuery.trim() || productQuery.trim() || safeNumber(billDiscount) > 0)
-    try {
-      if (hasWork) {
-        window.localStorage.setItem(draftStorageKey, JSON.stringify({
-          customerQuery, selectedCustomer, productQuery, items, payments,
-          billDiscount, billDate, savedAt: new Date().toISOString(),
-        }))
-      } else {
-        window.localStorage.removeItem(draftStorageKey)
-      }
-    } catch (draftError) {
-      console.warn('Could not save unfinished bill locally:', draftError)
-    }
-  }, [savedDraftLoaded, draftStorageKey, customerQuery, selectedCustomer, productQuery, items, payments, billDiscount, billDate, store?.id])
+  const { ready: saleDraftReady, clearDraft: clearSaleDraft } = useWorkingDraft({
+    storeId: store?.id,
+    moduleKey: 'sales',
+    draftKey: 'new-sale',
+    localStorageKey: draftStorageKey,
+    value: { customerQuery, selectedCustomer, productQuery, items, payments, billDiscount, billDate },
+    hasWork: Boolean(selectedCustomer || items.some((item) => item.product) || customerQuery.trim() || productQuery.trim() || safeNumber(billDiscount) > 0),
+    onRestore: (draft) => {
+      setCustomerQuery(draft.customerQuery || '')
+      setSelectedCustomer(draft.selectedCustomer || null)
+      setProductQuery(draft.productQuery || '')
+      setItems(Array.isArray(draft.items) && draft.items.length ? draft.items : [emptySaleItem()])
+      setPayments(Array.isArray(draft.payments) && draft.payments.length ? draft.payments : [{ method: 'cash', amount: 0 }])
+      setBillDiscount(draft.billDiscount ?? 0)
+      setBillDate(draft.billDate || todayISO())
+    },
+  })
 
   useEffect(() => {  
     if (!store?.id) return  
@@ -3678,7 +3694,7 @@ function NewSale({ store }) {
       ])  
       setBillDiscount(0)  
       setAlternatives([])  
-      try { window.localStorage.removeItem(draftStorageKey) } catch {}
+      await clearSaleDraft()
       setMessage(`Sale completed successfully: ${data}. Unfinished bill cleared from this device.`) 
     } catch (error) {  
       setMessage(  
@@ -4070,7 +4086,7 @@ function NewSale({ store }) {
   
           <button  
             className="primary-button large"  
-            disabled={busy}  
+            disabled={busy || !saleDraftReady}  
             type="submit"  
           >  
             {busy  
@@ -6383,6 +6399,23 @@ function SaleEditModal({
   
   const [error, setError] =  
     useState('')  
+
+  const { clearDraft: clearSaleEditDraft } = useWorkingDraft({
+    storeId: store?.id,
+    moduleKey: 'sales-bill-edit',
+    draftKey: `edit-${sale.id}`,
+    enabled: items.length > 0,
+    value: { customerId, billDate, billDiscount, notes, items, payments },
+    hasWork: items.length > 0,
+    onRestore: (draft) => {
+      setCustomerId(draft.customerId || '')
+      setBillDate(draft.billDate || todayISO())
+      setBillDiscount(draft.billDiscount ?? 0)
+      setNotes(draft.notes || '')
+      if (Array.isArray(draft.items) && draft.items.length) setItems(draft.items)
+      if (Array.isArray(draft.payments)) setPayments(draft.payments)
+    },
+  })
   
   useEffect(() => {  
     loadCustomers()  
@@ -6579,6 +6612,7 @@ function SaleEditModal({
         throw rpcError  
       }  
   
+      await clearSaleEditDraft()
       onSaved()  
     } catch (err) {  
       setError(  
@@ -7018,6 +7052,22 @@ function SalesReturns({ store }) {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
 
+  const { clearDraft: clearSalesReturnDraft } = useWorkingDraft({
+    storeId: store?.id,
+    moduleKey: 'sales-returns',
+    draftKey: 'new-return',
+    value: { customerQuery, productQuery, customer, lines, refundMethod, reason },
+    hasWork: Boolean(customerQuery.trim() || productQuery.trim() || customer || lines.length || reason.trim() || refundMethod !== 'cash'),
+    onRestore: (draft) => {
+      setCustomerQuery(draft.customerQuery || '')
+      setProductQuery(draft.productQuery || '')
+      setCustomer(draft.customer || null)
+      setLines(Array.isArray(draft.lines) ? draft.lines : [])
+      setRefundMethod(draft.refundMethod || 'cash')
+      setReason(draft.reason || '')
+    },
+  })
+
   const loadReturns = async () => {
     if (!store?.id) return
     const [{ data, error: returnsError }, { data: customerRows, error: customerError }, { data: productRows, error: productError }] = await Promise.all([
@@ -7094,7 +7144,7 @@ function SalesReturns({ store }) {
         refundAmount: Number(refundAmount.toFixed(2)), reason: reason.trim() || null, items: payloadItems,
       })
       setSuccess('Sales return recorded. Customer credit statement updated where applicable.')
-      setCustomer(null); setCustomerQuery(''); setLines([]); setReason(''); setRefundMethod('cash')
+      setCustomer(null); setCustomerQuery(''); setLines([]); setReason(''); setRefundMethod('cash'); await clearSalesReturnDraft()
       await loadReturns()
     } catch (e) {
       console.error('Independent sales return error:', e)
@@ -7589,7 +7639,43 @@ function NewPurchase({ store }) {
       otherCharges: 0,
       notes: '',
     })
-  
+
+  const { ready: purchaseDraftReady, clearDraft: clearPurchaseDraft } = useWorkingDraft({
+    storeId: store?.id,
+    moduleKey: 'purchases',
+    draftKey: 'new-purchase',
+    value: { supplierQuery, productQuery, selectedSupplier, invoiceNumber, invoiceDate, items, invoiceCharges },
+    hasWork: Boolean(
+      selectedSupplier ||
+      supplierQuery.trim() ||
+      productQuery.trim() ||
+      invoiceNumber.trim() ||
+      items.some((item) => item.product) ||
+      safeNumber(invoiceCharges.discount) > 0 ||
+      safeNumber(invoiceCharges.cgst) > 0 ||
+      safeNumber(invoiceCharges.sgst) > 0 ||
+      safeNumber(invoiceCharges.igst) > 0 ||
+      safeNumber(invoiceCharges.otherCharges) > 0 ||
+      String(invoiceCharges.notes || '').trim()
+    ),
+    onRestore: (draft) => {
+      setSupplierQuery(draft.supplierQuery || '')
+      setProductQuery(draft.productQuery || '')
+      setSelectedSupplier(draft.selectedSupplier || null)
+      setInvoiceNumber(draft.invoiceNumber || '')
+      setInvoiceDate(draft.invoiceDate || todayISO())
+      setItems(Array.isArray(draft.items) && draft.items.length ? draft.items : [emptyPurchaseItem()])
+      setInvoiceCharges({
+        discount: draft.invoiceCharges?.discount ?? 0,
+        cgst: draft.invoiceCharges?.cgst ?? 0,
+        sgst: draft.invoiceCharges?.sgst ?? 0,
+        igst: draft.invoiceCharges?.igst ?? 0,
+        otherCharges: draft.invoiceCharges?.otherCharges ?? 0,
+        notes: draft.invoiceCharges?.notes || '',
+      })
+    },
+  })
+
   useEffect(() => {  
     if (!store?.id) return  
   
@@ -7890,15 +7976,19 @@ function NewPurchase({ store }) {
   
         if (error) throw error  
   
+        await clearPurchaseDraft()
         setMessage(  
           `Purchase completed successfully: ${data}`,  
         )  
   
-        setInvoiceNumber('')  
+        setInvoiceNumber('')
         setInvoiceDate(todayISO())
-        setItems([  
-          emptyPurchaseItem(),  
-        ])  
+        setSupplierQuery('')
+        setProductQuery('')
+        setSelectedSupplier(null)
+        setItems([
+          emptyPurchaseItem(),
+        ])
         setInvoiceCharges({
           discount: 0,
           cgst: 0,
@@ -8183,7 +8273,7 @@ function NewPurchase({ store }) {
           <button  
             className="primary-button large"  
             type="submit"  
-            disabled={busy}  
+            disabled={busy || !purchaseDraftReady}  
           >  
             {busy  
               ? 'Completing purchase…'  
@@ -8750,6 +8840,7 @@ function PurchaseItemRow({
 function SupplierInvoices({ store }) {
   const [rows, setRows] = useState([])
   const [selected, setSelected] = useState(null)
+  const [editingInvoice, setEditingInvoice] = useState(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
@@ -8844,7 +8935,7 @@ function SupplierInvoices({ store }) {
       ) : (
         <div className="record-list">
           {filteredRows.map((row) => (
-            <button type="button" className="record-row" key={row.id} onClick={() => setSelected(row.suppliers)}>
+            <button type="button" className="record-row" key={row.id} onClick={() => setEditingInvoice(row)}>
               <div>
                 <strong>{row.invoice_number || 'Supplier invoice'}</strong>
                 <span>{row.suppliers?.supplier_name || 'Supplier'}</span>
@@ -8860,7 +8951,220 @@ function SupplierInvoices({ store }) {
       {selected && (
         <SupplierHistoryModal supplier={selected} store={store} onClose={() => setSelected(null)} />
       )}
+      {editingInvoice && (
+        <PurchaseInvoiceEditModal
+          store={store}
+          invoice={editingInvoice}
+          onClose={() => setEditingInvoice(null)}
+          onSaved={async () => {
+            setEditingInvoice(null)
+            await load()
+          }}
+        />
+      )}
     </PanelList>
+  )
+}
+
+function PurchaseInvoiceEditModal({ store, invoice, onClose, onSaved }) {
+  const [details, setDetails] = useState(null)
+  const [suppliers, setSuppliers] = useState([])
+  const [products, setProducts] = useState([])
+  const [supplierId, setSupplierId] = useState(invoice.supplier_id || '')
+  const [invoiceNumber, setInvoiceNumber] = useState(invoice.invoice_number || '')
+  const [invoiceDate, setInvoiceDate] = useState(invoice.invoice_date || todayISO())
+  const [items, setItems] = useState([])
+  const [charges, setCharges] = useState({
+    discount: invoice.discount_amount || 0,
+    cgst: invoice.cgst_amount || 0,
+    sgst: invoice.sgst_amount || 0,
+    igst: invoice.igst_amount || 0,
+    otherCharges: invoice.other_charges || 0,
+    notes: invoice.notes || '',
+  })
+  const [loading, setLoading] = useState(true)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  const { clearDraft: clearPurchaseEditDraft } = useWorkingDraft({
+    storeId: store?.id,
+    moduleKey: 'purchase-bill-edit',
+    draftKey: `edit-${invoice.id}`,
+    enabled: !loading && !error,
+    value: { supplierId, invoiceNumber, invoiceDate, items, charges },
+    hasWork: !loading && items.length > 0,
+    onRestore: (draft) => {
+      setSupplierId(draft.supplierId || invoice.supplier_id || '')
+      setInvoiceNumber(draft.invoiceNumber || invoice.invoice_number || '')
+      setInvoiceDate(draft.invoiceDate || invoice.invoice_date || todayISO())
+      if (Array.isArray(draft.items) && draft.items.length) setItems(draft.items)
+      setCharges({
+        discount: draft.charges?.discount ?? invoice.discount_amount ?? 0,
+        cgst: draft.charges?.cgst ?? invoice.cgst_amount ?? 0,
+        sgst: draft.charges?.sgst ?? invoice.sgst_amount ?? 0,
+        igst: draft.charges?.igst ?? invoice.igst_amount ?? 0,
+        otherCharges: draft.charges?.otherCharges ?? invoice.other_charges ?? 0,
+        notes: draft.charges?.notes ?? invoice.notes ?? '',
+      })
+    },
+  })
+
+  useEffect(() => {
+    let cancelled = false
+    const load = async () => {
+      setLoading(true)
+      try {
+        const [supplierResult, productResult, itemResult] = await Promise.all([
+          supabase.from('suppliers').select('*').eq('store_id', store.id).eq('is_active', true).order('supplier_name'),
+          supabase.from('store_products').select('product_id, products(id,product_name,generic_display_name,manufacturer,gst_rate,pack_quantity,pack_unit)').eq('store_id', store.id).eq('is_active', true),
+          supabase.from('purchase_items').select('*, products(id,product_name,generic_display_name), batches(id,batch_number,expiry_date,units_per_pack,mrp_per_pack)').eq('purchase_invoice_id', invoice.id),
+        ])
+        if (supplierResult.error) throw supplierResult.error
+        if (productResult.error) throw productResult.error
+        if (itemResult.error) throw itemResult.error
+        if (cancelled) return
+        setSuppliers(supplierResult.data || [])
+        setProducts((productResult.data || []).map((row) => row.products).filter(Boolean))
+        setItems((itemResult.data || []).map((item) => ({
+          rowKey: item.id,
+          originalId: item.id,
+          product: item.products || { id: item.product_id, product_name: 'Product' },
+          batchNumber: item.batch_number || item.batches?.batch_number || '',
+          expiryDate: item.expiry_date || item.batches?.expiry_date || '',
+          paidPacks: item.paid_packs ?? 0,
+          freePacks: item.free_packs ?? 0,
+          looseUnits: item.loose_units ?? 0,
+          purchaseRatePerPack: item.purchase_rate_per_pack ?? 0,
+          mrpPerPack: item.mrp_per_pack ?? item.batches?.mrp_per_pack ?? 0,
+          supplierDiscountPercent: item.supplier_discount_percent ?? 0,
+          gstRate: item.gst_rate ?? 0,
+          unitsPerPack: item.units_per_pack ?? item.batches?.units_per_pack ?? 1,
+        })))
+      } catch (loadError) {
+        if (!cancelled) setError(loadError?.message || 'Could not load this purchase invoice.')
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+    load()
+    return () => { cancelled = true }
+  }, [store.id, invoice.id])
+
+  const patchItem = (rowKey, patch) => setItems((current) => current.map((item) => item.rowKey === rowKey ? { ...item, ...patch } : item))
+  const addItem = () => setItems((current) => [...current, {
+    rowKey: `new-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    originalId: null, product: null, batchNumber: '', expiryDate: '',
+    paidPacks: 1, freePacks: 0, looseUnits: 0, purchaseRatePerPack: 0,
+    mrpPerPack: 0, supplierDiscountPercent: 0, gstRate: 0, unitsPerPack: 1,
+  }])
+
+  const save = async (event) => {
+    event.preventDefault()
+    setBusy(true)
+    setError('')
+    try {
+      if (!supplierId) throw new Error('Select a supplier.')
+      if (!invoiceNumber.trim()) throw new Error('Invoice number is required.')
+      const validItems = items.filter((item) => item.product?.id)
+      if (!validItems.length) throw new Error('Add at least one product.')
+      const payload = validItems.map((item) => ({
+        purchase_item_id: item.originalId || null,
+        product_id: item.product.id,
+        batch_number: item.batchNumber,
+        expiry_date: item.expiryDate || null,
+        paid_packs: safeNumber(item.paidPacks),
+        free_packs: safeNumber(item.freePacks),
+        loose_units: safeNumber(item.looseUnits),
+        purchase_rate_per_pack: safeNumber(item.purchaseRatePerPack),
+        mrp_per_pack: safeNumber(item.mrpPerPack),
+        supplier_discount_percent: safeNumber(item.supplierDiscountPercent),
+        gst_rate: safeNumber(item.gstRate),
+        units_per_pack: safeNumber(item.unitsPerPack) || 1,
+      }))
+      await PharmDeskAPI.editPurchase({
+        storeId: store.id,
+        purchaseInvoiceId: invoice.id,
+        supplierId,
+        invoiceNumber: invoiceNumber.trim(),
+        invoiceDate,
+        items: payload,
+        discountAmount: safeNumber(charges.discount),
+        cgstAmount: safeNumber(charges.cgst),
+        sgstAmount: safeNumber(charges.sgst),
+        igstAmount: safeNumber(charges.igst),
+        otherCharges: safeNumber(charges.otherCharges),
+        notes: charges.notes || null,
+      })
+      await clearPurchaseEditDraft()
+      onSaved()
+    } catch (saveError) {
+      setError(saveError?.message || 'Could not save purchase changes.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Modal title={`Edit Purchase • ${invoice.invoice_number || 'Supplier invoice'}`} onClose={onClose}>
+      {loading ? <LoadingInline /> : (
+        <form onSubmit={save}>
+          <div className="info-box">Changes use the backend stock-reconciliation transaction. For safety, a purchase bill with supplier payments allocated cannot be edited until those payments are reallocated, and an edit is blocked if the original stock has already been consumed or changed. Existing payments are never silently rewritten.</div>
+          <div className="form-grid">
+            <label>Supplier
+              <select value={supplierId} onChange={(event) => setSupplierId(event.target.value)} required>
+                <option value="">Select supplier</option>
+                {suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.supplier_name}</option>)}
+              </select>
+            </label>
+            <label>Supplier invoice number
+              <input value={invoiceNumber} onChange={(event) => setInvoiceNumber(event.target.value)} required />
+            </label>
+            <label>Invoice date
+              <input type="date" value={invoiceDate} onChange={(event) => setInvoiceDate(event.target.value)} required />
+            </label>
+          </div>
+          <h3>Purchased items</h3>
+          {items.map((item) => (
+            <div className="transaction-item" key={item.rowKey}>
+              <label>Product
+                <select value={item.product?.id || ''} onChange={(event) => {
+                  const product = products.find((row) => row.id === event.target.value) || null
+                  patchItem(item.rowKey, { product, gstRate: product?.gst_rate ?? item.gstRate, unitsPerPack: product?.pack_quantity || item.unitsPerPack || 1 })
+                }} required>
+                  <option value="">Select product</option>
+                  {products.map((product) => <option key={product.id} value={product.id}>{product.product_name}{product.generic_display_name ? ` • ${product.generic_display_name}` : ''}</option>)}
+                </select>
+              </label>
+              <div className="item-grid">
+                <label>Batch number<input value={item.batchNumber} onChange={(e) => patchItem(item.rowKey, { batchNumber: e.target.value })} required /></label>
+                <label>Expiry date<input type="date" value={item.expiryDate || ''} onChange={(e) => patchItem(item.rowKey, { expiryDate: e.target.value })} required /></label>
+                <label>Paid packs<input type="number" min="0" step="any" value={item.paidPacks} onChange={(e) => patchItem(item.rowKey, { paidPacks: e.target.value })} /></label>
+                <label>Free packs<input type="number" min="0" step="any" value={item.freePacks} onChange={(e) => patchItem(item.rowKey, { freePacks: e.target.value })} /></label>
+                <label>Loose units<input type="number" min="0" step="any" value={item.looseUnits} onChange={(e) => patchItem(item.rowKey, { looseUnits: e.target.value })} /></label>
+                <label>Units per pack<input type="number" min="1" step="1" value={item.unitsPerPack} onChange={(e) => patchItem(item.rowKey, { unitsPerPack: e.target.value })} /></label>
+                <label>Purchase rate / pack<input type="number" min="0" step="any" value={item.purchaseRatePerPack} onChange={(e) => patchItem(item.rowKey, { purchaseRatePerPack: e.target.value })} /></label>
+                <label>MRP / pack<input type="number" min="0" step="any" value={item.mrpPerPack} onChange={(e) => patchItem(item.rowKey, { mrpPerPack: e.target.value })} /></label>
+                <label>Supplier discount %<input type="number" min="0" max="100" step="any" value={item.supplierDiscountPercent} onChange={(e) => patchItem(item.rowKey, { supplierDiscountPercent: e.target.value })} /></label>
+                <label>GST %<input type="number" min="0" max="100" step="any" value={item.gstRate} onChange={(e) => patchItem(item.rowKey, { gstRate: e.target.value })} /></label>
+              </div>
+              <button type="button" className="danger-button" onClick={() => setItems((current) => current.filter((row) => row.rowKey !== item.rowKey))}>Remove item</button>
+            </div>
+          ))}
+          <button type="button" className="secondary-button" onClick={addItem}>+ Add product</button>
+          <h3>Invoice adjustments</h3>
+          <div className="item-grid">
+            <label>Discount amount<input type="number" min="0" step="any" value={charges.discount} onChange={(e) => setCharges((current) => ({ ...current, discount: e.target.value }))} /></label>
+            <label>CGST amount<input type="number" min="0" step="any" value={charges.cgst} onChange={(e) => setCharges((current) => ({ ...current, cgst: e.target.value }))} /></label>
+            <label>SGST amount<input type="number" min="0" step="any" value={charges.sgst} onChange={(e) => setCharges((current) => ({ ...current, sgst: e.target.value }))} /></label>
+            <label>IGST amount<input type="number" min="0" step="any" value={charges.igst} onChange={(e) => setCharges((current) => ({ ...current, igst: e.target.value }))} /></label>
+            <label>Other charges<input type="number" min="0" step="any" value={charges.otherCharges} onChange={(e) => setCharges((current) => ({ ...current, otherCharges: e.target.value }))} /></label>
+          </div>
+          <label>Notes<textarea value={charges.notes} onChange={(e) => setCharges((current) => ({ ...current, notes: e.target.value }))} rows={3} /></label>
+          {error && <div className="error-box">{error}</div>}
+          <ModalActions onClose={onClose} busy={busy} label="Save Purchase Changes" />
+        </form>
+      )}
+    </Modal>
   )
 }
 
@@ -9860,6 +10164,19 @@ function SupplierPurchaseCatalogue({ store }) {
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [notes, setNotes] = useState('')
+
+  const { clearDraft: clearPurchaseOrderDraft } = useWorkingDraft({
+    storeId: store?.id,
+    moduleKey: 'supplier-purchase-order',
+    draftKey: 'new-order',
+    value: { supplierId, quantities, notes },
+    hasWork: Boolean(supplierId || Object.values(quantities).some((quantity) => safeNumber(quantity) > 0) || notes.trim()),
+    onRestore: async (draft) => {
+      if (draft.supplierId) await loadCatalogue(draft.supplierId)
+      setQuantities(draft.quantities || {})
+      setNotes(draft.notes || '')
+    },
+  })
   const [pdfPreviewHtml, setPdfPreviewHtml] = useState('')
   const [exportChoiceOpen, setExportChoiceOpen] = useState(false)
   const pdfFrameRef = useRef(null)
@@ -10267,6 +10584,7 @@ function SupplierPurchaseCatalogue({ store }) {
 
       setQuantities({})
       setNotes('')
+      await clearPurchaseOrderDraft()
     } catch (saveError) {
       console.error(
         'Failed to create purchase order:',
@@ -11989,6 +12307,22 @@ function StockReconciliation({
   const [message, setMessage] =
     useState('')
 
+  const { clearDraft: clearStockDraft } = useWorkingDraft({
+    storeId: store?.id,
+    moduleKey: 'stock-reconciliation',
+    draftKey: 'current-adjustment',
+    value: { selectedProductId, productQuery, selectedBatch, batchQuery, physical, adjustmentSign },
+    hasWork: Boolean(selectedProductId || productQuery.trim() || selectedBatch || batchQuery.trim() || physical !== ''),
+    onRestore: (draft) => {
+      setSelectedProductId(draft.selectedProductId || '')
+      setProductQuery(draft.productQuery || '')
+      setSelectedBatch(draft.selectedBatch || '')
+      setBatchQuery(draft.batchQuery || '')
+      setPhysical(draft.physical ?? '')
+      setAdjustmentSign(draft.adjustmentSign === -1 ? -1 : 1)
+    },
+  })
+
   useEffect(() => {
     if (!store?.id) return
 
@@ -12193,6 +12527,13 @@ function StockReconciliation({
     setMessage(
       `Reconciliation recorded. Difference: ${difference}`,
     )
+    await clearStockDraft()
+    setSelectedProductId('')
+    setProductQuery('')
+    setSelectedBatch('')
+    setBatchQuery('')
+    setPhysical('')
+    setAdjustmentSign(1)
   }
 
   return (
@@ -17125,6 +17466,21 @@ function CustomerModal({
     useState(false)  
   const [error, setError] =  
     useState('')  
+
+  const { clearDraft: clearCustomerDraft } = useWorkingDraft({
+    storeId: store?.id,
+    moduleKey: 'customers',
+    draftKey: editing ? `edit-${customer.id}` : 'new-customer',
+    value: { name, phone, address, doctorName, doctorAddress },
+    hasWork: Boolean(name.trim() || phone.trim() || address.trim() || doctorName.trim() || doctorAddress.trim()),
+    onRestore: (draft) => {
+      setName(draft.name || '')
+      setPhone(draft.phone || '')
+      setAddress(draft.address || '')
+      setDoctorName(draft.doctorName || '')
+      setDoctorAddress(draft.doctorAddress || '')
+    },
+  })
   
   const save = async (e) => {  
     e.preventDefault()  
@@ -17215,6 +17571,7 @@ function CustomerModal({
         store_id: store.id,  
       }  
   
+      await clearCustomerDraft()
       onCreated(  
         savedCustomer,  
       )  
@@ -17508,6 +17865,22 @@ function SupplierModal({
   
   const [error, setError] =  
     useState('')  
+
+  const { clearDraft: clearSupplierDraft } = useWorkingDraft({
+    storeId: store?.id,
+    moduleKey: 'suppliers',
+    draftKey: editing ? `edit-${supplier.id}` : 'new-supplier',
+    value: { name, license, phone, email, address, gstin },
+    hasWork: Boolean(name.trim() || license.trim() || phone.trim() || email.trim() || address.trim() || gstin.trim()),
+    onRestore: (draft) => {
+      setName(draft.name || '')
+      setLicense(draft.license || '')
+      setPhone(draft.phone || '')
+      setEmail(draft.email || '')
+      setAddress(draft.address || '')
+      setGstin(draft.gstin || '')
+    },
+  })
   
   const save = async (e) => {  
     e.preventDefault()  
@@ -17632,6 +18005,7 @@ function SupplierModal({
         store_id: store.id,
       }
 
+      await clearSupplierDraft()
       onCreated(savedSupplier)  
     } catch (error) {  
       setError(  
@@ -18308,6 +18682,50 @@ const [
   
   const [error, setError] =  
     useState('')  
+
+  const { clearDraft: clearProductDraft } = useWorkingDraft({
+    storeId: store?.id,
+    moduleKey: 'inventory-product',
+    draftKey: editing ? `edit-${product.id}` : 'new-product',
+    value: {
+      name, genericDisplayName, manufacturer, selectedManufacturer, dosageForm,
+      strengthDisplay, categoryId, hsn, gst, sellingPrice, discount,
+      minimumStock, reorderLevel, packQuantity, packUnit, aliasText,
+      packagingName, packagingLevels, packagingDirty, compositionQuery,
+      selectedComposition,
+    },
+    hasWork: Boolean(
+      name.trim() || genericDisplayName.trim() || manufacturer.trim() ||
+      selectedManufacturer.trim() || dosageForm.trim() || strengthDisplay.trim() ||
+      categoryId || hsn.trim() || safeNumber(gst) || safeNumber(sellingPrice) ||
+      safeNumber(discount) || safeNumber(minimumStock) || safeNumber(reorderLevel) ||
+      safeNumber(packQuantity) !== 1 || packUnit !== 'pack' || aliasText.trim() ||
+      packagingName !== 'Standard' || compositionQuery.trim() || selectedComposition
+    ),
+    onRestore: (draft) => {
+      setName(draft.name || '')
+      setGenericDisplayName(draft.genericDisplayName || '')
+      setManufacturer(draft.manufacturer || '')
+      setSelectedManufacturer(draft.selectedManufacturer || '')
+      setDosageForm(draft.dosageForm || '')
+      setStrengthDisplay(draft.strengthDisplay || '')
+      setCategoryId(draft.categoryId || '')
+      setHsn(draft.hsn || '')
+      setGst(draft.gst ?? 0)
+      setSellingPrice(draft.sellingPrice ?? 0)
+      setDiscount(draft.discount ?? 0)
+      setMinimumStock(draft.minimumStock ?? 0)
+      setReorderLevel(draft.reorderLevel ?? 0)
+      setPackQuantity(draft.packQuantity ?? 1)
+      setPackUnit(draft.packUnit || 'pack')
+      setAliasText(draft.aliasText || '')
+      setPackagingName(draft.packagingName || 'Standard')
+      setPackagingLevels(Array.isArray(draft.packagingLevels) && draft.packagingLevels.length ? draft.packagingLevels : [{ level_number: 1, unit_name: 'Tablet', units_per_parent: 1, is_purchase_unit: true, is_sale_unit: true, is_preferred_sale_unit: true, is_stock_unit: true }])
+      setPackagingDirty(Boolean(draft.packagingDirty))
+      setCompositionQuery(draft.compositionQuery || '')
+      setSelectedComposition(draft.selectedComposition || null)
+    },
+  })
   
   useEffect(() => {  
     loadMasterData()  
@@ -18905,6 +19323,7 @@ const [
         }  
       }  
   
+      await clearProductDraft()
       onCreated({  
         id: productId,  
       })  
@@ -18935,6 +19354,7 @@ const [
         .eq('product_id', product.id)
 
       if (storeProductError) throw storeProductError
+      await clearProductDraft()
       onCreated({ id: product.id, deleted: true })
     } catch (error) {
       setError(error.message || 'Unable to delete product.')

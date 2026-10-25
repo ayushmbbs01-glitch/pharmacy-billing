@@ -1,0 +1,179 @@
+import { useEffect, useRef, useState } from 'react'
+import { supabase } from './supabaseClient'
+
+/**
+ * Keeps an unfinished form on-device immediately and synchronizes it to
+ * Supabase for recovery on another signed-in device. The draft row is scoped
+ * to the authenticated user, store, module, and logical draft key.
+ *
+ * The hook never submits a bill or purchase; only explicit transaction
+ * completion should do that.
+ */
+export function useWorkingDraft({
+  storeId,
+  moduleKey,
+  draftKey = 'default',
+  value,
+  onRestore,
+  hasWork,
+  enabled = true,
+  localStorageKey = null,
+}) {
+  const [ready, setReady] = useState(false)
+  const restoreIdentityRef = useRef(null)
+  const restoreRef = useRef(onRestore)
+  const latestValueRef = useRef(value)
+  const latestHasWorkRef = useRef(hasWork)
+  const saveTimerRef = useRef(null)
+  const generationRef = useRef(0)
+  const baseLocalKey = localStorageKey || `pharmdesk:working-draft:${storeId || 'no-store'}:${moduleKey}:${draftKey}`
+  const [scopedLocalKey, setScopedLocalKey] = useState(null)
+  const localKey = scopedLocalKey || baseLocalKey
+
+  useEffect(() => { restoreRef.current = onRestore }, [onRestore])
+  useEffect(() => { latestValueRef.current = value }, [value])
+  useEffect(() => { latestHasWorkRef.current = hasWork }, [hasWork])
+
+  useEffect(() => {
+    let cancelled = false
+    const identity = `${storeId || ''}|${moduleKey || ''}|${draftKey}|${baseLocalKey}`
+    restoreIdentityRef.current = null
+    setReady(false)
+    if (!enabled || !storeId || !moduleKey) {
+      restoreIdentityRef.current = identity
+      setReady(true)
+      return () => { cancelled = true }
+    }
+
+    const restore = async () => {
+      let userId = null
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        userId = user?.id || null
+      } catch {}
+
+      const resolvedKey = `${baseLocalKey}:user:${userId || 'guest'}`
+      let localDraft = null
+      try {
+        const raw = window.localStorage.getItem(resolvedKey)
+        if (raw) localDraft = JSON.parse(raw)
+        // One-time migration for drafts saved by the previous store-only key.
+        if (!localDraft && resolvedKey !== baseLocalKey) {
+          const legacyRaw = window.localStorage.getItem(baseLocalKey)
+          if (legacyRaw) {
+            localDraft = JSON.parse(legacyRaw)
+            window.localStorage.setItem(resolvedKey, JSON.stringify(localDraft))
+            window.localStorage.removeItem(baseLocalKey)
+          }
+        }
+      } catch (error) {
+        console.warn('Could not read local working draft:', error)
+      }
+
+      let cloudDraft = null
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (user?.id) {
+          const { data, error } = await supabase
+            .from('pharmdesk_working_drafts')
+            .select('payload,updated_at')
+            .eq('store_id', storeId)
+            .eq('user_id', user.id)
+            .eq('module_key', moduleKey)
+            .eq('draft_key', draftKey)
+            .maybeSingle()
+          if (error) throw error
+          cloudDraft = data ? { ...data.payload, savedAt: data.updated_at } : null
+        }
+      } catch (error) {
+        // Local recovery remains available if the draft table migration has
+        // not been applied or the network is temporarily unavailable.
+        console.warn('Cloud draft unavailable; keeping local recovery:', error?.message || error)
+      }
+
+      if (cancelled) return
+      setScopedLocalKey(resolvedKey)
+      restoreIdentityRef.current = identity
+      const localTime = Date.parse(localDraft?.savedAt || 0) || 0
+      const cloudTime = Date.parse(cloudDraft?.savedAt || 0) || 0
+      const chosen = cloudTime > localTime ? cloudDraft : localDraft || cloudDraft
+      if (chosen && typeof chosen === 'object') {
+        try { restoreRef.current?.(chosen) } catch (error) {
+          console.warn('Could not restore working draft:', error)
+        }
+      }
+      setReady(true)
+    }
+
+    restore()
+    return () => { cancelled = true }
+  }, [storeId, moduleKey, draftKey, baseLocalKey, enabled])
+
+  useEffect(() => {
+    const identity = `${storeId || ''}|${moduleKey || ''}|${draftKey}|${baseLocalKey}`
+    if (!ready || restoreIdentityRef.current !== identity || !enabled || !storeId || !moduleKey) return
+    const generation = generationRef.current
+    const timer = window.setTimeout(async () => {
+      if (generation !== generationRef.current) return
+      const hasCurrentWork = Boolean(latestHasWorkRef.current)
+      if (!hasCurrentWork) {
+        try { window.localStorage.removeItem(localKey) } catch {}
+        try {
+          const { data: { user } } = await supabase.auth.getUser()
+          if (user?.id) {
+            await supabase.from('pharmdesk_working_drafts').delete()
+              .eq('store_id', storeId).eq('user_id', user.id)
+              .eq('module_key', moduleKey).eq('draft_key', draftKey)
+          }
+        } catch {}
+        return
+      }
+
+      const payload = { ...latestValueRef.current, savedAt: new Date().toISOString() }
+      try { window.localStorage.setItem(localKey, JSON.stringify(payload)) } catch (error) {
+        console.warn('Could not save local working draft:', error)
+      }
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (generation !== generationRef.current || !user?.id) return
+        const { error } = await supabase.from('pharmdesk_working_drafts').upsert({
+          store_id: storeId,
+          user_id: user.id,
+          module_key: moduleKey,
+          draft_key: draftKey,
+          payload,
+          updated_at: payload.savedAt,
+        }, { onConflict: 'store_id,user_id,module_key,draft_key' })
+        if (error) throw error
+      } catch (error) {
+        console.warn('Cloud draft save failed; local copy retained:', error?.message || error)
+      }
+    }, 450)
+    saveTimerRef.current = timer
+    return () => {
+      window.clearTimeout(timer)
+      if (saveTimerRef.current === timer) saveTimerRef.current = null
+    }
+  }, [ready, enabled, storeId, moduleKey, draftKey, baseLocalKey, localKey, value, hasWork])
+
+  const clearDraft = async () => {
+    generationRef.current += 1
+    if (saveTimerRef.current != null) window.clearTimeout(saveTimerRef.current)
+    saveTimerRef.current = null
+    try { window.localStorage.removeItem(localKey) } catch {}
+    try { window.localStorage.removeItem(baseLocalKey) } catch {}
+    if (scopedLocalKey) { try { window.localStorage.removeItem(scopedLocalKey) } catch {} }
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user?.id && storeId) {
+        await supabase.from('pharmdesk_working_drafts').delete()
+          .eq('store_id', storeId).eq('user_id', user.id)
+          .eq('module_key', moduleKey).eq('draft_key', draftKey)
+      }
+    } catch (error) {
+      console.warn('Could not clear saved working draft:', error?.message || error)
+    }
+  }
+
+  return { ready, clearDraft }
+}
