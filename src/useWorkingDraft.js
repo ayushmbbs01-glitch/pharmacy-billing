@@ -103,7 +103,7 @@ export function useWorkingDraft({
       const cloudIsNewer = Boolean(cloudDraft && cloudTime >= localTime)
 
       if (cloudIsNewer && cloudDraft.__cleared) {
-        try { window.localStorage.removeItem(localKey) } catch {}
+        try { window.localStorage.removeItem(resolvedLocalKey) } catch {}
         restoreRef.current?.({})
         lastSyncedValueRef.current = null
       } else {
@@ -143,7 +143,7 @@ export function useWorkingDraft({
 
             const remotePayload = row.payload || {}
             if (remotePayload.__cleared) {
-              try { window.localStorage.removeItem(localKey) } catch {}
+              try { window.localStorage.removeItem(resolvedLocalKey) } catch {}
               restoreRef.current?.({})
               lastSyncedValueRef.current = null
               return
