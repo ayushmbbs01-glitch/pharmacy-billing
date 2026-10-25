@@ -6408,7 +6408,7 @@ function SaleEditModal({
     moduleKey: 'sales-bill-edit',
     draftKey: `edit-${sale.id}`,
     enabled: !itemsLoading && items.length > 0,
-    value: { customerId, billDate, billDiscount, notes, items, payments },
+    value: { customerId, billDate, billDiscount, notes, items },
     hasWork: !itemsLoading && items.length > 0,
     onRestore: (draft) => {
       setCustomerId(draft.customerId || '')
@@ -6416,7 +6416,6 @@ function SaleEditModal({
       setBillDiscount(draft.billDiscount ?? 0)
       setNotes(draft.notes || '')
       if (Array.isArray(draft.items) && draft.items.length) setItems(draft.items)
-      if (Array.isArray(draft.payments)) setPayments(draft.payments)
     },
   })
   
@@ -6546,28 +6545,6 @@ function SaleEditModal({
               item.gst_rate,  
             ),  
         }))  
-  
-      const paymentRows =  
-        payments  
-          .filter(  
-            (p) =>  
-              safeNumber(  
-                p.amount,  
-              ) > 0,  
-          )  
-          .map((p) => ({  
-            payment_method:  
-              p.payment_method,  
-            amount:  
-              safeNumber(  
-                p.amount,  
-              ),  
-            payment_reference:  
-              p.payment_reference ||  
-              null,  
-            notes:  
-              p.notes || null,  
-          }))  
   
       const { error: rpcError } =  
         await supabase.rpc(  
@@ -6897,119 +6874,33 @@ function SaleEditModal({
           </div>  
         ))}  
   
-        <h3>Payments</h3>  
-  
-        {payments.map(  
-          (payment, index) => (  
-            <div  
-              className="payment-row"  
-              key={  
-                payment.id ||  
-                index  
-              }  
-            >  
-              <select  
-                value={  
-                  payment.payment_method  
-                }  
-                onChange={(e) => {  
-                  const next = [  
-                    ...payments,  
-                  ]  
-  
-                  next[index] = {  
-                    ...next[index],  
-                    payment_method:  
-                      e.target.value,  
-                  }  
-  
-                  setPayments(next)  
-                }}  
-              >  
-                <option value="cash">  
-                  Cash  
-                </option>  
-                <option value="upi">  
-                  UPI  
-                </option>  
-                <option value="card">  
-                  Card  
-                </option>  
-                <option value="credit">  
-                  Credit  
-                </option>  
-              </select>  
-  
-              <input  
-                type="number"  
-                min="0"  
-                step="0.01"  
-                value={  
-                  payment.amount  
-                }  
-                onChange={(e) => {  
-                  const next = [  
-                    ...payments,  
-                  ]  
-  
-                  next[index] = {  
-                    ...next[index],  
-                    amount:  
-                      e.target.value,  
-                  }  
-  
-                  setPayments(next)  
-                }}  
-              />  
-  
-              <button  
-                type="button"  
-                className="danger-button"  
-                onClick={() =>  
-                  setPayments(  
-                    payments.filter(  
-                      (_, i) =>  
-                        i !==  
-                        index,  
-                    ),  
-                  )  
-                }  
-              >  
-                ×  
-              </button>  
-            </div>  
-          ),  
-        )}  
-  
-        <button  
-          type="button"  
-          className="secondary-button"  
-          onClick={() =>  
-            setPayments([  
-              ...payments,  
-              {  
-                payment_method:  
-                  'cash',  
-                amount: 0,  
-              },  
-            ])  
-          }  
-        >  
-          + Payment  
-        </button>  
-  
-        {error && (  
-          <div className="error-box">  
-            {error}  
-          </div>  
-        )}  
-  
-        <div className="info-box">  
-          Bill editing is processed as one backend  
-          transaction so stock, payments, credit,  
-          GST and audit records stay synchronized.  
-        </div>  
-  
+        <h3>Recorded payments</h3>
+
+        {payments.length ? (
+          <div className="record-list">
+            {payments.map((payment, index) => (
+              <div className="record-row static" key={payment.id || index}>
+                <span>{paymentLabel(payment.payment_method)}</span>
+                <strong>{money(payment.amount)}</strong>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="muted">No payment transactions recorded yet.</p>
+        )}
+
+        {error && (
+          <div className="error-box">
+            {error}
+          </div>
+        )}
+
+        <div className="info-box">
+          Recorded cash, UPI and card payments are preserved when editing a bill.
+          Use the payment, credit-settlement or refund workflow to correct money
+          received; bill editing does not rewrite payment history.
+        </div>
+
         <ModalActions  
           onClose={onClose}  
           busy={busy}  
