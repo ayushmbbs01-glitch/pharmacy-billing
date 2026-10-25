@@ -2160,7 +2160,7 @@ a:hover { color: var(--navy); }
 .auth-brand-primary-logo {
   width: min(390px, 100%) !important;
   height: auto !important;
-  aspect-ratio: 300 / 77 !important;
+  aspect-ratio: 1500 / 380 !important;
   object-fit: contain !important;
   object-position: center !important;
 }
@@ -2168,7 +2168,7 @@ a:hover { color: var(--navy); }
   .auth-brand-primary-logo {
     width: min(330px, 92%) !important;
     height: auto !important;
-    aspect-ratio: 300 / 77 !important;
+    aspect-ratio: 1500 / 380 !important;
     margin: 0 auto 24px !important;
   }
 }
@@ -2176,6 +2176,6 @@ a:hover { color: var(--navy); }
   .auth-brand-primary-logo {
     width: min(300px, 92%) !important;
     height: auto !important;
-    aspect-ratio: 300 / 77 !important;
+    aspect-ratio: 1500 / 380 !important;
   }
 }
