@@ -12247,6 +12247,22 @@ function StockReconciliation({
   const [message, setMessage] =
     useState('')
 
+  const { clearDraft: clearStockDraft } = useWorkingDraft({
+    storeId: store?.id,
+    moduleKey: 'stock-reconciliation',
+    draftKey: 'current-adjustment',
+    value: { selectedProductId, productQuery, selectedBatch, batchQuery, physical, adjustmentSign },
+    hasWork: Boolean(selectedProductId || productQuery.trim() || selectedBatch || batchQuery.trim() || physical !== ''),
+    onRestore: (draft) => {
+      setSelectedProductId(draft.selectedProductId || '')
+      setProductQuery(draft.productQuery || '')
+      setSelectedBatch(draft.selectedBatch || '')
+      setBatchQuery(draft.batchQuery || '')
+      setPhysical(draft.physical ?? '')
+      setAdjustmentSign(draft.adjustmentSign === -1 ? -1 : 1)
+    },
+  })
+
   useEffect(() => {
     if (!store?.id) return
 
@@ -12451,6 +12467,13 @@ function StockReconciliation({
     setMessage(
       `Reconciliation recorded. Difference: ${difference}`,
     )
+    await clearStockDraft()
+    setSelectedProductId('')
+    setProductQuery('')
+    setSelectedBatch('')
+    setBatchQuery('')
+    setPhysical('')
+    setAdjustmentSign(1)
   }
 
   return (
