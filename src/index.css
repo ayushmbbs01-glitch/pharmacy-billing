@@ -1877,3 +1877,131 @@ a:hover { color: var(--navy); }
 @media(max-width:1100px) and (min-width:761px){.auth-screen{grid-template-columns:minmax(0,42%) minmax(0,58%)}.auth-brand-panel{padding:28px 26px}.auth-brand-primary-logo{width:min(320px,100%);margin-bottom:24px}.auth-feature-icon{flex-basis:38px;width:38px;height:38px}.auth-feature strong{font-size:13px}.auth-feature small{font-size:11px}.auth-form-side{padding:26px}.auth-form-side>.auth-login-card{padding:28px}.auth-input-shell{min-height:58px}.auth-input-shell input{min-height:54px}.auth-login-card .auth-signin-button{min-height:62px}}
 @media(max-width:760px){.auth-screen{grid-template-columns:minmax(0,1fr);overflow:visible}.auth-brand-panel{min-height:auto;padding:24px 24px 22px}.auth-brand-content{width:100%;max-width:540px}.auth-brand-primary-logo{width:220px;max-height:135px;margin-bottom:22px}.auth-brand-content h2{font-size:29px}.auth-brand-content .auth-brand-intro{margin:10px 0 16px;font-size:15px}.auth-brand-features{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.auth-feature{gap:8px;align-items:flex-start}.auth-feature-icon{flex-basis:32px;width:32px;height:32px}.auth-feature-icon svg{width:18px;height:18px}.auth-feature strong{font-size:11px}.auth-feature small{font-size:10px}.auth-form-side{min-height:auto;padding:22px 16px 30px}.auth-form-side>.auth-login-card{padding:26px 22px 23px;border-radius:18px}.auth-login-card h1{font-size:30px}.auth-login-card>p{font-size:16px;margin-bottom:24px}.auth-input-shell{min-height:58px;border-radius:12px;padding:0 14px;gap:11px}.auth-input-shell input{min-height:54px;font-size:16px}.auth-login-options .auth-remember,.auth-text-link{font-size:13px}.auth-login-card .auth-signin-button{min-height:59px;border-radius:12px}.auth-login-footer{margin-top:23px;font-size:13px}}
 @media(max-width:390px){.auth-brand-panel{padding:22px 18px 18px}.auth-brand-primary-logo{width:195px}.auth-brand-features{grid-template-columns:minmax(0,1fr)}.auth-form-side{padding:16px 12px 24px}.auth-form-side>.auth-login-card{padding:22px 18px}.auth-login-options{align-items:flex-start}}
+
+
+/* MOBILE SIGN-IN FIX — compact branding and keyboard-first form access */
+@media (max-width: 760px) {
+  .auth-screen {
+    display: flex !important;
+    flex-direction: column;
+    min-height: 100vh;
+    min-height: 100dvh;
+    overflow-x: hidden;
+    overflow-y: auto;
+    background: #edf6fc;
+  }
+  .auth-brand-panel {
+    flex: 0 0 auto;
+    min-height: auto;
+    padding: 18px 22px 18px;
+    background:
+      radial-gradient(ellipse at 18% 5%, rgba(255,255,255,.96), transparent 52%),
+      radial-gradient(ellipse at 88% 88%, rgba(183,224,247,.78), transparent 56%),
+      linear-gradient(145deg, #f7fbff 0%, #e5f3fc 62%, #d5ecfb 100%);
+  }
+  .auth-brand-content { max-width: 540px; }
+  .auth-brand-primary-logo {
+    width: 158px;
+    max-height: 105px;
+    margin: 0 auto 12px;
+  }
+  .auth-brand-content h2 {
+    font-size: 27px;
+    line-height: 1.08;
+    letter-spacing: -.04em;
+  }
+  .auth-brand-content .auth-brand-intro {
+    margin: 8px 0 13px;
+    font-size: 14px;
+    line-height: 1.42;
+  }
+  .auth-brand-features {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px 14px;
+    margin: 0;
+  }
+  .auth-feature {
+    min-width: 0;
+    gap: 8px;
+    align-items: center;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+  .auth-feature-icon {
+    flex: 0 0 34px;
+    width: 34px;
+    height: 34px;
+    background: rgba(255,255,255,.86);
+    border: 1px solid rgba(30,86,125,.09);
+    color: #0a3158;
+  }
+  .auth-feature-icon svg { width: 19px; height: 19px; }
+  .auth-feature > span:last-child { min-width: 0; gap: 2px; }
+  .auth-feature strong {
+    font-size: 11px;
+    line-height: 1.2;
+    white-space: normal;
+  }
+  .auth-feature small {
+    font-size: 10px;
+    line-height: 1.25;
+  }
+  .auth-form-side {
+    flex: 1 0 auto;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    min-height: auto;
+    padding: 16px 16px max(24px, env(safe-area-inset-bottom));
+    overflow: visible;
+    background:
+      radial-gradient(ellipse at 85% 0%, rgba(255,255,255,.9), transparent 38%),
+      linear-gradient(145deg, #dcecf6 0%, #f1f8fc 45%, #dcecf4 100%);
+  }
+  .auth-form-side::before { opacity: .55; }
+  .auth-form-side::after { opacity: .45; }
+  .auth-form-side > .auth-login-card {
+    width: 100%;
+    max-width: 520px;
+    padding: 24px 20px 21px;
+    border-radius: 17px;
+    background: rgba(255,255,255,.97);
+    box-shadow: 0 12px 34px rgba(25,57,78,.12);
+  }
+  .auth-login-card h1 { font-size: 29px; }
+  .auth-login-card > p { font-size: 15px; margin-bottom: 20px; }
+  .auth-login-fields { gap: 12px !important; }
+  .auth-input-shell { min-height: 55px; padding: 0 13px; border-radius: 12px; gap: 10px; }
+  .auth-input-shell input { min-height: 51px; font-size: 16px; }
+  .auth-login-card .auth-signin-button { min-height: 55px; margin-top: 4px; }
+  .auth-login-footer { margin-top: 19px; }
+  /* When the keyboard opens, remove the decorative panel so the focused form
+     is immediately available and the browser can scroll naturally. */
+  .auth-screen:has(.auth-login-card input:focus) .auth-brand-panel {
+    display: none;
+  }
+  .auth-screen:has(.auth-login-card input:focus) .auth-form-side {
+    flex: 1 0 auto;
+    min-height: 100vh;
+    min-height: 100dvh;
+    padding-top: 14px;
+    align-items: flex-start;
+  }
+}
+@media (max-width: 390px) {
+  .auth-brand-panel { padding: 16px 17px 15px; }
+  .auth-brand-primary-logo { width: 145px; margin-bottom: 10px; }
+  .auth-brand-content h2 { font-size: 25px; }
+  .auth-brand-content .auth-brand-intro { font-size: 13px; margin-bottom: 11px; }
+  .auth-brand-features { gap: 9px 8px; }
+  .auth-feature { gap: 6px; }
+  .auth-feature-icon { flex-basis: 30px; width: 30px; height: 30px; }
+  .auth-feature strong { font-size: 10px; }
+  .auth-feature small { font-size: 9px; }
+  .auth-form-side { padding: 12px 12px max(20px, env(safe-area-inset-bottom)); }
+  .auth-form-side > .auth-login-card { padding: 21px 17px 19px; }
+}
