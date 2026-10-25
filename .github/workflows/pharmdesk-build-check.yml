@@ -3,11 +3,10 @@ name: PharmDesk build check
 on:
   push:
     branches:
-      - feature/pharmdesk-responsive-ui
+      - main
   pull_request:
     branches:
       - main
-      - feature/pharmdesk-responsive-ui
 
 jobs:
   build:
