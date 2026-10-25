@@ -1572,3 +1572,32 @@ a:hover { color: var(--navy); }
 .pharmdesk-logo-code.compact .pharmdesk-wordmark { font-size:17px; }
 .pharmdesk-logo-code.compact .pharmdesk-tagline { display:block; grid-column:2; margin:0; font-size:5px; letter-spacing:.45px; }
 .auth-brand-primary-logo { max-width:380px; }
+
+/* Final logo layout: compact monogram + wordmark, tagline beneath */
+.pharmdesk-logo-code { justify-content:flex-start; gap:9px; }
+.pharmdesk-logo-code .pharmdesk-logo-type { display:flex; flex-direction:column; align-items:flex-start; gap:5px; min-width:0; }
+.pharmdesk-logo-code .pharmdesk-tagline { display:block; margin:0; flex-basis:auto; color:#b7d8e8; font-size:6px; letter-spacing:.65px; line-height:1.2; }
+.pharmdesk-logo-code .pharmdesk-mark-code { object-fit:contain; }
+.pharmdesk-logo-code.compact { display:flex; gap:8px; align-items:center; }
+.pharmdesk-logo-code.compact .pharmdesk-logo-type { gap:3px; }
+.pharmdesk-logo-code.compact .pharmdesk-mark-code { width:40px; height:40px; flex:0 0 40px; }
+.pharmdesk-logo-code.compact .pharmdesk-wordmark { font-size:18px; }
+.pharmdesk-logo-code.compact .pharmdesk-tagline { font-size:5px; letter-spacing:.35px; }
+.sidebar-store-wrap { position:relative; margin-top:auto; }
+.sidebar-store { width:100%; cursor:pointer; text-align:left; font:inherit; }
+.sidebar-store:focus-visible { outline:2px solid #51d4d1; outline-offset:3px; }
+.sidebar-store-copy { min-width:0; flex:1; }
+.sidebar-store-copy strong { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.sidebar-store-menu {
+  position:absolute; z-index:80; left:0; right:0; bottom:calc(100% + 8px);
+  padding:8px; border:1px solid rgba(180,214,232,.25); border-radius:14px;
+  background:#082849; box-shadow:0 18px 40px rgba(0,0,0,.28);
+}
+.sidebar-store-menu-title { padding:7px 9px 9px; color:#a8c7da; font-size:10px; font-weight:800; letter-spacing:.09em; text-transform:uppercase; }
+.sidebar-store-option { display:flex; align-items:center; justify-content:space-between; gap:8px; width:100%; min-height:40px; padding:8px 10px; border:0; border-radius:8px; background:transparent; color:#f3f9ff; text-align:left; font-size:12px; }
+.sidebar-store-option:hover, .sidebar-store-option.selected { background:rgba(7,156,155,.25); }
+.sidebar-store-option-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.sidebar-store-current { flex-shrink:0; color:#73e1dc; font-size:10px; }
+.sidebar-store-empty { padding:9px; color:#d0dfeb; font-size:12px; }
+.sidebar.collapsed .sidebar-store-copy, .sidebar.collapsed .sidebar-store > svg { display:none; }
+.sidebar.collapsed .sidebar-store-menu { left:66px; right:auto; width:210px; bottom:0; }
