@@ -11726,160 +11726,118 @@ function ExpiryInventory({ store }) {
   )
 }
 
-function LowStockInventory({  
-  store,  
-}) {  
-  const [rows, setRows] =  
-    useState([])  
-  const [query, setQuery] =  
-    useState('')  
-  
-  useEffect(() => {  
-    if (!store?.id) return  
-  
-    const load =  
-      async () => {  
-        const { data } =  
-          await pharmdeskDb  
-            .from(  
-              'store_products',  
-            )  
-            .select(`  
-              *,  
-              products (  
-                product_name  
-              )  
-            `)  
-            .eq(  
-              'store_id',  
-              store.id,  
-            )  
-            .eq(  
-              'is_active',  
-              true,  
-            )  
-  
-        const result =  
-          []  
-  
-        for (const row of  
-          data || []) {  
-          const {  
-            data: batches,  
-          } =  
-            await pharmdeskDb  
-              .from(  
-                'batches',  
-              )  
-              .select(  
-                'current_stock_units',  
-              )  
-              .eq(  
-                'store_id',  
-                store.id,  
-              )  
-              .eq(  
-                'product_id',  
-                row.product_id,  
-              )  
-              .eq(  
-                'is_active',  
-                true,  
-              )  
-  
-          const stock =  
-            sum(  
-              (  
-                batches ||  
-                []  
-              ).map(  
-                (x) =>  
-                  x.current_stock_units,  
-              ),  
-            )  
-  
-          const threshold = safeNumber(row.reorder_level || row.minimum_stock || 0)
-          if (
-            threshold > 0 &&
-            stock <= threshold
-          ) {  
-            result.push({  
-              ...row,  
-              stock,
-              threshold,
-            })  
-          }  
-        }  
-  
-        setRows(  
-          result,  
-        )  
-      }  
-  
-    load()  
-  }, [store?.id])  
-  
-  const filtered =  
-    rows.filter((row) =>  
-      matchesSearch(  
-        query,  
-        row.products?.product_name,  
-        row.products?.generic_display_name,  
-        row.products?.manufacturer,  
-        row.products?.strength_display,  
-        row.minimum_stock,  
-        row.stock,  
-      ),  
-    )  
-  
-  return (  
-    <PanelList title="Low Stock">  
-      <div className="search-row">  
-        <input  
-          placeholder="Search product, manufacturer or stock"  
-          value={query}  
-          onChange={(e) =>  
-            setQuery(e.target.value)  
-          }  
-        />  
-      </div>  
+function LowStockInventory({ store }) {
+  const [rows, setRows] = useState([])
+  const [query, setQuery] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
 
-      {filtered.length ===  
-      0 ? (  
-        <EmptyState text="No products currently below minimum stock." />  
-      ) : (  
-        <div className="record-list">  
-          {filtered.map(  
-            (row) => (  
-              <div  
-                className="record-row static"  
-                key={row.id}  
-              >  
-                <div>  
-                  <strong>  
-                    {  
-                      row.products  
-                        ?.product_name  
-                    }  
-                  </strong>  
-  
-                  <span>  
-                    Minimum {row.threshold ?? safeNumber(row.reorder_level || row.minimum_stock || 0)}  
-                  </span>  
-                </div>  
-  
-                <strong>  
-                  {row.stock}  
-                </strong>  
-              </div>  
-            ),  
-          )}  
-        </div>  
-      )}  
-    </PanelList>  
-  )  
-}  
-  
+  const load = async () => {
+    if (!store?.id) return
+    setLoading(true)
+    setError('')
+    try {
+      const { data, error: productError } = await pharmdeskDb
+        .from('store_products')
+        .select('*, products(product_name, generic_display_name, manufacturer, strength_display)')
+        .eq('store_id', store.id)
+        .eq('is_active', true)
+      if (productError) throw productError
+
+      const result = await Promise.all((data || []).map(async (row) => {
+        const { data: batches, error: batchError } = await pharmdeskDb
+          .from('batches')
+          .select('current_stock_units')
+          .eq('store_id', store.id)
+          .eq('product_id', row.product_id)
+          .eq('is_active', true)
+        if (batchError) throw batchError
+        const stock = sum((batches || []).map((batch) => batch.current_stock_units))
+        const threshold = safeNumber(row.reorder_level || row.minimum_stock || 0)
+        return threshold > 0 && stock <= threshold ? { ...row, stock, threshold } : null
+      }))
+      setRows(result.filter(Boolean))
+    } catch (loadError) {
+      console.error('Low-stock inventory load error:', loadError)
+      setError('Could not load low-stock products. Please refresh and try again.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (store?.id) load()
+  }, [store?.id])
+
+  const filtered = rows.filter((row) => matchesSearch(
+    query,
+    row.products?.product_name,
+    row.products?.generic_display_name,
+    row.products?.manufacturer,
+    row.products?.strength_display,
+    row.threshold,
+    row.stock,
+  ))
+
+  const exportCsv = () => {
+    const quote = (value) => '"' + String(value ?? '').replace(/"/g, '""') + '"'
+    const header = ['Product', 'Generic', 'Manufacturer', 'Strength', 'Current Stock Units', 'Minimum Stock Units']
+    const lines = filtered.map((row) => [
+      row.products?.product_name,
+      row.products?.generic_display_name,
+      row.products?.manufacturer,
+      row.products?.strength_display,
+      row.stock,
+      row.threshold,
+    ].map(quote).join(','))
+    const blob = new Blob(['\uFEFF' + [header.map(quote).join(','), ...lines].join('\r\n')], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'pharmdesk-low-stock-' + todayISO() + '.csv'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  }
+
+  return (
+    <PanelList title="Low Stock">
+      <div className="search-row">
+        <input
+          placeholder="Search product, manufacturer or stock"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+        />
+        <button type="button" className="secondary-button" onClick={exportCsv} disabled={!filtered.length}>Export CSV</button>
+        <button type="button" className="secondary-button" onClick={load} disabled={loading}>{loading ? 'Refreshing…' : 'Refresh'}</button>
+      </div>
+      {error && <div className="error-box">{error}</div>}
+      <div className="muted">{filtered.length} product(s) below the configured minimum stock.</div>
+      {loading && <div className="muted">Checking stock levels…</div>}
+      {!loading && !filtered.length ? (
+        <EmptyState text="No products currently below minimum stock." />
+      ) : (
+        <div className="record-list">
+          {filtered.map((row) => (
+            <div className="record-row static" key={row.id}>
+              <div>
+                <strong>{row.products?.product_name || 'Product'}</strong>
+                <span>{row.products?.generic_display_name || row.products?.strength_display || '—'}</span>
+                <span>Minimum {row.threshold}</span>
+              </div>
+              <div className="record-right">
+                <strong>{row.stock}</strong>
+                <span>units in stock</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </PanelList>
+  )
+}
+
 function DeadStockInventory({  
   store,  
 }) {  
