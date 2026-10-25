@@ -1450,3 +1450,90 @@ h1, h2, h3, p { overflow-wrap: anywhere; }
   .record-row { gap: 10px; }
   .record-right { flex-shrink: 0; }
 }
+
+
+/* =========================================================
+   PHARMDESK BRAND ALIGNMENT — navy, teal and clinical white
+   Shared palette based on the PharmDesk logo.
+========================================================= */
+:root {
+  --navy: #06264a;
+  --navy-2: #0a3a5d;
+  --blue: #087fae;
+  --blue-soft: #e8f7fb;
+  --text: #102744;
+  --muted: #60758e;
+  --border: #dce7ef;
+  --background: #f3f8fb;
+  --teal: #079c9b;
+  --teal-dark: #087f83;
+  --teal-soft: #e4f7f5;
+  --shadow-sm: 0 2px 8px rgba(6,38,74,.06);
+  --shadow-md: 0 12px 34px rgba(6,38,74,.11);
+}
+body { background: var(--background); color: var(--text); }
+input:focus, select:focus, textarea:focus {
+  border-color: var(--teal);
+  box-shadow: 0 0 0 3px rgba(7,156,155,.13);
+}
+.primary-button {
+  background: linear-gradient(115deg, #06264a, #075078);
+  border-color: #075078;
+  box-shadow: 0 5px 14px rgba(6,38,74,.16);
+}
+.primary-button:hover { background: linear-gradient(115deg, #041d39, #087f83); }
+.secondary-button { color: var(--navy); }
+.secondary-button:hover { background: var(--teal-soft); border-color: #a6dcd8; }
+.nav-item.active, .sidebar .nav-item.active {
+  background: linear-gradient(105deg, #087f83, #075078);
+  color: #fff;
+}
+.sidebar { background: linear-gradient(180deg, #06264a 0%, #031a32 100%); }
+.sidebar .brand { border-bottom-color: rgba(255,255,255,.12); }
+.sidebar .nav-item { color: #e6f2fa; }
+.sidebar .nav-item:hover { background: rgba(7,156,155,.18); color: #fff; }
+.stat-card, .panel, .module-card, .auth-card {
+  border-color: #e0eaf1;
+}
+.stat-card .stat-icon, .icon-badge { color: var(--teal-dark); }
+.loading-screen {
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(ellipse at 20% 12%, rgba(18,165,171,.18), transparent 36%),
+    linear-gradient(135deg, #03182e 0%, #06264a 55%, #073b58 100%);
+  color: #fff;
+}
+.loading-card {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  color: #fff;
+  text-align: center;
+}
+.loading-card p { color: #d8e9f4; }
+.loading-logo { width: min(330px, 86vw); height: 190px; }
+.loading-logo img { filter: drop-shadow(0 10px 22px rgba(0,0,0,.16)); }
+.auth-screen {
+  background: #f4f8fc;
+}
+.auth-brand-panel {
+  background:
+    radial-gradient(ellipse at 20% 80%, rgba(8,156,155,.19), transparent 38%),
+    linear-gradient(145deg, #eaf5fc 0%, #f8fbfe 58%, #dceef7 100%);
+}
+.auth-brand-content h2 { color: var(--navy); }
+.auth-brand-content p { color: #47617c; }
+.auth-brand-features span {
+  color: var(--navy);
+  background: rgba(255,255,255,.78);
+  border: 1px solid rgba(8,127,131,.12);
+}
+.brand-caption strong, .module-header h1, .panel-title { color: var(--navy); }
+a { color: var(--teal-dark); }
+a:hover { color: var(--navy); }
+.badge, .chip { border-color: #c8e9e7; }
+@media (max-width: 800px) {
+  .auth-screen { background: #f4f8fc; }
+  .loading-card { padding: 24px 18px; }
+}
