@@ -10164,6 +10164,19 @@ function SupplierPurchaseCatalogue({ store }) {
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [notes, setNotes] = useState('')
+
+  const { clearDraft: clearPurchaseOrderDraft } = useWorkingDraft({
+    storeId: store?.id,
+    moduleKey: 'supplier-purchase-order',
+    draftKey: 'new-order',
+    value: { supplierId, quantities, notes },
+    hasWork: Boolean(supplierId || Object.values(quantities).some((quantity) => safeNumber(quantity) > 0) || notes.trim()),
+    onRestore: async (draft) => {
+      if (draft.supplierId) await loadCatalogue(draft.supplierId)
+      setQuantities(draft.quantities || {})
+      setNotes(draft.notes || '')
+    },
+  })
   const [pdfPreviewHtml, setPdfPreviewHtml] = useState('')
   const [exportChoiceOpen, setExportChoiceOpen] = useState(false)
   const pdfFrameRef = useRef(null)
@@ -10571,6 +10584,7 @@ function SupplierPurchaseCatalogue({ store }) {
 
       setQuantities({})
       setNotes('')
+      await clearPurchaseOrderDraft()
     } catch (saveError) {
       console.error(
         'Failed to create purchase order:',
