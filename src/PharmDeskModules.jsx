@@ -2406,7 +2406,7 @@ function PharmacyApp({ session }) {
       return {}
     }
   })
-  const navigationLoadedFor = useRef(null)
+  const [navigationLoadedFor, setNavigationLoadedFor] = useState(null)
   const [activeNav, setActiveNav] = useState(() =>
     NAV_ITEMS.includes(savedNavigation.activeNav) ? savedNavigation.activeNav : 'Dashboard'
   )
@@ -2415,7 +2415,7 @@ function PharmacyApp({ session }) {
   const [requestedPurchasesTab, setRequestedPurchasesTab] = useState(savedNavigation.requestedPurchasesTab || null)
 
   useEffect(() => {
-    navigationLoadedFor.current = null
+    setNavigationLoadedFor(null)
     try {
       const raw = window.localStorage.getItem(navigationStorageKey)
       const parsed = raw ? JSON.parse(raw) : null
@@ -2431,13 +2431,15 @@ function PharmacyApp({ session }) {
       setRequestedInventoryTab(null)
       setRequestedPurchasesTab(null)
     }
-    navigationLoadedFor.current = navigationStorageKey
+    // Mark ready in state, not a mutable ref: the save effect must skip this
+    // commit and wait until the restored navigation state has rendered.
+    setNavigationLoadedFor(navigationStorageKey)
   }, [navigationStorageKey])
 
   useEffect(() => {
-    // Do not write the previous user's navigation under a newly selected
-    // account's key while authentication/session state is changing.
-    if (navigationLoadedFor.current !== navigationStorageKey) return
+    // Do not write navigation until the current account's saved route has
+    // been loaded and rendered; this avoids replacing it with Dashboard.
+    if (navigationLoadedFor !== navigationStorageKey) return
     try {
       window.localStorage.setItem(navigationStorageKey, JSON.stringify({
         activeNav,
