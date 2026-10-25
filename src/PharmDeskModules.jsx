@@ -19690,7 +19690,7 @@ const [
                   </label>  
   
                   <label>  
-                    {index === 0 ? 'Units in this outer package' : `How many ${level.unit_name || 'smaller units'} fit in 1 ${packagingLevels[index - 1]?.unit_name || 'larger package'}`}  
+                    {index === 0 ? 'Conversion for largest package (fixed at 1)' : `How many ${level.unit_name || 'smaller units'} fit in 1 ${packagingLevels[index - 1]?.unit_name || 'larger package'}`}  
                     <input  
                       type="number"  
                       min="1"  
