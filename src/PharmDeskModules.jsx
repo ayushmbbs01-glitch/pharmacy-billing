@@ -3319,7 +3319,7 @@ function NewSale({ store }) {
   const [message, setMessage] = useState('')  
   const [alternatives, setAlternatives] = useState([])  
 
-  const { ready: saleDraftReady } = useWorkingDraft({
+  const { ready: saleDraftReady, clearDraft: clearSaleDraft } = useWorkingDraft({
     storeId: store?.id,
     moduleKey: 'sales',
     draftKey: 'new-sale',
@@ -3694,7 +3694,7 @@ function NewSale({ store }) {
       ])  
       setBillDiscount(0)  
       setAlternatives([])  
-      try { window.localStorage.removeItem(draftStorageKey) } catch {}
+      await clearSaleDraft()
       setMessage(`Sale completed successfully: ${data}. Unfinished bill cleared from this device.`) 
     } catch (error) {  
       setMessage(  
@@ -7622,7 +7622,7 @@ function NewPurchase({ store }) {
       notes: '',
     })
 
-  useWorkingDraft({
+  const { ready: purchaseDraftReady, clearDraft: clearPurchaseDraft } = useWorkingDraft({
     storeId: store?.id,
     moduleKey: 'purchases',
     draftKey: 'new-purchase',
@@ -7958,6 +7958,7 @@ function NewPurchase({ store }) {
   
         if (error) throw error  
   
+        await clearPurchaseDraft()
         setMessage(  
           `Purchase completed successfully: ${data}`,  
         )  
