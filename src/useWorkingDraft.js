@@ -123,5 +123,19 @@ export function useWorkingDraft({
     return () => window.clearTimeout(timer)
   }, [ready, enabled, storeId, moduleKey, draftKey, localKey, value, hasWork])
 
-  return { ready }
+  const clearDraft = async () => {
+    try { window.localStorage.removeItem(localKey) } catch {}
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user?.id && storeId) {
+        await supabase.from('pharmdesk_working_drafts').delete()
+          .eq('store_id', storeId).eq('user_id', user.id)
+          .eq('module_key', moduleKey).eq('draft_key', draftKey)
+      }
+    } catch (error) {
+      console.warn('Could not clear saved working draft:', error?.message || error)
+    }
+  }
+
+  return { ready, clearDraft }
 }
