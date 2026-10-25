@@ -1,31 +1,35 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1536 1024" width="1536" height="1024" role="img" aria-labelledby="title desc">
   <title id="title">PharmDesk — Manage, Sell, Track, Grow</title>
-  <desc id="desc">PharmDesk logo with a navy and teal P symbol, medical cross, teal ribbon, bold wordmark and spaced tagline.</desc>
+  <desc id="desc">PharmDesk logo with a navy and teal medical P symbol, ribbon swoosh, bold wordmark and spaced tagline.</desc>
   <defs>
-    <linearGradient id="navy" x1="0" y1="0" x2="1" y2="1">
+    <linearGradient id="navyGrad" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#092047"/><stop offset="1" stop-color="#033266"/>
     </linearGradient>
-    <linearGradient id="stem" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#00BFC0"/><stop offset="1" stop-color="#00808C"/>
+    <linearGradient id="tealGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#00A8B5"/><stop offset="1" stop-color="#00808C"/>
     </linearGradient>
-    <linearGradient id="ribbon" x1="0" y1="1" x2="1" y2="0">
+    <linearGradient id="waveGrad" x1="0" y1="1" x2="1" y2="0">
       <stop offset="0" stop-color="#043B5C"/><stop offset=".45" stop-color="#008C9E"/><stop offset="1" stop-color="#00D2C8"/>
     </linearGradient>
-    <linearGradient id="cross" x1="0" y1="0" x2="1" y2="1">
+    <linearGradient id="crossGrad" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#00B4B4"/><stop offset="1" stop-color="#007A87"/>
     </linearGradient>
   </defs>
   <rect width="1536" height="1024" fill="#fff"/>
   <g id="mark">
-    <path fill="url(#navy)" d="M563 154 H797 C879 154 946 205 946 282 C946 329 924 361 888 381 C858 398 824 407 786 418 C745 430 713 456 693 493 C693 452 707 418 733 397 C757 378 785 367 817 355 C857 340 879 316 879 282 C879 249 854 229 817 229 H619 C585 229 563 206 563 174 Z"/>
-    <path fill="url(#stem)" d="M563 360 C563 318 588 285 626 285 H665 V614 H612 C584 614 563 592 563 565 Z"/>
-    <path fill="url(#ribbon)" d="M683 569 C683 520 709 480 753 455 C785 437 821 425 852 407 C911 373 940 339 946 300 C951 364 928 410 883 442 C850 466 816 481 778 491 C734 503 704 529 683 569 Z"/>
-    <path fill="#064d69" opacity=".42" d="M683 569 C697 527 724 500 763 483 C808 464 846 447 879 422 C855 457 822 477 785 492 C739 510 707 537 683 569 Z"/>
-    <path fill="url(#cross)" d="M720 285 H687 V321 H720 V356 H755 V321 H788 V285 H755 V251 H720 Z"/>
+    <!-- Navy P bowl: broad, flat top with rounded outer shoulder and inward sweep -->
+    <path fill="url(#navyGrad)" d="M563 154 H795 C882 154 946 207 946 280 C946 333 919 367 870 388 C835 403 804 411 771 424 C729 441 699 472 683 511 C683 462 700 425 733 400 C757 382 786 370 815 359 C857 343 879 318 879 282 C879 248 855 229 817 229 H620 C585 229 563 205 563 174 Z"/>
+    <!-- Teal vertical stem -->
+    <path fill="url(#tealGrad)" d="M563 359 V337 C563 307 587 285 617 285 H665 V614 H611 C584 614 563 592 563 565 Z"/>
+    <!-- Flowing inner ribbon -->
+    <path fill="url(#waveGrad)" d="M683 569 C683 519 711 480 757 456 C790 439 822 428 852 408 C910 371 940 338 946 300 C951 365 926 411 883 442 C850 466 816 481 778 491 C734 503 704 530 683 569 Z"/>
+    <path fill="#043B5C" opacity=".28" d="M683 569 C696 527 724 500 763 483 C808 464 846 447 879 422 C855 457 822 477 785 492 C739 510 707 537 683 569 Z"/>
+    <!-- Medical cross -->
+    <path fill="url(#crossGrad)" d="M720 285 H687 V321 H720 V356 H755 V321 H788 V285 H755 V251 H720 Z"/>
   </g>
   <g id="wordmark" font-family="Arial, Helvetica, sans-serif" font-size="220" font-weight="800" letter-spacing="-9">
-    <text x="199" y="788" fill="#071d43">Pharm</text>
-    <text x="839" y="788" fill="#078f98">Desk</text>
+    <text x="199" y="788" fill="#051937">Pharm</text>
+    <text x="839" y="788" fill="#008B9B">Desk</text>
   </g>
-  <text x="768" y="868" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="54" font-weight="600" letter-spacing="8" fill="#687f9d">MANAGE · SELL · TRACK · GROW</text>
+  <text x="768" y="868" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="54" font-weight="600" letter-spacing="8" fill="#5A7184">MANAGE · SELL · TRACK · GROW</text>
 </svg>
