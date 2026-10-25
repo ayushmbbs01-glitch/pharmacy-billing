@@ -20,12 +20,12 @@ alter table public.pharmdesk_working_drafts enable row level security;
 drop policy if exists "Users can read their own PharmDesk drafts" on public.pharmdesk_working_drafts;
 create policy "Users can read their own PharmDesk drafts"
   on public.pharmdesk_working_drafts for select
-  to authenticated using (user_id = (select auth.uid()));
+  to authenticated using (user_id = (select auth.uid()) and public.pharmdesk_user_can_access_store(store_id));
 
 drop policy if exists "Users can insert their own PharmDesk drafts" on public.pharmdesk_working_drafts;
 create policy "Users can insert their own PharmDesk drafts"
   on public.pharmdesk_working_drafts for insert
-  to authenticated with check (user_id = (select auth.uid()));
+  to authenticated with check (user_id = (select auth.uid()) and public.pharmdesk_user_can_access_store(store_id));
 
 drop policy if exists "Users can update their own PharmDesk drafts" on public.pharmdesk_working_drafts;
 create policy "Users can update their own PharmDesk drafts"
