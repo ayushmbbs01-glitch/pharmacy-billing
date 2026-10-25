@@ -17766,6 +17766,22 @@ function SupplierModal({
   
   const [error, setError] =  
     useState('')  
+
+  const { clearDraft: clearSupplierDraft } = useWorkingDraft({
+    storeId: store?.id,
+    moduleKey: 'suppliers',
+    draftKey: editing ? `edit-${supplier.id}` : 'new-supplier',
+    value: { name, license, phone, email, address, gstin },
+    hasWork: Boolean(name.trim() || license.trim() || phone.trim() || email.trim() || address.trim() || gstin.trim()),
+    onRestore: (draft) => {
+      setName(draft.name || '')
+      setLicense(draft.license || '')
+      setPhone(draft.phone || '')
+      setEmail(draft.email || '')
+      setAddress(draft.address || '')
+      setGstin(draft.gstin || '')
+    },
+  })
   
   const save = async (e) => {  
     e.preventDefault()  
@@ -17890,6 +17906,7 @@ function SupplierModal({
         store_id: store.id,
       }
 
+      await clearSupplierDraft()
       onCreated(savedSupplier)  
     } catch (error) {  
       setError(  
