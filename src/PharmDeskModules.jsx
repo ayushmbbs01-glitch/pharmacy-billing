@@ -6980,11 +6980,12 @@ function SaleEditModal({
   
 function SalesReturns({ store }) {
   const [rows, setRows] = useState([])
-  const [sales, setSales] = useState([])
-  const [selectedSaleId, setSelectedSaleId] = useState('')
-  const [quantities, setQuantities] = useState({})
-  const [returnedUnits, setReturnedUnits] = useState({})
-  const [restock, setRestock] = useState({})
+  const [customers, setCustomers] = useState([])
+  const [products, setProducts] = useState([])
+  const [customerQuery, setCustomerQuery] = useState('')
+  const [productQuery, setProductQuery] = useState('')
+  const [customer, setCustomer] = useState(null)
+  const [lines, setLines] = useState([])
   const [refundMethod, setRefundMethod] = useState('cash')
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
@@ -6993,112 +6994,85 @@ function SalesReturns({ store }) {
 
   const loadReturns = async () => {
     if (!store?.id) return
-    const [{ data, error: returnsError }, saleRows] = await Promise.all([
-      supabase
-        .from('sales_returns')
-        .select('*')
-        .eq('store_id', store.id)
-        .order('created_at', { ascending: false })
-        .limit(100),
-      PharmDeskAPI.sales(store.id),
+    const [{ data, error: returnsError }, { data: customerRows, error: customerError }, { data: productRows, error: productError }] = await Promise.all([
+      supabase.from('sales_returns').select('*, customers(name,phone)').eq('store_id', store.id).order('created_at', { ascending: false }).limit(100),
+      supabase.from('customers').select('id,name,phone').eq('store_id', store.id).eq('is_active', true).order('name'),
+      supabase.from('store_products').select('product_id,products(id,product_name,generic_display_name,manufacturer,gst_rate,default_selling_price,default_discount_percent)').eq('store_id', store.id).eq('is_active', true),
     ])
     if (returnsError) throw returnsError
+    if (customerError) throw customerError
+    if (productError) throw productError
     setRows(data || [])
-    setSales((saleRows || []).filter((sale) =>
-      ['completed', 'returned'].includes(sale.status) &&
-      (sale.sale_items || []).length > 0
-    ))
+    setCustomers(customerRows || [])
+    setProducts((productRows || []).map((row) => row.products).filter(Boolean))
   }
 
   useEffect(() => {
-    if (!store?.id) return
-    loadReturns().catch((loadError) => {
-      console.error('Sales return load error:', loadError)
-      setError('Could not load sales and returns. Please refresh and try again.')
-    })
+    if (store?.id) loadReturns().catch((e) => setError(e.message || 'Could not load returns.'))
   }, [store?.id])
 
-  const selectedSale = sales.find((sale) => sale.id === selectedSaleId)
-  useEffect(() => {
-    let cancelled = false
-    const loadPriorReturns = async () => {
-      setReturnedUnits({})
-      if (!selectedSaleId) return
-      try {
-        const { data, error: queryError } = await supabase
-          .from('sales_return_items')
-          .select('original_sale_item_id,quantity_units,sales_returns!inner(original_sale_id)')
-          .eq('sales_returns.original_sale_id', selectedSaleId)
-        if (queryError) throw queryError
-        if (cancelled) return
-        const totals = {}
-        ;(data || []).forEach((item) => {
-          totals[item.original_sale_item_id] = (totals[item.original_sale_item_id] || 0) + safeNumber(item.quantity_units)
-        })
-        setReturnedUnits(totals)
-      } catch (queryError) {
-        console.error('Prior sales return quantities load error:', queryError)
-        if (!cancelled) setError('Could not verify previous returns for this bill. Please reselect the bill and try again.')
-      }
+  const matchingCustomers = customers.filter((c) => matchesSearch(customerQuery, c.name, c.phone)).slice(0, 8)
+  const matchingProducts = products.filter((p) => matchesSearch(productQuery, p.product_name, p.generic_display_name, p.manufacturer)).slice(0, 10)
+
+  const addProduct = async (product) => {
+    setError('')
+    try {
+      const { data: batches, error: batchError } = await supabase.from('batches')
+        .select('id,batch_number,expiry_date,current_stock_units,units_per_pack,mrp_per_pack,is_active')
+        .eq('store_id', store.id).eq('product_id', product.id).eq('is_active', true)
+        .order('expiry_date', { ascending: true })
+      if (batchError) throw batchError
+      setLines((current) => [...current, {
+        key: `${product.id}-${Date.now()}-${current.length}`,
+        product, batches: batches || [], batchId: batches?.[0]?.id || '',
+        quantity: '1',
+        price: String(product.default_selling_price || batches?.[0]?.mrp_per_pack || 0),
+        discount: String(product.default_discount_percent || 0),
+        restock: false,
+      }])
+      setProductQuery('')
+    } catch (e) {
+      setError(e.message || 'Could not load batches for this product.')
     }
-    loadPriorReturns()
-    return () => { cancelled = true }
-  }, [selectedSaleId])
-  const saleItems = selectedSale?.sale_items || []
-  const selectedLines = saleItems.filter((item) => safeNumber(quantities[item.id]) > 0)
-  const refundAmount = selectedLines.reduce((total, item) => {
-    const units = safeNumber(item.quantity_units)
-    const quantity = safeNumber(quantities[item.id])
-    const lineAmount = safeNumber(item.line_total)
-    return total + (units > 0 ? lineAmount * quantity / units : 0)
-  }, 0)
+  }
+
+  const updateLine = (key, patch) => setLines((current) => current.map((line) => line.key === key ? { ...line, ...patch } : line))
+  const removeLine = (key) => setLines((current) => current.filter((line) => line.key !== key))
+  const amountFor = (line) => Math.max(0, Number(line.quantity || 0) * Number(line.price || 0) * (1 - Number(line.discount || 0) / 100))
+  const refundAmount = lines.reduce((sumValue, line) => sumValue + amountFor(line), 0)
 
   const submitReturn = async (event) => {
     event.preventDefault()
     setError('')
     setSuccess('')
-    if (!selectedSale) {
-      setError('Select the original bill first.')
-      return
+    if (!lines.length) return setError('Add at least one returned product.')
+    for (const line of lines) {
+      if (!line.batchId) return setError(`Select the batch/expiry for ${line.product.product_name}.`)
+      if (!(Number(line.quantity) > 0)) return setError('Return quantities must be greater than zero.')
+      if (!(Number(line.price) >= 0)) return setError('Enter a valid selling price.')
+      if (Number(line.discount) < 0 || Number(line.discount) > 100) return setError('Discount must be between 0 and 100%.')
     }
-    if (!selectedLines.length) {
-      setError('Enter a return quantity for at least one item.')
-      return
-    }
-    if (refundMethod === 'store_credit' && !selectedSale.customer_id) {
-      setError('Store credit is available only when the original bill has a linked customer.')
-      return
-    }
-
+    if (refundMethod === 'store_credit' && !customer) return setError('Choose a customer to post this return to their credit statement.')
     setBusy(true)
     try {
-      const items = selectedLines.map((item) => ({
-        original_sale_item_id: item.id,
-        quantity_units: safeNumber(quantities[item.id]),
-        amount: (() => {
-          const units = safeNumber(item.quantity_units)
-          return units > 0 ? safeNumber(item.line_total) * safeNumber(quantities[item.id]) / units : 0
-        })(),
-        return_to_stock: Boolean(restock[item.id]),
-        notes: restock[item.id] ? 'Marked for stock return by operator; verify condition before making saleable.' : 'Not returned to saleable stock.',
+      const payloadItems = lines.map((line) => ({
+        product_id: line.product.id,
+        batch_id: line.batchId,
+        quantity_units: Number(line.quantity),
+        amount: Number(amountFor(line).toFixed(2)),
+        return_to_stock: Boolean(line.restock),
+        notes: line.restock ? 'Stock restoration requested; verify product condition before reselling.' : 'Not returned to saleable stock.',
       }))
-      await PharmDeskAPI.processSalesReturn({
-        storeId: store.id,
-        originalSaleId: selectedSale.id,
-        refundMethod,
-        refundAmount: Number(refundAmount.toFixed(2)),
-        reason: reason.trim() || null,
-        items,
+      await PharmDeskAPI.processIndependentSalesReturn({
+        storeId: store.id, customerId: customer?.id || null, refundMethod,
+        refundAmount: Number(refundAmount.toFixed(2)), reason: reason.trim() || null, items: payloadItems,
       })
-      setSuccess('Sales return recorded successfully.')
-      setSelectedSaleId('')
-      setQuantities({})
-      setRestock({})
-      setReason('')
+      setSuccess('Sales return recorded. Customer credit statement updated where applicable.')
+      setCustomer(null); setCustomerQuery(''); setLines([]); setReason(''); setRefundMethod('cash')
       await loadReturns()
-    } catch (submitError) {
-      console.error('Sales return processing error:', submitError)
-      setError(submitError?.message || 'Could not process this return. Check the quantities and try again.')
+    } catch (e) {
+      console.error('Independent sales return error:', e)
+      setError(e.message || 'Could not process this return.')
     } finally {
       setBusy(false)
     }
@@ -7106,118 +7080,52 @@ function SalesReturns({ store }) {
 
   return (
     <div className="module-stack">
-      <PanelList title="Process a Sales Return">
+      <PanelList title="Record a Sales Return">
         <form className="form-stack" onSubmit={submitReturn}>
-          <label>
-            Original bill
-            <select
-              value={selectedSaleId}
-              onChange={(event) => {
-                setSelectedSaleId(event.target.value)
-                setQuantities({})
-                setRestock({})
-                setError('')
-                setSuccess('')
-              }}
-              required
-            >
-              <option value="">Select a completed bill</option>
-              {sales.map((sale) => (
-                <option key={sale.id} value={sale.id}>
-                  {(sale.invoice_number || sale.id.slice(0, 8))} · {sale.customers?.name || 'Walk-in customer'} · {dateText(sale.bill_datetime)} · {money(sale.grand_total)}
-                </option>
-              ))}
-            </select>
+          <div className="message-box">Find the customer if this return affects their account, then add the returned products directly. You do not need to select a completed bill.</div>
+          <label>Customer (optional for cash/UPI refunds)
+            <input value={customer ? `${customer.name} · ${customer.phone || 'No phone'}` : customerQuery} onChange={(e) => { setCustomer(null); setCustomerQuery(e.target.value) }} placeholder="Search customer by name or phone" />
           </label>
-
-          {selectedSale && (
-            <>
-              <div className="message-box">
-                Refund estimate is calculated proportionally from the original bill line totals. The database validates returned quantities against prior returns.
-              </div>
-              {saleItems.map((item) => {
-                const availableUnits = safeNumber(item.quantity_units)
-                const quantity = quantities[item.id] || ''
-                const remainingUnits = Math.max(0, availableUnits - safeNumber(returnedUnits[item.id]))
-                return (
-                  <div className="panel" key={item.id}>
-                    <div className="record-row">
-                      <div>
-                        <strong>{item.products?.product_name || item.products?.generic_display_name || 'Product'}</strong>
-                        <div className="muted">
-                          Batch: {item.batches?.batch_number || '—'} · Sold units: {availableUnits} · Already returned: {safeNumber(returnedUnits[item.id])} · Remaining: {remainingUnits} · Line total: {money(item.line_total)}
-                        </div>
-                      </div>
-                    </div>
-                    <label>
-                      Return quantity (individual units)
-                      <input
-                        type="number"
-                        min="0"
-                        max={remainingUnits}
-                        step="1"
-                        value={quantity}
-                        onChange={(event) => setQuantities((current) => ({
-                          ...current,
-                          [item.id]: event.target.value === '' ? '' : Math.max(0, Math.min(remainingUnits, Number(event.target.value))),
-                        }))}
-                      />
-                    </label>
-                    <label className="checkbox-row">
-                      <input
-                        type="checkbox"
-                        checked={Boolean(restock[item.id])}
-                        onChange={(event) => setRestock((current) => ({ ...current, [item.id]: event.target.checked }))}
-                      />
-                      Mark for stock restoration (only after verifying condition; do not resell unsafe/returned medicines)
-                    </label>
-                  </div>
-                )
-              })}
-              <label>
-                Refund method
-                <select value={refundMethod} onChange={(event) => setRefundMethod(event.target.value)}>
-                  <option value="cash">Cash</option>
-                  <option value="upi">UPI</option>
-                  <option value="card">Card</option>
-                  <option value="store_credit" disabled={!selectedSale.customer_id}>Store credit</option>
+          {!customer && customerQuery && <div className="suggestion-list">{matchingCustomers.map((c) => <button type="button" className="suggestion" key={c.id} onClick={() => { setCustomer(c); setCustomerQuery('') }}><strong>{c.name}</strong><span>{c.phone || 'No phone'}</span></button>)}</div>}
+          {customer && <div className="selected-record"><strong>{customer.name}</strong><span>{customer.phone || 'No phone'} · <button type="button" className="text-button" onClick={() => setCustomer(null)}>Change customer</button></span></div>}
+          <label>Add returned product
+            <input value={productQuery} onChange={(e) => setProductQuery(e.target.value)} placeholder="Search product / brand / composition" />
+          </label>
+          {productQuery && <div className="suggestion-list">{matchingProducts.map((p) => <button type="button" className="suggestion" key={p.id} onClick={() => addProduct(p)}><strong>{p.product_name}</strong><span>{p.generic_display_name || p.manufacturer || ''}</span></button>)}</div>}
+          {lines.map((line) => (
+            <div className="panel" key={line.key}>
+              <div className="record-row"><div><strong>{line.product.product_name}</strong><span>{line.product.generic_display_name || line.product.manufacturer || ''}</span></div><button type="button" className="danger-button" onClick={() => removeLine(line.key)}>Remove</button></div>
+              <label>Batch / expiry
+                <select value={line.batchId} onChange={(e) => updateLine(line.key, { batchId: e.target.value })} required>
+                  <option value="">Choose batch</option>
+                  {line.batches.map((batch) => <option key={batch.id} value={batch.id}>{batch.batch_number} · Exp {dateText(batch.expiry_date)} · Current stock {batch.current_stock_units}</option>)}
                 </select>
               </label>
-              <label>
-                Return reason (optional)
-                <textarea value={reason} onChange={(event) => setReason(event.target.value)} rows="2" placeholder="Reason for return" />
-              </label>
-              <div className="record-row">
-                <strong>Estimated refund</strong>
-                <strong>{money(refundAmount)}</strong>
+              {!line.batches.length && <p className="muted">No active batch exists for this product. A batch must be available to record the return.</p>}
+              <div className="form-grid">
+                <label>Returned quantity (individual stock units)<input type="number" min="0.001" step="any" value={line.quantity} onChange={(e) => updateLine(line.key, { quantity: e.target.value })} required /></label>
+                <label>Recorded selling price per unit (₹)<input type="number" min="0" step="0.01" value={line.price} onChange={(e) => updateLine(line.key, { price: e.target.value })} required /></label>
+                <label>Discount (%)<input type="number" min="0" max="100" step="0.01" value={line.discount} onChange={(e) => updateLine(line.key, { discount: e.target.value })} required /></label>
+                <div className="record-row"><span>Refund for this line</span><strong>{money(amountFor(line))}</strong></div>
               </div>
-              <button className="primary-button" type="submit" disabled={busy || !selectedLines.length}>
-                {busy ? 'Processing return…' : 'Process Sales Return'}
-              </button>
-            </>
-          )}
+              <label className="checkbox-row"><input type="checkbox" checked={line.restock} onChange={(e) => updateLine(line.key, { restock: e.target.checked })} />Restore to stock only after checking the returned medicine is safe and saleable</label>
+            </div>
+          ))}
+          <label>Refund / settlement
+            <select value={refundMethod} onChange={(e) => setRefundMethod(e.target.value)}>
+              <option value="cash">Cash refund</option><option value="upi">UPI refund</option><option value="store_credit">Post as customer credit statement adjustment</option>
+            </select>
+          </label>
+          {refundMethod === 'store_credit' && !customer && <p className="muted">Select the customer above to record the credit statement adjustment.</p>}
+          <label>Reason (optional)<textarea value={reason} onChange={(e) => setReason(e.target.value)} rows="2" placeholder="Reason for return" /></label>
+          <div className="record-row"><strong>Total refund</strong><strong>{money(refundAmount)}</strong></div>
+          <button className="primary-button" type="submit" disabled={busy || !lines.length}>{busy ? 'Recording return…' : 'Record Sales Return'}</button>
           {error && <div className="error-box">{error}</div>}
           {success && <div className="success-box">{success}</div>}
-          {!sales.length && <EmptyState text="No completed bills with items are available for return." />}
         </form>
       </PanelList>
-
       <PanelList title="Recent Sales Returns">
-        {rows.length === 0 ? (
-          <EmptyState text="No sales returns recorded." />
-        ) : (
-          <div className="record-list">
-            {rows.map((row) => (
-              <div className="record-row" key={row.id}>
-                <div>
-                  <strong>Return {row.id.slice(0, 8).toUpperCase()}</strong>
-                  <span>{dateTimeText(row.created_at)} · {paymentLabel(row.refund_method)}</span>
-                </div>
-                <strong>{money(row.refund_amount)}</strong>
-              </div>
-            ))}
-          </div>
-        )}
+        {rows.length === 0 ? <EmptyState text="No sales returns recorded." /> : <div className="record-list">{rows.map((row) => <div className="record-row" key={row.id}><div><strong>Return {row.id.slice(0, 8).toUpperCase()}</strong><span>{row.customers?.name || 'Walk-in / unlinked'} · {dateTimeText(row.created_at)} · {paymentLabel(row.refund_method)}</span></div><strong>{money(row.refund_amount)}</strong></div>)}</div>}
       </PanelList>
     </div>
   )
