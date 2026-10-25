@@ -13003,7 +13003,8 @@ function Reports({
             type="button"
             className="primary-button"
             onClick={load}
-            disabled={loading}  
+            disabled={loading}
+          >
             {loading  
               ? 'Loading…'  
               : 'Refresh Reports'}  
