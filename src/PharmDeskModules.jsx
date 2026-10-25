@@ -2393,11 +2393,37 @@ function AuthShell({ children }) {
   )
 }
 
-function PharmacyApp({ session }) {  
-  const [activeNav, setActiveNav] = useState('Dashboard')
-  const [requestedSalesTab, setRequestedSalesTab] = useState(null)
-  const [requestedInventoryTab, setRequestedInventoryTab] = useState(null)
-  const [requestedPurchasesTab, setRequestedPurchasesTab] = useState(null)
+function PharmacyApp({ session }) {
+  // Restore the last visited section after refresh, scoped to the signed-in user.
+  const navigationStorageKey = `pharmdesk:last-page:${session?.user?.id || 'guest'}`
+  const [savedNavigation] = useState(() => {
+    try {
+      const raw = window.localStorage.getItem(navigationStorageKey)
+      const parsed = raw ? JSON.parse(raw) : null
+      return parsed && typeof parsed === 'object' ? parsed : {}
+    } catch {
+      return {}
+    }
+  })
+  const [activeNav, setActiveNav] = useState(() =>
+    NAV_ITEMS.includes(savedNavigation.activeNav) ? savedNavigation.activeNav : 'Dashboard'
+  )
+  const [requestedSalesTab, setRequestedSalesTab] = useState(savedNavigation.requestedSalesTab || null)
+  const [requestedInventoryTab, setRequestedInventoryTab] = useState(savedNavigation.requestedInventoryTab || null)
+  const [requestedPurchasesTab, setRequestedPurchasesTab] = useState(savedNavigation.requestedPurchasesTab || null)
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(navigationStorageKey, JSON.stringify({
+        activeNav,
+        requestedSalesTab,
+        requestedInventoryTab,
+        requestedPurchasesTab,
+      }))
+    } catch (error) {
+      console.warn('Could not save last visited page:', error)
+    }
+  }, [navigationStorageKey, activeNav, requestedSalesTab, requestedInventoryTab, requestedPurchasesTab])
   const navigateToModule = (module, tab = null) => {
     setRequestedSalesTab(module === 'Sales' ? (tab || 'New Sale') : null)
     setRequestedInventoryTab(module === 'Inventory' ? tab : null)
