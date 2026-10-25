@@ -9108,7 +9108,7 @@ function PurchaseInvoiceEditModal({ store, invoice, onClose, onSaved }) {
     <Modal title={`Edit Purchase • ${invoice.invoice_number || 'Supplier invoice'}`} onClose={onClose}>
       {loading ? <LoadingInline /> : (
         <form onSubmit={save}>
-          <div className="info-box">Changes use the backend stock-reconciliation transaction. For safety, a purchase bill with supplier payments allocated cannot be edited until those payments are reallocated, and an edit is blocked if the original stock has already been consumed or changed. Existing payments are never silently rewritten.</div>
+          <div className="info-box">Changes use the backend stock-reconciliation transaction. Existing supplier payments are preserved and the bill’s paid/partial/unpaid status is recalculated; the total cannot be reduced below payments already allocated, and the supplier cannot be changed on a bill with allocated payments. An edit is also blocked if the original stock has already been consumed or changed.</div>
           <div className="form-grid">
             <label>Supplier
               <select value={supplierId} onChange={(event) => setSupplierId(event.target.value)} required>
