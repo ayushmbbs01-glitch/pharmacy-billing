@@ -14616,108 +14616,125 @@ function ProductReport({
    ALERTS  
 ========================================================= */  
   
-function AlertsModule({  
-  store,  
-}) {  
-  const [rows, setRows] =  
-    useState([])  
-  
-  const load = async () => {  
-    const { data } =  
-      await pharmdeskDb  
-        .from('alerts')  
-        .select('*')  
-        .eq(  
-          'store_id',  
-          store.id,  
-        )  
-        .eq(  
-          'is_resolved',  
-          false,  
-        )  
-        .order(  
-          'created_at',  
-          {  
-            ascending: false,  
-          },  
-        )  
-  
-    setRows(data || [])  
-  }  
-  
-  useEffect(() => {  
-    if (store?.id) load()  
-  }, [store?.id])  
-  
-  const resolve = async (  
-    id,  
-  ) => {  
-    await pharmdeskDb  
-      .from('alerts')  
-      .update({  
-        is_resolved: true,  
-        resolved_at:  
-          new Date().toISOString(),  
-      })  
-      .eq('id', id)  
-  
-    load()  
-  }  
-  
-  return (  
-    <div>  
-      <ModuleHeader  
-        title="Alerts"  
-        subtitle="Expiry, stock and system alerts"  
-      />  
-  
-      <PanelList title="Active Alerts">  
-        {rows.length ===  
-        0 ? (  
-          <EmptyState text="No unresolved alerts." />  
-        ) : (  
-          <div className="record-list">  
-            {rows.map(  
-              (row) => (  
-                <div  
-                  className="record-row static"  
-                  key={row.id}  
-                >  
-                  <div>  
-                    <strong>  
-                      {  
-                        row.alert_type  
-                      }  
-                    </strong>  
-  
-                    <span>  
-                      {row.title ||  
-                        row.message ||  
-                        row.description ||  
-                        'Alert'}  
-                    </span>  
-                  </div>  
-  
-                  <button  
-                    className="secondary-button"  
-                    onClick={() =>  
-                      resolve(  
-                        row.id,  
-                      )  
-                    }  
-                  >  
-                    Resolve  
-                  </button>  
-                </div>  
-              ),  
-            )}  
-          </div>  
-        )}  
-      </PanelList>  
-    </div>  
-  )  
-}  
-  
+function AlertsModule({ store }) {
+  const [rows, setRows] = useState([])
+  const [query, setQuery] = useState('')
+  const [typeFilter, setTypeFilter] = useState('all')
+  const [loading, setLoading] = useState(false)
+  const [resolvingId, setResolvingId] = useState(null)
+  const [error, setError] = useState('')
+  const [message, setMessage] = useState('')
+
+  const load = async () => {
+    if (!store?.id) return
+    setLoading(true)
+    setError('')
+    try {
+      const { data, error: queryError } = await pharmdeskDb
+        .from('alerts')
+        .select('*')
+        .eq('store_id', store.id)
+        .eq('is_resolved', false)
+        .order('created_at', { ascending: false })
+        .limit(1000)
+      if (queryError) throw queryError
+      setRows(data || [])
+    } catch (loadError) {
+      console.error('Alerts load error:', loadError)
+      setError('Could not load alerts. Please refresh and try again.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (store?.id) load()
+  }, [store?.id])
+
+  const resolve = async (id) => {
+    if (resolvingId) return
+    setResolvingId(id)
+    setError('')
+    setMessage('')
+    try {
+      const { error: updateError } = await pharmdeskDb
+        .from('alerts')
+        .update({
+          is_resolved: true,
+          resolved_at: new Date().toISOString(),
+        })
+        .eq('id', id)
+        .eq('store_id', store.id)
+      if (updateError) throw updateError
+      setRows((current) => current.filter((row) => row.id !== id))
+      setMessage('Alert marked as resolved.')
+    } catch (resolveError) {
+      console.error('Alert resolve error:', resolveError)
+      setError('Could not resolve this alert. No changes were confirmed; please try again.')
+    } finally {
+      setResolvingId(null)
+    }
+  }
+
+  const types = [...new Set(rows.map((row) => row.alert_type).filter(Boolean))]
+  const filtered = rows.filter((row) => {
+    const typeMatches = typeFilter === 'all' || row.alert_type === typeFilter
+    return typeMatches && matchesSearch(query, row.alert_type, row.title, row.message, row.description, row.severity)
+  })
+
+  return (
+    <div>
+      <ModuleHeader
+        title="Alerts"
+        subtitle="Expiry, stock and system alerts"
+        right={<button type="button" className="secondary-button" onClick={load} disabled={loading}>{loading ? 'Refreshing…' : 'Refresh alerts'}</button>}
+      />
+
+      <PanelList title="Active Alerts">
+        <div className="search-row">
+          <input
+            type="search"
+            placeholder="Search alert title, message or type"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+          <select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)} aria-label="Filter alerts by type">
+            <option value="all">All alert types</option>
+            {types.map((type) => <option key={type} value={type}>{type}</option>)}
+          </select>
+        </div>
+        {error && <div className="error-box">{error}</div>}
+        {message && <div className="success-box">{message}</div>}
+        <div className="muted">{filtered.length} unresolved alert(s).</div>
+        {loading && <div className="muted">Loading alerts…</div>}
+        {filtered.length === 0 && !loading ? (
+          <EmptyState text={rows.length ? 'No alerts match these filters.' : 'No unresolved alerts.'} />
+        ) : (
+          <div className="record-list">
+            {filtered.map((row) => (
+              <div className="record-row static" key={row.id}>
+                <div>
+                  <strong>{row.title || row.alert_type || 'Alert'}</strong>
+                  <span>{row.message || row.description || 'No additional details'}</span>
+                  <span>{row.alert_type || 'General'}{row.severity ? ' · ' + row.severity : ''}{row.created_at ? ' · ' + dateTimeText(row.created_at) : ''}</span>
+                </div>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  disabled={resolvingId === row.id}
+                  onClick={() => resolve(row.id)}
+                >
+                  {resolvingId === row.id ? 'Resolving…' : 'Resolve'}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </PanelList>
+    </div>
+  )
+}
+
 /* =========================================================  
    SETTINGS  
 ========================================================= */  
