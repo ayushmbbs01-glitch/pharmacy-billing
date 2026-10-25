@@ -19300,7 +19300,7 @@ const [
                   {index > 0 && <span aria-hidden="true">→</span>}
                   <span style={{ padding: '6px 10px', border: '1px solid #cbd5e1', borderRadius: 9, background: '#fff' }}>
                     <strong>{level.unit_name || `Unit ${index + 1}`}</strong>
-                    {index > 0 && <small style={{ display: 'block', color: '#64748b' }}>{safeNumber(level.units_per_parent) || 1} per {packagingLevels[index - 1]?.unit_name || 'previous unit'}</small>}
+                    {index > 0 && <small style={{ display: 'block', color: '#64748b' }}>{safeNumber(level.units_per_parent) || 1} {packagingLevels[index - 1]?.unit_name || 'smaller unit'} per {level.unit_name || 'pack'}</small>}
                   </span>
                 </React.Fragment>
               ))}
@@ -19362,7 +19362,7 @@ const [
                   </label>  
   
                   <label>  
-                    {index === 0 ? 'Units in this smallest unit' : `How many ${level.unit_name || 'units'} in 1 ${packagingLevels[index - 1]?.unit_name || 'parent pack'}`}  
+                    {index === 0 ? 'Units in this smallest unit' : `How many ${packagingLevels[index - 1]?.unit_name || 'smaller units'} fit in 1 ${level.unit_name || 'pack'}`}  
                     <input  
                       type="number"  
                       min="1"  
