@@ -4086,7 +4086,7 @@ function NewSale({ store }) {
   
           <button  
             className="primary-button large"  
-            disabled={busy}  
+            disabled={busy || !saleDraftReady}  
             type="submit"  
           >  
             {busy  
@@ -8255,7 +8255,7 @@ function NewPurchase({ store }) {
           <button  
             className="primary-button large"  
             type="submit"  
-            disabled={busy}  
+            disabled={busy || !purchaseDraftReady}  
           >  
             {busy  
               ? 'Completing purchase…'  
