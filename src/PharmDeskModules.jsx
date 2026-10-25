@@ -9502,37 +9502,44 @@ function PendingSupplierPayments({
     setLoading(true)
     setError('')
 
-    const [{ data: invoiceRows, error: invoiceError }, { data: supplierRows, error: supplierError }] =
-      await Promise.all([
-        supabase
-          .from('purchase_invoices')
-          .select(`
-            *,
-            suppliers (
-              id,
-              supplier_name
-            )
-          `)
-          .eq('store_id', store.id)
-          .in('payment_status', [
-            'unpaid',
-            'pending',
-            'partial',
-            'due',
-          ])
-          .order('invoice_date', { ascending: true }),
-        supabase
-          .from('suppliers')
-          .select('id, supplier_name')
-          .eq('store_id', store.id)
-          .eq('is_active', true)
-          .order('supplier_name'),
-      ])
+    const [
+      { data: invoiceRows, error: invoiceError },
+      { data: supplierRows, error: supplierError },
+      { data: allocationRows, error: allocationError },
+    ] = await Promise.all([
+      supabase
+        .from('purchase_invoices')
+        .select(`
+          *,
+          suppliers (
+            id,
+            supplier_name
+          )
+        `)
+        .eq('store_id', store.id)
+        .in('payment_status', [
+          'unpaid',
+          'pending',
+          'partial',
+          'due',
+        ])
+        .order('invoice_date', { ascending: true }),
+      supabase
+        .from('suppliers')
+        .select('id, supplier_name')
+        .eq('store_id', store.id)
+        .eq('is_active', true)
+        .order('supplier_name'),
+      supabase
+        .from('supplier_payment_allocations')
+        .select('purchase_invoice_id, allocated_amount'),
+    ])
 
-    if (invoiceError || supplierError) {
+    if (invoiceError || supplierError || allocationError) {
       setError(
         invoiceError?.message ||
           supplierError?.message ||
+          allocationError?.message ||
           'Unable to load pending supplier payments.',
       )
       setRows([])
@@ -9541,7 +9548,23 @@ function PendingSupplierPayments({
       return
     }
 
-    setRows(invoiceRows || [])
+    const allocatedByInvoice = new Map()
+    for (const allocation of allocationRows || []) {
+      const current = allocatedByInvoice.get(allocation.purchase_invoice_id) || 0
+      allocatedByInvoice.set(
+        allocation.purchase_invoice_id,
+        current + safeNumber(allocation.allocated_amount),
+      )
+    }
+
+    setRows((invoiceRows || []).map((row) => {
+      const allocatedAmount = allocatedByInvoice.get(row.id) || 0
+      return {
+        ...row,
+        allocated_amount: allocatedAmount,
+        due_amount: Math.max(0, safeNumber(row.total_amount) - allocatedAmount),
+      }
+    }))
     setSuppliers(supplierRows || [])
     setSelectedIds([])
     setLoading(false)
@@ -9567,7 +9590,7 @@ function PendingSupplierPayments({
   )
 
   const selectedTotal = selectedRows.reduce(
-    (sum, row) => sum + safeNumber(row.total_amount),
+    (sum, row) => sum + safeNumber(row.due_amount ?? row.total_amount),
     0,
   )
 
@@ -9583,7 +9606,7 @@ function PendingSupplierPayments({
 
   const toggleAllFiltered = () => {
     const filteredIds = filteredRows
-      .filter((row) => row.payment_status !== 'partial')
+      .filter((row) => safeNumber(row.due_amount ?? row.total_amount) > 0)
       .map((row) => row.id)
     const allSelected = filteredIds.every((id) =>
       selectedIds.includes(id),
@@ -9623,12 +9646,12 @@ function PendingSupplierPayments({
 
     const selectedSupplierId = selectedRows[0]?.supplier_id
     const paymentAmount = selectedRows.reduce(
-      (sum, row) => sum + safeNumber(row.total_amount),
+      (sum, row) => sum + safeNumber(row.due_amount ?? row.total_amount),
       0,
     )
     const allocations = selectedRows.map((row) => ({
       purchase_invoice_id: row.id,
-      allocated_amount: safeNumber(row.total_amount),
+      allocated_amount: safeNumber(row.due_amount ?? row.total_amount),
     }))
 
     const confirmed = window.confirm(
@@ -9852,13 +9875,13 @@ function PendingSupplierPayments({
                   type="checkbox"
                   aria-label="Select all pending supplier bills"
                   checked={
-                    filteredRows.filter((row) => row.payment_status !== 'partial').length > 0 &&
+                    filteredRows.filter((row) => safeNumber(row.due_amount ?? row.total_amount) > 0).length > 0 &&
                     filteredRows
-                      .filter((row) => row.payment_status !== 'partial')
+                      .filter((row) => safeNumber(row.due_amount ?? row.total_amount) > 0)
                       .every((row) => selectedIds.includes(row.id))
                   }
                   onChange={toggleAllFiltered}
-                  disabled={!filteredRows.some((row) => row.payment_status !== 'partial')}
+                  disabled={!filteredRows.some((row) => safeNumber(row.due_amount ?? row.total_amount) > 0)}
                   style={{
                     width: 22,
                     height: 22,
@@ -9873,12 +9896,13 @@ function PendingSupplierPayments({
 
               <div>Date</div>
 
-              <div style={{ textAlign: 'right' }}>Amount</div>
+              <div style={{ textAlign: 'right' }}>Due</div>
             </div>
 
             {filteredRows.map((row, index) => {
               const selected = selectedIds.includes(row.id)
-              const disabled = row.payment_status === 'partial'
+              const dueAmount = safeNumber(row.due_amount ?? row.total_amount)
+              const disabled = dueAmount <= 0
 
               return (
                 <label
@@ -9968,7 +9992,7 @@ function PendingSupplierPayments({
                       whiteSpace: 'nowrap',
                     }}
                   >
-                    {money(row.total_amount)}
+                    {money(dueAmount)}
                   </div>
                 </label>
               )
