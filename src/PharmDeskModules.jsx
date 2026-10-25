@@ -2406,7 +2406,7 @@ function PharmacyApp({ session }) {
       return {}
     }
   })
-  const navigationLoadedFor = useRef(null)
+  const [navigationLoadedFor, setNavigationLoadedFor] = useState(null)
   const [activeNav, setActiveNav] = useState(() =>
     NAV_ITEMS.includes(savedNavigation.activeNav) ? savedNavigation.activeNav : 'Dashboard'
   )
@@ -2415,7 +2415,7 @@ function PharmacyApp({ session }) {
   const [requestedPurchasesTab, setRequestedPurchasesTab] = useState(savedNavigation.requestedPurchasesTab || null)
 
   useEffect(() => {
-    navigationLoadedFor.current = null
+    setNavigationLoadedFor(null)
     try {
       const raw = window.localStorage.getItem(navigationStorageKey)
       const parsed = raw ? JSON.parse(raw) : null
@@ -2431,13 +2431,15 @@ function PharmacyApp({ session }) {
       setRequestedInventoryTab(null)
       setRequestedPurchasesTab(null)
     }
-    navigationLoadedFor.current = navigationStorageKey
+    // Mark ready in state, not a mutable ref: the save effect must skip this
+    // commit and wait until the restored navigation state has rendered.
+    setNavigationLoadedFor(navigationStorageKey)
   }, [navigationStorageKey])
 
   useEffect(() => {
-    // Do not write the previous user's navigation under a newly selected
-    // account's key while authentication/session state is changing.
-    if (navigationLoadedFor.current !== navigationStorageKey) return
+    // Do not write navigation until the current account's saved route has
+    // been loaded and rendered; this avoids replacing it with Dashboard.
+    if (navigationLoadedFor !== navigationStorageKey) return
     try {
       window.localStorage.setItem(navigationStorageKey, JSON.stringify({
         activeNav,
@@ -9039,6 +9041,8 @@ function PurchaseInvoiceEditModal({ store, invoice, onClose, onSaved }) {
           supplierDiscountPercent: item.supplier_discount_percent ?? 0,
           gstRate: item.gst_rate ?? 0,
           unitsPerPack: item.units_per_pack ?? item.batches?.units_per_pack ?? 1,
+          purchasePackagingLevelId: item.purchase_packaging_level_id || null,
+          mrpPackagingLevelId: item.mrp_packaging_level_id || null,
         })))
       } catch (loadError) {
         if (!cancelled) setError(loadError?.message || 'Could not load this purchase invoice.')
@@ -9056,6 +9060,7 @@ function PurchaseInvoiceEditModal({ store, invoice, onClose, onSaved }) {
     originalId: null, product: null, batchNumber: '', expiryDate: '',
     paidPacks: 1, freePacks: 0, looseUnits: 0, purchaseRatePerPack: 0,
     mrpPerPack: 0, supplierDiscountPercent: 0, gstRate: 0, unitsPerPack: 1,
+    purchasePackagingLevelId: null, mrpPackagingLevelId: null,
   }])
 
   const save = async (event) => {
@@ -9080,6 +9085,8 @@ function PurchaseInvoiceEditModal({ store, invoice, onClose, onSaved }) {
         supplier_discount_percent: safeNumber(item.supplierDiscountPercent),
         gst_rate: safeNumber(item.gstRate),
         units_per_pack: safeNumber(item.unitsPerPack) || 1,
+        purchase_packaging_level_id: item.purchasePackagingLevelId || null,
+        mrp_packaging_level_id: item.mrpPackagingLevelId || null,
       }))
       await PharmDeskAPI.editPurchase({
         storeId: store.id,
@@ -9129,7 +9136,12 @@ function PurchaseInvoiceEditModal({ store, invoice, onClose, onSaved }) {
               <label>Product
                 <select value={item.product?.id || ''} onChange={(event) => {
                   const product = products.find((row) => row.id === event.target.value) || null
-                  patchItem(item.rowKey, { product, gstRate: product?.gst_rate ?? item.gstRate, unitsPerPack: product?.pack_quantity || item.unitsPerPack || 1 })
+                  patchItem(item.rowKey, {
+                    product,
+                    gstRate: product?.gst_rate ?? item.gstRate,
+                    unitsPerPack: product?.pack_quantity || item.unitsPerPack || 1,
+                    ...(product?.id !== item.product?.id ? { purchasePackagingLevelId: null, mrpPackagingLevelId: null } : {}),
+                  })
                 }} required>
                   <option value="">Select product</option>
                   {products.map((product) => <option key={product.id} value={product.id}>{product.product_name}{product.generic_display_name ? ` • ${product.generic_display_name}` : ''}</option>)}
