@@ -1561,3 +1561,14 @@ a:hover { color: var(--navy); }
 @media (prefers-reduced-motion: reduce) {
   .loading-progress span { animation: none; width: 65%; }
 }
+
+.pharmdesk-logo-code { position:relative; flex-wrap:wrap; row-gap:5px; }
+.pharmdesk-mark-code { object-fit:contain; border-radius:0; }
+.pharmdesk-wordmark span { color:#fff; }
+.pharmdesk-wordmark b { color:#23c0b8; }
+.pharmdesk-tagline { flex-basis:100%; margin-left:47px; color:#b7d8e8; font-size:7px; font-weight:700; letter-spacing:1.05px; white-space:nowrap; }
+.pharmdesk-logo-code.compact { display:grid; grid-template-columns:34px 1fr; column-gap:7px; row-gap:3px; align-items:center; }
+.pharmdesk-logo-code.compact .pharmdesk-mark-code { width:34px; height:34px; grid-row:1 / span 2; }
+.pharmdesk-logo-code.compact .pharmdesk-wordmark { font-size:17px; }
+.pharmdesk-logo-code.compact .pharmdesk-tagline { display:block; grid-column:2; margin:0; font-size:5px; letter-spacing:.45px; }
+.auth-brand-primary-logo { max-width:380px; }
