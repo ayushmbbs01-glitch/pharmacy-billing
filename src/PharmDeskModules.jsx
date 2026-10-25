@@ -2397,9 +2397,11 @@ function PharmacyApp({ session }) {
   const [activeNav, setActiveNav] = useState('Dashboard')
   const [requestedSalesTab, setRequestedSalesTab] = useState(null)
   const [requestedInventoryTab, setRequestedInventoryTab] = useState(null)
+  const [requestedPurchasesTab, setRequestedPurchasesTab] = useState(null)
   const navigateToModule = (module, tab = null) => {
     setRequestedSalesTab(module === 'Sales' ? tab : null)
     setRequestedInventoryTab(module === 'Inventory' ? tab : null)
+    setRequestedPurchasesTab(module === 'Purchases' ? tab : null)
     setActiveNav(module)
   }
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -2554,8 +2556,8 @@ function PharmacyApp({ session }) {
       case 'Sales':  
         return <SalesModule store={store} session={session} initialTab={requestedSalesTab} />  
   
-      case 'Purchases':  
-        return <PurchasesModule store={store} session={session} />  
+      case 'Purchases':
+        return <PurchasesModule store={store} session={session} initialTab={requestedPurchasesTab} />  
   
       case 'Inventory':
         return <InventoryModule store={store} session={session} initialTab={requestedInventoryTab} />  
@@ -2888,7 +2890,7 @@ function Dashboard({ store, profile, onNavigate }) {
           <strong>{money(stats.sales)}</strong>
           <small>Open sales</small>
         </button>
-        <button type="button" className="stat-card stat-card-action" onClick={() => onNavigate?.('Purchases')}>
+        <button type="button" className="stat-card stat-card-action" onClick={() => onNavigate?.('Purchases', 'Supplier Invoices')}>
           <span className="stat-icon"><AppIcon name="purchases" size={17} /></span>
           <span>Purchase Bills Today</span>
           <strong>{stats.purchaseBills}</strong>
@@ -7464,9 +7466,14 @@ function CustomerSettlementModal({
    PURCHASES  
 ========================================================= */  
   
-function PurchasesModule({ store }) {  
-  const [tab, setTab] =  
-    useState('New Purchase')  
+function PurchasesModule({ store, initialTab }) {
+  const [tab, setTab] = useState(initialTab || 'New Purchase')
+
+  useEffect(() => {
+    if (initialTab && PURCHASE_TABS.includes(initialTab)) {
+      setTab(initialTab)
+    }
+  }, [initialTab])  
   
   return (  
     <div>  
