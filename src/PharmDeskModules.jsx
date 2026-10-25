@@ -2396,8 +2396,10 @@ function AuthShell({ children }) {
 function PharmacyApp({ session }) {  
   const [activeNav, setActiveNav] = useState('Dashboard')
   const [requestedSalesTab, setRequestedSalesTab] = useState(null)
+  const [requestedInventoryTab, setRequestedInventoryTab] = useState(null)
   const navigateToModule = (module, tab = null) => {
     setRequestedSalesTab(module === 'Sales' ? tab : null)
+    setRequestedInventoryTab(module === 'Inventory' ? tab : null)
     setActiveNav(module)
   }
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -2555,8 +2557,8 @@ function PharmacyApp({ session }) {
       case 'Purchases':  
         return <PurchasesModule store={store} session={session} />  
   
-      case 'Inventory':  
-        return <InventoryModule store={store} session={session} />  
+      case 'Inventory':
+        return <InventoryModule store={store} session={session} initialTab={requestedInventoryTab} />  
   
       case 'Customers':  
         return <CustomersModule store={store} />  
@@ -2892,13 +2894,13 @@ function Dashboard({ store, profile, onNavigate }) {
           <strong>{stats.purchaseBills}</strong>
           <small>Open purchases</small>
         </button>
-        <button type="button" className="stat-card stat-card-action" onClick={() => onNavigate?.('Inventory')}>
+        <button type="button" className="stat-card stat-card-action" onClick={() => onNavigate?.('Inventory', 'Low Stock')}>
           <span className="stat-icon"><AppIcon name="inventory" size={17} /></span>
           <span>Low-stock Items</span>
           <strong>{stats.lowStock}</strong>
           <small>Review stock levels</small>
         </button>
-        <button type="button" className="stat-card stat-card-action" onClick={() => onNavigate?.('Alerts')}>
+        <button type="button" className="stat-card stat-card-action" onClick={() => onNavigate?.('Inventory', 'Expiry')}>
           <span className="stat-icon"><AppIcon name="alerts" size={17} /></span>
           <span>Expiry Alerts</span>
           <strong>{stats.expiry}</strong>
@@ -11251,11 +11253,17 @@ function PurchaseOrders({
   
 
 
-function InventoryModule({  
-  store,  
-}) {  
-  const [tab, setTab] =  
-    useState('Products')  
+function InventoryModule({
+  store,
+  initialTab,
+}) {
+  const [tab, setTab] = useState(initialTab || 'Products')
+
+  useEffect(() => {
+    if (initialTab && INVENTORY_TABS.includes(initialTab)) {
+      setTab(initialTab)
+    }
+  }, [initialTab])  
   
   return (  
     <div>  
