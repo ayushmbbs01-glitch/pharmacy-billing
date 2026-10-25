@@ -12633,10 +12633,14 @@ function Reports({
   const [error, setError] =  
     useState('')  
   
-  const load = async () => {  
-    if (!store?.id) return  
-  
-    setLoading(true)  
+  const load = async () => {
+    if (!store?.id) return
+    if (from && to && from > to) {
+      setError('The start date must be on or before the end date.')
+      return
+    }
+
+    setLoading(true)
     setError('')  
   
     try {  
@@ -12978,33 +12982,28 @@ function Reports({
           <label>  
             From  
             <input  
-              type="date"  
-              value={from}  
-              onChange={(e) =>  
-                setFrom(  
-                  e.target.value,  
-                )  
-              }  
+              type="date"
+              value={from}
+              max={to || undefined}
+              onChange={(e) => setFrom(e.target.value)  
             />  
           </label>  
   
           <label>  
             To  
             <input  
-              type="date"  
-              value={to}  
-              onChange={(e) =>  
-                setTo(  
-                  e.target.value,  
-                )  
-              }  
+              type="date"
+              value={to}
+              min={from || undefined}
+              onChange={(e) => setTo(e.target.value)  
             />  
           </label>  
   
-          <button  
-            className="primary-button"  
-            onClick={load}  
-          >  
+          <button
+            type="button"
+            className="primary-button"
+            onClick={load}
+            disabled={loading}  
             {loading  
               ? 'Loading…'  
               : 'Refresh Reports'}  
