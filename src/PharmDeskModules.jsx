@@ -7034,6 +7034,22 @@ function SalesReturns({ store }) {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
 
+  const { clearDraft: clearSalesReturnDraft } = useWorkingDraft({
+    storeId: store?.id,
+    moduleKey: 'sales-returns',
+    draftKey: 'new-return',
+    value: { customerQuery, productQuery, customer, lines, refundMethod, reason },
+    hasWork: Boolean(customerQuery.trim() || productQuery.trim() || customer || lines.length || reason.trim() || refundMethod !== 'cash'),
+    onRestore: (draft) => {
+      setCustomerQuery(draft.customerQuery || '')
+      setProductQuery(draft.productQuery || '')
+      setCustomer(draft.customer || null)
+      setLines(Array.isArray(draft.lines) ? draft.lines : [])
+      setRefundMethod(draft.refundMethod || 'cash')
+      setReason(draft.reason || '')
+    },
+  })
+
   const loadReturns = async () => {
     if (!store?.id) return
     const [{ data, error: returnsError }, { data: customerRows, error: customerError }, { data: productRows, error: productError }] = await Promise.all([
@@ -7110,7 +7126,7 @@ function SalesReturns({ store }) {
         refundAmount: Number(refundAmount.toFixed(2)), reason: reason.trim() || null, items: payloadItems,
       })
       setSuccess('Sales return recorded. Customer credit statement updated where applicable.')
-      setCustomer(null); setCustomerQuery(''); setLines([]); setReason(''); setRefundMethod('cash')
+      setCustomer(null); setCustomerQuery(''); setLines([]); setReason(''); setRefundMethod('cash'); await clearSalesReturnDraft()
       await loadReturns()
     } catch (e) {
       console.error('Independent sales return error:', e)
