@@ -499,6 +499,7 @@ function LoginScreen() {
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [resetOtp, setResetOtp] = useState('')
   const [resetPassword, setResetPassword] = useState('')
   const [resetConfirmPassword, setResetConfirmPassword] =
@@ -966,90 +967,39 @@ function LoginScreen() {
 }
 
   return (
-    <AuthShell><form
-        className="auth-card"
-        onSubmit={login}
-      >
-        <div className="brand-mark"><img src="/icons/pharmdesk-logo.svg" alt="PharmDesk" /></div>
-
+    <AuthShell>
+      <form className="auth-card auth-login-card" onSubmit={login}>
         <h1>Welcome back</h1>
-
-        <p>
-          Sign in to your PharmDesk account
-        </p>
-
-        <div className="form-stack">
-          <label>
-            Email
-            <input
-              type="email"
-              placeholder="Email"
-              value={email}
-              onChange={(e) =>
-                setEmail(e.target.value)
-              }
-              required
-            />
+        <p>Sign in to your PharmDesk account</p>
+        <div className="form-stack auth-login-fields">
+          <label className="auth-login-field">
+            <span className="sr-only">Email address</span>
+            <span className="auth-input-shell">
+              <svg className="auth-input-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m4 7 8 6 8-6"/></svg>
+              <input type="email" autoComplete="email" placeholder="Email address" aria-label="Email address" value={email} onChange={(e) => setEmail(e.target.value)} required />
+            </span>
           </label>
-
-          <label>
-            Password
-            <input
-              type="password"
-              placeholder="Password"
-              value={password}
-              onChange={(e) =>
-                setPassword(e.target.value)
-              }
-              required
-            />
+          <label className="auth-login-field">
+            <span className="sr-only">Password</span>
+            <span className="auth-input-shell">
+              <svg className="auth-input-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/><path d="M12 14v3"/></svg>
+              <input type={showPassword ? 'text' : 'password'} autoComplete="current-password" placeholder="Password" aria-label="Password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+              <button type="button" className="auth-password-toggle" aria-label={showPassword ? 'Hide password' : 'Show password'} onClick={() => setShowPassword((visible) => !visible)}>
+                {showPassword ? <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 10.6a2 2 0 0 0 2.8 2.8"/><path d="M9.9 5.2A10.8 10.8 0 0 1 12 5c5.2 0 8.6 4.7 9.5 7-.4 1-1.3 2.4-2.7 3.7"/><path d="M6.2 6.2C3.9 7.8 2.8 10 2.5 12c.5 1.3 3.8 7 9.5 7 1 0 2-.2 2.9-.6"/></svg> : <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12S5.8 5 12 5s9.5 7 9.5 7-3.3 7-9.5 7-9.5-7-9.5-7Z"/><circle cx="12" cy="12" r="3"/></svg>}
+              </button>
+            </span>
           </label>
-
-          {error && (
-            <div className="error-box">
-              {error}
-            </div>
-          )}
-
-          {success && (
-            <div className="success-box">
-              {success}
-            </div>
-          )}
-
-          <button
-            type="submit"
-            disabled={busy}
-            className="primary-button"
-          >
-            {busy
-              ? 'Signing in…'
-              : 'Sign In'}
-          </button>
-
-          <button
-            type="button"
-            className="secondary-button"
-            onClick={() =>
-              switchMode('forgot')
-            }
-            disabled={busy}
-          >
-            Forgot password?
-          </button>
-
-          <button
-            type="button"
-            className="secondary-button"
-            onClick={() =>
-              switchMode('signup')
-            }
-            disabled={busy}
-          >
-            New medical store? Sign up
-          </button>
+          <div className="auth-login-options">
+            <label className="auth-remember"><input type="checkbox" /> <span>Remember me</span></label>
+            <button type="button" className="auth-text-link" onClick={() => switchMode('forgot')} disabled={busy}>Forgot password?</button>
+          </div>
+          {error && <div className="error-box">{error}</div>}
+          {success && <div className="success-box">{success}</div>}
+          <button type="submit" disabled={busy} className="primary-button auth-signin-button">{busy ? 'Signing in…' : 'Sign In'}</button>
         </div>
-      </form></AuthShell>
+        <div className="auth-login-footer"><span>New to PharmDesk?</span><button type="button" className="auth-text-link" onClick={() => switchMode('signup')} disabled={busy}>Contact your administrator</button></div>
+      </form>
+    </AuthShell>
   )
 }
   
@@ -2337,14 +2287,14 @@ function AuthBrandPanel() {
   return (
     <section className="auth-brand-panel">
       <div className="auth-brand-content">
-        <img className="auth-brand-primary-logo" src="/icons/pharmdesk-logo.svg?v=6" alt="PharmDesk — Manage, Sell, Track, Grow" />
+        <img className="auth-brand-primary-logo" src="/icons/pharmdesk-logo.svg?v=7" alt="PharmDesk — Manage, Sell, Track, Grow" />
         <h2>Smarter Pharmacy<br />Management</h2>
         <p className="auth-brand-intro">Everything you need to run<br className="auth-desktop-break" /> your pharmacy, in one place.</p>
         <div className="auth-brand-features">
-          <div className="auth-feature"><span className="auth-feature-icon">▣</span><span><strong>Manage Inventory</strong><small>Track stock, batches and expiry</small></span></div>
-          <div className="auth-feature"><span className="auth-feature-icon">🛒</span><span><strong>Sell Effortlessly</strong><small>Fast and simple billing</small></span></div>
-          <div className="auth-feature"><span className="auth-feature-icon">▥</span><span><strong>Track Business</strong><small>Real-time insights</small></span></div>
-          <div className="auth-feature"><span className="auth-feature-icon">↗</span><span><strong>Grow with Confidence</strong><small>Make data-driven decisions</small></span></div>
+          <div className="auth-feature"><span className="auth-feature-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 7.5 12 3l9 4.5-9 4.5-9-4.5Z"/><path d="M3 12l9 4.5 9-4.5M3 16.5 12 21l9-4.5"/></svg></span><span><strong>Manage Inventory</strong><small>Track stock, batches and expiry</small></span></div>
+          <div className="auth-feature"><span className="auth-feature-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="9" cy="20" r="1.5"/><circle cx="19" cy="20" r="1.5"/><path d="M2.5 3h2l2.7 12.1a2 2 0 0 0 2 1.5h9.4a2 2 0 0 0 1.9-1.4L22 8H6"/></svg></span><span><strong>Sell Effortlessly</strong><small>Fast and simple billing</small></span></div>
+          <div className="auth-feature"><span className="auth-feature-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 20V12M10 20V5M16 20v-8M22 20V2M2 20h21"/></svg></span><span><strong>Track Business</strong><small>Get real-time insights</small></span></div>
+          <div className="auth-feature"><span className="auth-feature-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m3 17 6-6 4 4 8-9"/><path d="M15 6h6v6M3 21h18"/></svg></span><span><strong>Grow with Confidence</strong><small>Make data-driven decisions</small></span></div>
         </div>
       </div>
     </section>
