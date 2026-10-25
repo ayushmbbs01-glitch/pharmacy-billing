@@ -3181,8 +3181,14 @@ function AIRecommendations({
    SALES + PURCHASES RESTORED
 ========================================================= */
 
-function SalesModule({ store, session, initialTab = null }) {  
-  const [tab, setTab] = useState(initialTab || 'New Sale')  
+function SalesModule({ store, session, initialTab = null }) {
+  const [tab, setTab] = useState(initialTab || 'New Sale')
+
+  useEffect(() => {
+    if (initialTab && SALES_TABS.includes(initialTab)) {
+      setTab(initialTab)
+    }
+  }, [initialTab])
   
   return (  
     <div>  
