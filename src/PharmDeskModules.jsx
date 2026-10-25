@@ -2822,6 +2822,8 @@ function Dashboard({ store, profile, onNavigate }) {
     purchaseBills: 0,
     lowStock: 0,
     expiry: 0,
+    inventoryValue: 0,
+    deadStock: 0,
   })
 
   useEffect(() => {
@@ -2830,21 +2832,33 @@ function Dashboard({ store, profile, onNavigate }) {
     const load = async () => {
       try {
         const start = todayISO()
-        const [snapshot, inventory, stockResult] = await Promise.all([
+        const [snapshot, inventory, stockResult, riskResult] = await Promise.all([
           PharmDeskAPI.dashboardSnapshot(store.id, start, 90),
           PharmDeskAPI.inventory(store.id),
           supabase
             .from('batches')
-            .select('product_id,current_stock_units')
+            .select('product_id,current_stock_units,purchase_rate_per_pack,units_per_pack')
             .eq('store_id', store.id)
             .eq('is_active', true),
+          supabase
+            .from('stock_risk_snapshots')
+            .select('product_id,batch_id,snapshot_date,risk_category')
+            .eq('store_id', store.id)
+            .eq('risk_category', 'dead_stock')
+            .order('snapshot_date', { ascending: false })
+            .limit(5000),
         ])
         if (stockResult.error) throw stockResult.error
+        if (riskResult.error) throw riskResult.error
 
         const stockTotals = {}
+        let inventoryValue = 0
         ;(stockResult.data || []).forEach((batch) => {
           stockTotals[batch.product_id] =
             (stockTotals[batch.product_id] || 0) + safeNumber(batch.current_stock_units)
+          const unitsPerPack = safeNumber(batch.units_per_pack) || 1
+          inventoryValue += safeNumber(batch.current_stock_units) *
+            (safeNumber(batch.purchase_rate_per_pack) / unitsPerPack)
         })
         const lowStockCount = (inventory || []).filter((row) => {
           const product = row.products || {}
@@ -2852,12 +2866,23 @@ function Dashboard({ store, profile, onNavigate }) {
           return threshold > 0 && safeNumber(stockTotals[product.id]) <= threshold
         }).length
 
+        const latestRiskDate = (riskResult.data || []).reduce((latest, row) =>
+          !latest || row.snapshot_date > latest ? row.snapshot_date : latest, null)
+        const deadStockProducts = new Set(
+          (riskResult.data || [])
+            .filter((row) => row.snapshot_date === latestRiskDate)
+            .map((row) => row.product_id)
+            .filter(Boolean),
+        )
+
         if (cancelled) return
         setStats({
           sales: sum((snapshot.sales || []).map((x) => x.grand_total)),
           purchaseBills: (snapshot.purchases || []).length,
           lowStock: lowStockCount,
           expiry: snapshot.expiry?.length || 0,
+          inventoryValue,
+          deadStock: deadStockProducts.size,
         })
       } catch (error) {
         console.error('Dashboard load error:', error)
@@ -2884,17 +2909,17 @@ function Dashboard({ store, profile, onNavigate }) {
       />
 
       <div className="stats-grid dashboard-stats">
-        <button type="button" className="stat-card stat-card-action" onClick={() => onNavigate?.('Sales')}>
+        <button type="button" className="stat-card stat-card-action" onClick={() => onNavigate?.('Sales', 'Completed Bills')}>
           <span className="stat-icon"><AppIcon name="sales" size={17} /></span>
           <span>Today's Sales</span>
           <strong>{money(stats.sales)}</strong>
-          <small>Open sales</small>
+          <small>Open completed bills</small>
         </button>
         <button type="button" className="stat-card stat-card-action" onClick={() => onNavigate?.('Purchases', 'Supplier Invoices')}>
           <span className="stat-icon"><AppIcon name="purchases" size={17} /></span>
           <span>Purchase Bills Today</span>
           <strong>{stats.purchaseBills}</strong>
-          <small>Open purchases</small>
+          <small>Open purchase register</small>
         </button>
         <button type="button" className="stat-card stat-card-action" onClick={() => onNavigate?.('Inventory', 'Low Stock')}>
           <span className="stat-icon"><AppIcon name="inventory" size={17} /></span>
@@ -2907,6 +2932,18 @@ function Dashboard({ store, profile, onNavigate }) {
           <span>Expiry Alerts</span>
           <strong>{stats.expiry}</strong>
           <small>Review expiring batches</small>
+        </button>
+        <button type="button" className="stat-card stat-card-action" onClick={() => onNavigate?.('Inventory', 'Batches')}>
+          <span className="stat-icon"><AppIcon name="inventory" size={17} /></span>
+          <span>Inventory Value</span>
+          <strong>{money(stats.inventoryValue)}</strong>
+          <small>At recorded purchase cost</small>
+        </button>
+        <button type="button" className="stat-card stat-card-action" onClick={() => onNavigate?.('Inventory', 'Dead Stock')}>
+          <span className="stat-icon"><AppIcon name="inventory" size={17} /></span>
+          <span>Dead-stock Products</span>
+          <strong>{stats.deadStock}</strong>
+          <small>Based on latest risk snapshot</small>
         </button>
       </div>
 
