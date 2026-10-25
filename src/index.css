@@ -2129,12 +2129,12 @@ a:hover { color: var(--navy); }
 }
 
 
-/* Horizontal PharmDesk lockup approved by user: 1500 × 380 (3.947:1) */
+/* Approved stacked PharmDesk lockup: icon above wordmark and tagline. */
 .auth-brand-primary-logo {
   display: block !important;
   width: min(390px, 100%) !important;
   height: auto !important;
-  aspect-ratio: 1500 / 380 !important;
+  aspect-ratio: 3 / 2 !important;
   max-height: none !important;
   object-fit: contain !important;
   object-position: center !important;
@@ -2143,7 +2143,7 @@ a:hover { color: var(--navy); }
   .auth-brand-primary-logo {
     width: min(330px, 92%) !important;
     height: auto !important;
-    aspect-ratio: 1500 / 380 !important;
+    aspect-ratio: 3 / 2 !important;
     margin: 0 auto 24px !important;
   }
 }
@@ -2151,31 +2151,6 @@ a:hover { color: var(--navy); }
   .auth-brand-primary-logo {
     width: min(300px, 92%) !important;
     height: auto !important;
-    aspect-ratio: 1500 / 380 !important;
-  }
-}
-
-
-/* Use the supplied horizontal artwork at its natural ratio (360 × 92). */
-.auth-brand-primary-logo {
-  width: min(390px, 100%) !important;
-  height: auto !important;
-  aspect-ratio: 1500 / 380 !important;
-  object-fit: contain !important;
-  object-position: center !important;
-}
-@media (max-width: 760px) {
-  .auth-brand-primary-logo {
-    width: min(330px, 92%) !important;
-    height: auto !important;
-    aspect-ratio: 1500 / 380 !important;
-    margin: 0 auto 24px !important;
-  }
-}
-@media (max-width: 390px) {
-  .auth-brand-primary-logo {
-    width: min(300px, 92%) !important;
-    height: auto !important;
-    aspect-ratio: 1500 / 380 !important;
+    aspect-ratio: 3 / 2 !important;
   }
 }
