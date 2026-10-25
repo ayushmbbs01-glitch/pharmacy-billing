@@ -17,12 +17,13 @@ export function useWorkingDraft({
   onRestore,
   hasWork,
   enabled = true,
+  localStorageKey = null,
 }) {
   const [ready, setReady] = useState(false)
   const restoreRef = useRef(onRestore)
   const latestValueRef = useRef(value)
   const latestHasWorkRef = useRef(hasWork)
-  const localKey = `pharmdesk:working-draft:${storeId || 'no-store'}:${moduleKey}:${draftKey}`
+  const localKey = localStorageKey || `pharmdesk:working-draft:${storeId || 'no-store'}:${moduleKey}:${draftKey}`
 
   useEffect(() => { restoreRef.current = onRestore }, [onRestore])
   useEffect(() => { latestValueRef.current = value }, [value])
