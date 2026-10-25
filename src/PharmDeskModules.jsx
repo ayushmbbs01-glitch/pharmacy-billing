@@ -2399,7 +2399,7 @@ function PharmacyApp({ session }) {
   const [requestedInventoryTab, setRequestedInventoryTab] = useState(null)
   const [requestedPurchasesTab, setRequestedPurchasesTab] = useState(null)
   const navigateToModule = (module, tab = null) => {
-    setRequestedSalesTab(module === 'Sales' ? tab : null)
+    setRequestedSalesTab(module === 'Sales' ? (tab || 'New Sale') : null)
     setRequestedInventoryTab(module === 'Inventory' ? tab : null)
     setRequestedPurchasesTab(module === 'Purchases' ? tab : null)
     setActiveNav(module)
