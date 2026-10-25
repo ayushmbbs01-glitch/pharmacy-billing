@@ -6,9 +6,18 @@ import { supabase } from './supabaseClient'
  * Supabase for recovery on another signed-in device. The draft row is scoped
  * to the authenticated user, store, module, and logical draft key.
  *
- * The hook never submits a bill or purchase; only explicit transaction
- * completion should do that.
+ * Cleared drafts are represented by a timestamped tombstone. This prevents a
+ * stale local copy on another device from resurrecting a bill after it was
+ * completed on the first device.
  */
+const withoutMetadata = (payload) => {
+  if (!payload || typeof payload !== 'object') return {}
+  const { savedAt, __cleared, ...value } = payload
+  return value
+}
+
+const valueSignature = (payload) => JSON.stringify(withoutMetadata(payload))
+
 export function useWorkingDraft({
   storeId,
   moduleKey,
@@ -20,15 +29,13 @@ export function useWorkingDraft({
   localStorageKey = null,
 }) {
   const [ready, setReady] = useState(false)
-  const restoreIdentityRef = useRef(null)
   const restoreRef = useRef(onRestore)
   const latestValueRef = useRef(value)
   const latestHasWorkRef = useRef(hasWork)
   const saveTimerRef = useRef(null)
   const generationRef = useRef(0)
-  const baseLocalKey = localStorageKey || `pharmdesk:working-draft:${storeId || 'no-store'}:${moduleKey}:${draftKey}`
-  const [scopedLocalKey, setScopedLocalKey] = useState(null)
-  const localKey = scopedLocalKey || baseLocalKey
+  const lastSyncedValueRef = useRef(null)
+  const localKey = localStorageKey || `pharmdesk:working-draft:${storeId || 'no-store'}:${moduleKey}:${draftKey}`
 
   useEffect(() => { restoreRef.current = onRestore }, [onRestore])
   useEffect(() => { latestValueRef.current = value }, [value])
@@ -36,49 +43,34 @@ export function useWorkingDraft({
 
   useEffect(() => {
     let cancelled = false
-    const identity = `${storeId || ''}|${moduleKey || ''}|${draftKey}|${baseLocalKey}`
-    restoreIdentityRef.current = null
+    let channel = null
     setReady(false)
+    lastSyncedValueRef.current = null
     if (!enabled || !storeId || !moduleKey) {
-      restoreIdentityRef.current = identity
       setReady(true)
       return () => { cancelled = true }
     }
 
     const restore = async () => {
-      let userId = null
-      try {
-        const { data: { user } } = await supabase.auth.getUser()
-        userId = user?.id || null
-      } catch {}
-
-      const resolvedKey = `${baseLocalKey}:user:${userId || 'guest'}`
       let localDraft = null
       try {
-        const raw = window.localStorage.getItem(resolvedKey)
+        const raw = window.localStorage.getItem(localKey)
         if (raw) localDraft = JSON.parse(raw)
-        // One-time migration for drafts saved by the previous store-only key.
-        if (!localDraft && resolvedKey !== baseLocalKey) {
-          const legacyRaw = window.localStorage.getItem(baseLocalKey)
-          if (legacyRaw) {
-            localDraft = JSON.parse(legacyRaw)
-            window.localStorage.setItem(resolvedKey, JSON.stringify(localDraft))
-            window.localStorage.removeItem(baseLocalKey)
-          }
-        }
       } catch (error) {
         console.warn('Could not read local working draft:', error)
       }
 
       let cloudDraft = null
+      let userId = null
       try {
         const { data: { user } } = await supabase.auth.getUser()
-        if (user?.id) {
+        userId = user?.id || null
+        if (userId) {
           const { data, error } = await supabase
             .from('pharmdesk_working_drafts')
             .select('payload,updated_at')
             .eq('store_id', storeId)
-            .eq('user_id', user.id)
+            .eq('user_id', userId)
             .eq('module_key', moduleKey)
             .eq('draft_key', draftKey)
             .maybeSingle()
@@ -86,50 +78,116 @@ export function useWorkingDraft({
           cloudDraft = data ? { ...data.payload, savedAt: data.updated_at } : null
         }
       } catch (error) {
-        // Local recovery remains available if the draft table migration has
-        // not been applied or the network is temporarily unavailable.
+        // Local recovery remains available if the draft table is unavailable
+        // or the network is temporarily down.
         console.warn('Cloud draft unavailable; keeping local recovery:', error?.message || error)
       }
 
       if (cancelled) return
-      setScopedLocalKey(resolvedKey)
-      restoreIdentityRef.current = identity
       const localTime = Date.parse(localDraft?.savedAt || 0) || 0
       const cloudTime = Date.parse(cloudDraft?.savedAt || 0) || 0
-      const chosen = cloudTime > localTime ? cloudDraft : localDraft || cloudDraft
-      if (chosen && typeof chosen === 'object') {
-        try { restoreRef.current?.(chosen) } catch (error) {
-          console.warn('Could not restore working draft:', error)
+      const cloudIsNewer = Boolean(cloudDraft && cloudTime >= localTime)
+
+      if (cloudIsNewer && cloudDraft.__cleared) {
+        try { window.localStorage.removeItem(localKey) } catch {}
+        restoreRef.current?.({})
+        lastSyncedValueRef.current = null
+      } else {
+        const chosen = cloudIsNewer ? cloudDraft : localDraft || cloudDraft
+        if (chosen && typeof chosen === 'object' && !chosen.__cleared) {
+          try { restoreRef.current?.(chosen) } catch (error) {
+            console.warn('Could not restore working draft:', error)
+          }
+          lastSyncedValueRef.current = valueSignature(chosen)
+        } else {
+          lastSyncedValueRef.current = valueSignature(latestValueRef.current)
         }
       }
+
+      // Live updates allow a draft changed on another signed-in device to
+      // appear here without refreshing. Never overwrite unsaved local edits.
+      if (userId) {
+        channel = supabase
+          .channel(`working-draft:${storeId}:${moduleKey}:${draftKey}:${userId}`)
+          .on('postgres_changes', {
+            event: '*',
+            schema: 'public',
+            table: 'pharmdesk_working_drafts',
+            filter: `store_id=eq.${storeId}`,
+          }, (event) => {
+            const row = event.new
+            const oldRow = event.old
+            const matches = row &&
+              row.user_id === userId &&
+              row.module_key === moduleKey &&
+              row.draft_key === draftKey
+            if (!matches) return
+
+            const currentSignature = valueSignature(latestValueRef.current)
+            if (lastSyncedValueRef.current === null ||
+                currentSignature !== lastSyncedValueRef.current) return
+
+            const remotePayload = row.payload || {}
+            if (remotePayload.__cleared) {
+              try { window.localStorage.removeItem(localKey) } catch {}
+              restoreRef.current?.({})
+              lastSyncedValueRef.current = null
+              return
+            }
+
+            const remoteSignature = valueSignature(remotePayload)
+            if (remoteSignature === currentSignature) return
+            try {
+              restoreRef.current?.({ ...remotePayload, savedAt: row.updated_at })
+              lastSyncedValueRef.current = remoteSignature
+            } catch (error) {
+              console.warn('Could not apply cross-device draft update:', error)
+            }
+          })
+          .subscribe()
+      }
+
       setReady(true)
     }
 
     restore()
-    return () => { cancelled = true }
-  }, [storeId, moduleKey, draftKey, baseLocalKey, enabled])
+    return () => {
+      cancelled = true
+      if (channel) supabase.removeChannel(channel)
+    }
+  }, [storeId, moduleKey, draftKey, localKey, enabled])
 
   useEffect(() => {
-    const identity = `${storeId || ''}|${moduleKey || ''}|${draftKey}|${baseLocalKey}`
-    if (!ready || restoreIdentityRef.current !== identity || !enabled || !storeId || !moduleKey) return
+    if (!ready || !enabled || !storeId || !moduleKey) return
     const generation = generationRef.current
     const timer = window.setTimeout(async () => {
       if (generation !== generationRef.current) return
+
+      const now = new Date().toISOString()
       const hasCurrentWork = Boolean(latestHasWorkRef.current)
       if (!hasCurrentWork) {
         try { window.localStorage.removeItem(localKey) } catch {}
+        const payload = { __cleared: true, savedAt: now }
         try {
           const { data: { user } } = await supabase.auth.getUser()
-          if (user?.id) {
-            await supabase.from('pharmdesk_working_drafts').delete()
-              .eq('store_id', storeId).eq('user_id', user.id)
-              .eq('module_key', moduleKey).eq('draft_key', draftKey)
-          }
-        } catch {}
+          if (generation !== generationRef.current || !user?.id) return
+          const { error } = await supabase.from('pharmdesk_working_drafts').upsert({
+            store_id: storeId,
+            user_id: user.id,
+            module_key: moduleKey,
+            draft_key: draftKey,
+            payload,
+            updated_at: now,
+          }, { onConflict: 'store_id,user_id,module_key,draft_key' })
+          if (error) throw error
+          lastSyncedValueRef.current = valueSignature(latestValueRef.current)
+        } catch (error) {
+          console.warn('Could not synchronize cleared draft:', error?.message || error)
+        }
         return
       }
 
-      const payload = { ...latestValueRef.current, savedAt: new Date().toISOString() }
+      const payload = { ...latestValueRef.current, savedAt: now }
       try { window.localStorage.setItem(localKey, JSON.stringify(payload)) } catch (error) {
         console.warn('Could not save local working draft:', error)
       }
@@ -142,9 +200,10 @@ export function useWorkingDraft({
           module_key: moduleKey,
           draft_key: draftKey,
           payload,
-          updated_at: payload.savedAt,
+          updated_at: now,
         }, { onConflict: 'store_id,user_id,module_key,draft_key' })
         if (error) throw error
+        lastSyncedValueRef.current = valueSignature(latestValueRef.current)
       } catch (error) {
         console.warn('Cloud draft save failed; local copy retained:', error?.message || error)
       }
@@ -154,24 +213,31 @@ export function useWorkingDraft({
       window.clearTimeout(timer)
       if (saveTimerRef.current === timer) saveTimerRef.current = null
     }
-  }, [ready, enabled, storeId, moduleKey, draftKey, baseLocalKey, localKey, value, hasWork])
+  }, [ready, enabled, storeId, moduleKey, draftKey, localKey, value, hasWork])
 
   const clearDraft = async () => {
     generationRef.current += 1
     if (saveTimerRef.current != null) window.clearTimeout(saveTimerRef.current)
     saveTimerRef.current = null
     try { window.localStorage.removeItem(localKey) } catch {}
-    try { window.localStorage.removeItem(baseLocalKey) } catch {}
-    if (scopedLocalKey) { try { window.localStorage.removeItem(scopedLocalKey) } catch {} }
+    const now = new Date().toISOString()
+    const payload = { __cleared: true, savedAt: now }
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (user?.id && storeId) {
-        await supabase.from('pharmdesk_working_drafts').delete()
-          .eq('store_id', storeId).eq('user_id', user.id)
-          .eq('module_key', moduleKey).eq('draft_key', draftKey)
+        const { error } = await supabase.from('pharmdesk_working_drafts').upsert({
+          store_id: storeId,
+          user_id: user.id,
+          module_key: moduleKey,
+          draft_key: draftKey,
+          payload,
+          updated_at: now,
+        }, { onConflict: 'store_id,user_id,module_key,draft_key' })
+        if (error) throw error
       }
+      lastSyncedValueRef.current = null
     } catch (error) {
-      console.warn('Could not clear saved working draft:', error?.message || error)
+      console.warn('Could not synchronize cleared draft:', error?.message || error)
     }
   }
 
