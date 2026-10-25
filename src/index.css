@@ -1537,3 +1537,27 @@ a:hover { color: var(--navy); }
   .auth-screen { background: #f4f8fc; }
   .loading-card { padding: 24px 18px; }
 }
+
+.loading-progress {
+  width: min(260px, 78vw);
+  height: 7px;
+  margin: 22px auto 0;
+  border-radius: 999px;
+  background: rgba(222,241,250,.2);
+  overflow: hidden;
+}
+.loading-progress span {
+  display: block;
+  width: 42%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #48c8d0, #77e1e4);
+  animation: pharmdesk-loading 1.7s ease-in-out infinite alternate;
+}
+@keyframes pharmdesk-loading {
+  from { transform: translateX(0); }
+  to { transform: translateX(135%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .loading-progress span { animation: none; width: 65%; }
+}
