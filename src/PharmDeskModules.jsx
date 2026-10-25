@@ -2274,7 +2274,7 @@ function AppIcon({ name, size = 19 }) {
 function PharmDeskLogo({ compact = false }) {
   return (
     <div className={compact ? 'pharmdesk-logo-code compact' : 'pharmdesk-logo-code'}>
-      <img className="pharmdesk-mark-code" src="/icons/pharmdesk-icon-sidebar.svg?v=7" alt="" />
+      <img className="pharmdesk-mark-code" src="/icons/pharmdesk-icon-sidebar.svg?v=8" alt="" />
       <span className="pharmdesk-logo-type">
         <span className="pharmdesk-wordmark"><span>Pharm</span><b>Desk</b></span>
         <span className="pharmdesk-tagline">MANAGE · SELL · TRACK · GROW</span>
