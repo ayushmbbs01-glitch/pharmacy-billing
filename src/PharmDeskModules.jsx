@@ -972,10 +972,10 @@ function LoginScreen() {
       >
         <div className="brand-mark"><img src="/icons/pharmdesk-logo.svg" alt="PharmDesk" /></div>
 
-        <h1>Welcome to PharmDesk</h1>
+        <h1>Welcome back</h1>
 
         <p>
-          Sign in to continue
+          Sign in to your PharmDesk account
         </p>
 
         <div className="form-stack">
@@ -2336,17 +2336,15 @@ function PharmDeskLogo({ compact = false }) {
 function AuthBrandPanel() {
   return (
     <section className="auth-brand-panel">
-      <div className="auth-brand-orb orb-one" />
-      <div className="auth-brand-orb orb-two" />
       <div className="auth-brand-content">
-        <img className="auth-brand-primary-logo" src="/icons/pharmdesk-logo.svg?v=5" alt="PharmDesk — Manage, Sell, Track, Grow" />
-        <h2>Smart Pharmacy Management</h2>
-        <p>Manage · Sell · Track · Grow</p>
+        <img className="auth-brand-primary-logo" src="/icons/pharmdesk-logo.svg?v=6" alt="PharmDesk — Manage, Sell, Track, Grow" />
+        <h2>Smarter Pharmacy<br />Management</h2>
+        <p className="auth-brand-intro">Everything you need to run<br className="auth-desktop-break" /> your pharmacy, in one place.</p>
         <div className="auth-brand-features">
-          <span>Manage inventory</span>
-          <span>Fast, simple billing</span>
-          <span>Track your business</span>
-          <span>Grow with confidence</span>
+          <div className="auth-feature"><span className="auth-feature-icon">▣</span><span><strong>Manage Inventory</strong><small>Track stock, batches and expiry</small></span></div>
+          <div className="auth-feature"><span className="auth-feature-icon">🛒</span><span><strong>Sell Effortlessly</strong><small>Fast and simple billing</small></span></div>
+          <div className="auth-feature"><span className="auth-feature-icon">▥</span><span><strong>Track Business</strong><small>Real-time insights</small></span></div>
+          <div className="auth-feature"><span className="auth-feature-icon">↗</span><span><strong>Grow with Confidence</strong><small>Make data-driven decisions</small></span></div>
         </div>
       </div>
     </section>
