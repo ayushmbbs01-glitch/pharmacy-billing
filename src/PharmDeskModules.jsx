@@ -19628,7 +19628,7 @@ const [
                   {index > 0 && <span aria-hidden="true">→</span>}
                   <span style={{ padding: '6px 10px', border: '1px solid #cbd5e1', borderRadius: 9, background: '#fff' }}>
                     <strong>{level.unit_name || `Unit ${index + 1}`}</strong>
-                    {index > 0 && <small style={{ display: 'block', color: '#64748b' }}>{safeNumber(level.units_per_parent) || 1} {packagingLevels[index - 1]?.unit_name || 'smaller unit'} per {level.unit_name || 'pack'}</small>}
+                    {index > 0 && <small style={{ display: 'block', color: '#64748b' }}>{safeNumber(level.units_per_parent) || 1} {level.unit_name || 'smaller units'} per {packagingLevels[index - 1]?.unit_name || 'larger package'}</small>}
                   </span>
                 </React.Fragment>
               ))}
@@ -19685,7 +19685,7 @@ const [
                           },  
                         )  
                       }  
-                      placeholder="Tablet / Strip / Box"  
+                      placeholder="Box / Strip / Tablet"  
                     />  
                   </label>  
   
