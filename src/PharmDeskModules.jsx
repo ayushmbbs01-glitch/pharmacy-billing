@@ -8687,149 +8687,123 @@ function PurchaseItemRow({
    SUPPLIER HISTORY  
 ========================================================= */  
   
-function SupplierInvoices({  
-  store,  
-}) {  
-  const [rows, setRows] =  
-    useState([])  
-  const [selected, setSelected] =  
-    useState(null)  
-  const [searchQuery, setSearchQuery] =  
-    useState('')  
+function SupplierInvoices({ store }) {
+  const [rows, setRows] = useState([])
+  const [selected, setSelected] = useState(null)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [fromDate, setFromDate] = useState('')
+  const [toDate, setToDate] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
 
-  const filteredRows = useMemo(() => {  
-    const q = String(searchQuery || '').trim()  
+  const filteredRows = useMemo(() => {
+    const q = String(searchQuery || '').trim()
+    return rows.filter((row) => {
+      if (fromDate && row.invoice_date < fromDate) return false
+      if (toDate && row.invoice_date > toDate) return false
+      if (!q) return true
+      return fuzzyScore(q, [
+        row.invoice_number,
+        row.suppliers?.supplier_name,
+        row.invoice_date,
+        row.total_amount,
+      ].filter((value) => value !== null && value !== undefined).join(' ')) > 0
+    })
+  }, [rows, searchQuery, fromDate, toDate])
 
-    if (!q) return rows  
+  const load = async () => {
+    if (!store?.id) return
+    setLoading(true)
+    setError('')
+    try {
+      const { data, error: queryError } = await supabase
+        .from('purchase_invoices')
+        .select('*, suppliers(*)')
+        .eq('store_id', store.id)
+        .order('invoice_date', { ascending: false })
+        .limit(1000)
+      if (queryError) throw queryError
+      setRows(data || [])
+    } catch (loadError) {
+      console.error('Supplier invoices load error:', loadError)
+      setError('Could not load supplier invoices. Please try again.')
+    } finally {
+      setLoading(false)
+    }
+  }
 
-    return rows  
-      .map((row) => ({  
-        row,  
-        score: fuzzyScore(  
-          q,  
-          [  
-            row.invoice_number,  
-            row.suppliers?.supplier_name,  
-            row.invoice_date,  
-            row.total_amount,  
-          ]  
-            .filter((value) => value !== null && value !== undefined)  
-            .join(' '),  
-        ),  
-      }))  
-      .filter((entry) => entry.score > 0)  
-      .sort((a, b) => b.score - a.score)  
-      .map((entry) => entry.row)  
-  }, [rows, searchQuery])  
-  
-  const load = async () => {  
-    const { data } =  
-      await supabase  
-        .from('purchase_invoices')  
-        .select(`  
-          *,  
-          suppliers (  
-            *  
-          )  
-        `)  
-        .eq(  
-          'store_id',  
-          store.id,  
-        )  
-        .order(  
-          'invoice_date',  
-          {  
-            ascending: false,  
-          },  
-        )  
-        .limit(200)  
-  
-    setRows(data || [])  
-  }  
-  
-  useEffect(() => {  
-    if (store?.id) load()  
-  }, [store?.id])  
-  
-  return (  
-    <PanelList title="Supplier Invoices">  
-      <div style={{ marginBottom: '12px' }}>  
-        <input  
-          type="search"  
-          value={searchQuery}  
-          onChange={(e) =>  
-            setSearchQuery(e.target.value)  
-          }  
-          placeholder="Search invoice number or supplier…"  
-          aria-label="Search supplier invoices"  
-        />  
-      </div>  
+  useEffect(() => {
+    if (store?.id) load()
+  }, [store?.id])
 
-      {!filteredRows.length ? (  
-        <EmptyState  
-          text={  
-            searchQuery.trim()  
-              ? 'No supplier invoices match your search.'  
-              : 'No supplier invoices found.'  
-          }  
-        />  
-      ) : (  
-        <div className="record-list">  
-          {filteredRows.map((row) => (  
-          <button  
-            className="record-row"  
-            key={row.id}  
-            onClick={() =>  
-              setSelected(  
-                row.suppliers,  
-              )  
-            }  
-          >  
-            <div>  
-              <strong>  
-                {  
-                  row.invoice_number  
-                }  
-              </strong>  
-  
-              <span>  
-                {row.suppliers  
-                  ?.supplier_name ||  
-                  'Supplier'}  
-              </span>  
-            </div>  
-  
-            <div className="record-right">  
-              <span>  
-                {dateText(  
-                  row.invoice_date,  
-                )}  
-              </span>  
-  
-              <strong>  
-                {money(  
-                  row.total_amount,  
-                )}  
-              </strong>  
-            </div>  
-          </button>  
-          ))}  
-        </div>  
-      )}  
-  
-      {selected && (  
-        <SupplierHistoryModal  
-          supplier={selected}  
-          store={store}  
-          onClose={() =>  
-            setSelected(null)  
-          }  
-        />  
-      )}  
-    </PanelList>  
-  )  
-}  
-  
+  const exportCsv = () => {
+    const quote = (value) => '"' + String(value ?? '').replace(/"/g, '""') + '"'
+    const header = ['Invoice Number', 'Invoice Date', 'Supplier', 'Supplier Invoice Total']
+    const lines = filteredRows.map((row) => [
+      row.invoice_number,
+      row.invoice_date,
+      row.suppliers?.supplier_name || 'Supplier',
+      row.total_amount,
+    ].map(quote).join(','))
+    const blob = new Blob(['\uFEFF' + [header.map(quote).join(','), ...lines].join('\r\n')], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'pharmdesk-purchases-' + todayISO() + '.csv'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  }
+
+  return (
+    <PanelList title="Supplier Invoices">
+      <div className="search-row">
+        <input
+          type="search"
+          value={searchQuery}
+          onChange={(event) => setSearchQuery(event.target.value)}
+          placeholder="Search invoice number or supplier…"
+          aria-label="Search supplier invoices"
+        />
+        <button type="button" className="secondary-button" onClick={exportCsv} disabled={!filteredRows.length}>Export CSV</button>
+      </div>
+      <div className="form-grid">
+        <label>From date
+          <input type="date" value={fromDate} max={toDate || undefined} onChange={(event) => setFromDate(event.target.value)} />
+        </label>
+        <label>To date
+          <input type="date" value={toDate} min={fromDate || undefined} onChange={(event) => setToDate(event.target.value)} />
+        </label>
+      </div>
+      {error && <div className="error-box">{error}</div>}
+      {loading && <div className="muted">Loading supplier invoices…</div>}
+      <div className="muted">{filteredRows.length} invoice(s) match the current filters.</div>
+      {!filteredRows.length ? (
+        <EmptyState text={searchQuery.trim() || fromDate || toDate ? 'No supplier invoices match these filters.' : 'No supplier invoices found.'} />
+      ) : (
+        <div className="record-list">
+          {filteredRows.map((row) => (
+            <button type="button" className="record-row" key={row.id} onClick={() => setSelected(row.suppliers)}>
+              <div>
+                <strong>{row.invoice_number || 'Supplier invoice'}</strong>
+                <span>{row.suppliers?.supplier_name || 'Supplier'}</span>
+              </div>
+              <div className="record-right">
+                <span>{dateText(row.invoice_date)}</span>
+                <strong>{money(row.total_amount)}</strong>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+      {selected && (
+        <SupplierHistoryModal supplier={selected} store={store} onClose={() => setSelected(null)} />
+      )}
+    </PanelList>
+  )
+}
+
 function SupplierHistoryModal({  
   supplier,  
   store,  
