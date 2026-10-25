@@ -6399,6 +6399,23 @@ function SaleEditModal({
   
   const [error, setError] =  
     useState('')  
+
+  const { clearDraft: clearSaleEditDraft } = useWorkingDraft({
+    storeId: store?.id,
+    moduleKey: 'sales-bill-edit',
+    draftKey: `edit-${sale.id}`,
+    enabled: items.length > 0,
+    value: { customerId, billDate, billDiscount, notes, items, payments },
+    hasWork: items.length > 0,
+    onRestore: (draft) => {
+      setCustomerId(draft.customerId || '')
+      setBillDate(draft.billDate || todayISO())
+      setBillDiscount(draft.billDiscount ?? 0)
+      setNotes(draft.notes || '')
+      if (Array.isArray(draft.items) && draft.items.length) setItems(draft.items)
+      if (Array.isArray(draft.payments)) setPayments(draft.payments)
+    },
+  })
   
   useEffect(() => {  
     loadCustomers()  
@@ -6595,6 +6612,7 @@ function SaleEditModal({
         throw rpcError  
       }  
   
+      await clearSaleEditDraft()
       onSaved()  
     } catch (err) {  
       setError(  
