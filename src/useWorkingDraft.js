@@ -212,6 +212,8 @@ export function useWorkingDraft({
     return () => {
       window.clearTimeout(timer)
       if (saveTimerRef.current === timer) saveTimerRef.current = null
+      // Invalidate any async write already in flight for an older form value.
+      if (generationRef.current === generation) generationRef.current += 1
     }
   }, [ready, enabled, storeId, moduleKey, draftKey, localKey, value, hasWork])
 
