@@ -155,6 +155,8 @@ export function useWorkingDraft({
     if (saveTimerRef.current != null) window.clearTimeout(saveTimerRef.current)
     saveTimerRef.current = null
     try { window.localStorage.removeItem(localKey) } catch {}
+    try { window.localStorage.removeItem(baseLocalKey) } catch {}
+    if (scopedLocalKey) { try { window.localStorage.removeItem(scopedLocalKey) } catch {} }
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (user?.id && storeId) {
