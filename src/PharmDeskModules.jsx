@@ -6562,8 +6562,7 @@ function SaleEditModal({
             p_notes:  
               notes.trim() || null,  
             p_items: payloadItems,  
-            p_payments:  
-              paymentRows,  
+            p_payments: [],  
           },  
         )  
   
