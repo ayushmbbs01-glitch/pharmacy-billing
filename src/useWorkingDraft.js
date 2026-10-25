@@ -29,13 +29,16 @@ export function useWorkingDraft({
   localStorageKey = null,
 }) {
   const [ready, setReady] = useState(false)
+  const restoreIdentityRef = useRef(null)
+  const [scopedLocalKey, setScopedLocalKey] = useState(null)
   const restoreRef = useRef(onRestore)
   const latestValueRef = useRef(value)
   const latestHasWorkRef = useRef(hasWork)
   const saveTimerRef = useRef(null)
   const generationRef = useRef(0)
   const lastSyncedValueRef = useRef(null)
-  const localKey = localStorageKey || `pharmdesk:working-draft:${storeId || 'no-store'}:${moduleKey}:${draftKey}`
+  const baseLocalKey = localStorageKey || `pharmdesk:working-draft:${storeId || 'no-store'}:${moduleKey}:${draftKey}`
+  const localKey = scopedLocalKey || baseLocalKey
 
   useEffect(() => { restoreRef.current = onRestore }, [onRestore])
   useEffect(() => { latestValueRef.current = value }, [value])
@@ -44,27 +47,36 @@ export function useWorkingDraft({
   useEffect(() => {
     let cancelled = false
     let channel = null
+    const identity = `${storeId || ''}|${moduleKey || ''}|${draftKey}|${baseLocalKey}`
+    restoreIdentityRef.current = null
     setReady(false)
     lastSyncedValueRef.current = null
     if (!enabled || !storeId || !moduleKey) {
+      restoreIdentityRef.current = identity
       setReady(true)
       return () => { cancelled = true }
     }
 
     const restore = async () => {
       let localDraft = null
-      try {
-        const raw = window.localStorage.getItem(localKey)
-        if (raw) localDraft = JSON.parse(raw)
-      } catch (error) {
-        console.warn('Could not read local working draft:', error)
-      }
-
       let cloudDraft = null
       let userId = null
       try {
         const { data: { user } } = await supabase.auth.getUser()
         userId = user?.id || null
+      } catch {}
+
+      // Local recovery is user-scoped too. Never restore another employee's
+      // draft on a shared pharmacy terminal.
+      const resolvedLocalKey = `${baseLocalKey}:user:${userId || 'guest'}`
+      try {
+        const raw = window.localStorage.getItem(resolvedLocalKey)
+        if (raw) localDraft = JSON.parse(raw)
+      } catch (error) {
+        console.warn('Could not read local working draft:', error)
+      }
+
+      try {
         if (userId) {
           const { data, error } = await supabase
             .from('pharmdesk_working_drafts')
@@ -84,6 +96,8 @@ export function useWorkingDraft({
       }
 
       if (cancelled) return
+      setScopedLocalKey(resolvedLocalKey)
+      restoreIdentityRef.current = identity
       const localTime = Date.parse(localDraft?.savedAt || 0) || 0
       const cloudTime = Date.parse(cloudDraft?.savedAt || 0) || 0
       const cloudIsNewer = Boolean(cloudDraft && cloudTime >= localTime)
@@ -155,10 +169,11 @@ export function useWorkingDraft({
       cancelled = true
       if (channel) supabase.removeChannel(channel)
     }
-  }, [storeId, moduleKey, draftKey, localKey, enabled])
+  }, [storeId, moduleKey, draftKey, baseLocalKey, enabled])
 
   useEffect(() => {
-    if (!ready || !enabled || !storeId || !moduleKey) return
+    const identity = `${storeId || ''}|${moduleKey || ''}|${draftKey}|${baseLocalKey}`
+    if (!ready || restoreIdentityRef.current !== identity || !enabled || !storeId || !moduleKey) return
     const generation = generationRef.current
     const timer = window.setTimeout(async () => {
       if (generation !== generationRef.current) return
@@ -215,7 +230,7 @@ export function useWorkingDraft({
       // Invalidate any async write already in flight for an older form value.
       if (generationRef.current === generation) generationRef.current += 1
     }
-  }, [ready, enabled, storeId, moduleKey, draftKey, localKey, value, hasWork])
+  }, [ready, enabled, storeId, moduleKey, draftKey, baseLocalKey, localKey, value, hasWork])
 
   const clearDraft = async () => {
     generationRef.current += 1
