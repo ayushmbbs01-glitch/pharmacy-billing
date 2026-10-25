@@ -3231,6 +3231,8 @@ function SalesModule({ store, session, initialTab = null }) {
 }  
   
 function NewSale({ store }) {  
+  const draftStorageKey = `pharmdesk:sale-draft:${store?.id || 'no-store'}`
+  const [savedDraftLoaded, setSavedDraftLoaded] = useState(false)
   const [customers, setCustomers] = useState([])  
   const [products, setProducts] = useState([])  
   const [stockByProduct, setStockByProduct] = useState({})  
@@ -3251,7 +3253,48 @@ function NewSale({ store }) {
   const [busy, setBusy] = useState(false)  
   const [message, setMessage] = useState('')  
   const [alternatives, setAlternatives] = useState([])  
-  
+
+  // Keep an unfinished bill on this device so a refresh or accidental close
+  // cannot wipe the cashier's current work. Data is isolated per store.
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(draftStorageKey)
+      if (raw) {
+        const draft = JSON.parse(raw)
+        if (draft && typeof draft === 'object') {
+          setCustomerQuery(draft.customerQuery || '')
+          setSelectedCustomer(draft.selectedCustomer || null)
+          setProductQuery(draft.productQuery || '')
+          setItems(Array.isArray(draft.items) && draft.items.length ? draft.items : [emptySaleItem()])
+          setPayments(Array.isArray(draft.payments) && draft.payments.length ? draft.payments : [{ method: 'cash', amount: 0 }])
+          setBillDiscount(draft.billDiscount ?? 0)
+          setBillDate(draft.billDate || todayISO())
+        }
+      }
+    } catch (draftError) {
+      console.warn('Could not restore unfinished bill:', draftError)
+    } finally {
+      setSavedDraftLoaded(true)
+    }
+  }, [draftStorageKey])
+
+  useEffect(() => {
+    if (!savedDraftLoaded || !store?.id) return
+    const hasWork = Boolean(selectedCustomer || items.some((item) => item.product) || customerQuery.trim() || productQuery.trim() || safeNumber(billDiscount) > 0)
+    try {
+      if (hasWork) {
+        window.localStorage.setItem(draftStorageKey, JSON.stringify({
+          customerQuery, selectedCustomer, productQuery, items, payments,
+          billDiscount, billDate, savedAt: new Date().toISOString(),
+        }))
+      } else {
+        window.localStorage.removeItem(draftStorageKey)
+      }
+    } catch (draftError) {
+      console.warn('Could not save unfinished bill locally:', draftError)
+    }
+  }, [savedDraftLoaded, draftStorageKey, customerQuery, selectedCustomer, productQuery, items, payments, billDiscount, billDate, store?.id])
+
   useEffect(() => {  
     if (!store?.id) return  
     loadCustomers()  
@@ -3601,12 +3644,16 @@ function NewSale({ store }) {
       )  
   
       setSelectedCustomer(null)  
+      setCustomerQuery('')
+      setProductQuery('')
       setItems([emptySaleItem()])  
       setPayments([  
         { method: 'cash', amount: 0 },  
       ])  
       setBillDiscount(0)  
       setAlternatives([])  
+      try { window.localStorage.removeItem(draftStorageKey) } catch {}
+      setMessage(`Sale completed successfully: ${data}. Unfinished bill cleared from this device.`) 
     } catch (error) {  
       setMessage(  
         error.message ||  
@@ -19312,11 +19359,11 @@ const [
                 Packaging  
               </h3>  
   
-              <p className="muted">  
-                Define how the product is  
-                purchased, sold and  
-                physically stocked.  
-              </p>  
+              <p className="muted">Set the real-world pack sizes, from the smallest item upwards. Example: Tablet → Strip → Box. Each step tells PharmDesk how many of the smaller unit fit inside the larger pack.</p>
+              <div className="message-box" style={{ marginTop: 10 }}>
+                <strong>Example</strong><br />
+                If 1 strip contains 10 tablets and 1 box contains 10 strips, enter Tablet first, then Strip = 10 tablets, then Box = 10 strips. PharmDesk converts everything into tablets for stock tracking.
+              </div>  
             </div>  
           </div>  
   
@@ -19337,6 +19384,22 @@ const [
             />  
           </label>  
   
+          <div className="message-box" style={{ marginBottom: 12 }}>
+            <strong>Your pack hierarchy</strong>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginTop: 8 }}>
+              {packagingLevels.map((level, index) => (
+                <React.Fragment key={`pack-summary-${index}`}>
+                  {index > 0 && <span aria-hidden="true">→</span>}
+                  <span style={{ padding: '6px 10px', border: '1px solid #cbd5e1', borderRadius: 9, background: '#fff' }}>
+                    <strong>{level.unit_name || `Unit ${index + 1}`}</strong>
+                    {index > 0 && <small style={{ display: 'block', color: '#64748b' }}>{safeNumber(level.units_per_parent) || 1} per {packagingLevels[index - 1]?.unit_name || 'previous unit'}</small>}
+                  </span>
+                </React.Fragment>
+              ))}
+            </div>
+            <p className="muted" style={{ marginBottom: 0, marginTop: 8 }}>Choose one purchase unit and one stock unit below. Turn on any units you want to offer for sale.</p>
+          </div>
+
           {packagingLevels.map(  
             (  
               level,  
@@ -19347,10 +19410,12 @@ const [
                 key={index}  
               >  
                 <div className="packaging-title">  
-                  <strong>  
-                    Level{' '}  
-                    {index + 1}  
-                  </strong>  
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                    <strong>{index === 0 ? 'Smallest unit' : `Packaging step ${index}`}</strong>
+                    <span className="muted" style={{ fontSize: 12 }}>
+                      {index === 0 ? 'The individual unit you count in stock' : `1 ${level.unit_name || 'unit'} = ${safeNumber(level.units_per_parent) || 1} ${packagingLevels[index - 1]?.unit_name || 'previous unit' + 's'}`}
+                    </span>
+                  </div>  
   
                   {packagingLevels.length >  
                     1 && (  
@@ -19389,7 +19454,7 @@ const [
                   </label>  
   
                   <label>  
-                    Units per parent  
+                    {index === 0 ? 'Units in this smallest unit' : `How many ${level.unit_name || 'units'} in 1 ${packagingLevels[index - 1]?.unit_name || 'parent pack'}`}  
                     <input  
                       type="number"  
                       min="1"  
