@@ -11838,105 +11838,105 @@ function LowStockInventory({ store }) {
   )
 }
 
-function DeadStockInventory({  
-  store,  
-}) {  
-  const [rows, setRows] =  
-    useState([])  
-  const [query, setQuery] =  
-    useState('')  
-  
-  useEffect(() => {  
-    if (!store?.id) return  
-  
-    pharmdeskDb  
-      .from(  
-        'stock_risk_snapshots',  
-      )  
-      .select('*')  
-      .eq(  
-        'store_id',  
-        store.id,  
-      )  
-      .eq(  
-        'risk_type',  
-        'dead_stock',  
-      )  
-      .order(  
-        'created_at',  
-        {  
-          ascending: false,  
-        },  
-      )  
-      .then(({ data }) =>  
-        setRows(  
-          data || [],  
-        ),  
-      )  
-  }, [store?.id])  
-  
-  const filtered =  
-    rows.filter((row) =>  
-      matchesSearch(  
-        query,  
-        row.product_name,  
-        row.product_id,  
-        row.current_stock_units,  
-        row.created_at,  
-      ),  
-    )  
-  
-  return (  
-    <PanelList title="Dead Stock">  
-      <div className="search-row">  
-        <input  
-          placeholder="Search dead stock"  
-          value={query}  
-          onChange={(e) =>  
-            setQuery(e.target.value)  
-          }  
-        />  
-      </div>  
+function DeadStockInventory({ store }) {
+  const [rows, setRows] = useState([])
+  const [query, setQuery] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
 
-      {filtered.length ===  
-      0 ? (  
-        <EmptyState text="No dead-stock snapshots available." />  
-      ) : (  
-        <div className="record-list">  
-          {filtered.map(  
-            (row) => (  
-              <div  
-                className="record-row static"  
-                key={row.id}  
-              >  
-                <div>  
-                  <strong>  
-                    {row.product_name ||  
-                      row.product_id ||  
-                      'Product'}  
-                  </strong>  
-  
-                  <span>  
-                    {dateText(  
-                      row.created_at,  
-                    )}  
-                  </span>  
-                </div>  
-  
-                <span>  
-                  {  
-                    row.current_stock_units  
-                  }  
-                </span>  
-              </div>  
-            ),  
-          )}  
-        </div>  
-      )}  
-    </PanelList>  
-  )  
-}  
-  
+  const load = async () => {
+    if (!store?.id) return
+    setLoading(true)
+    setError('')
+    try {
+      const { data, error: queryError } = await pharmdeskDb
+        .from('stock_risk_snapshots')
+        .select('*')
+        .eq('store_id', store.id)
+        .eq('risk_type', 'dead_stock')
+        .order('created_at', { ascending: false })
+        .limit(2000)
+      if (queryError) throw queryError
+      setRows(data || [])
+    } catch (loadError) {
+      console.error('Dead-stock load error:', loadError)
+      setError('Could not load dead-stock snapshots. Please refresh and try again.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (store?.id) load()
+  }, [store?.id])
+
+  const latestByProduct = new Map()
+  rows.forEach((row) => {
+    const key = row.product_id || row.product_name || row.id
+    if (!latestByProduct.has(key)) latestByProduct.set(key, row)
+  })
+  const filtered = Array.from(latestByProduct.values()).filter((row) => matchesSearch(
+    query,
+    row.product_name,
+    row.product_id,
+    row.current_stock_units,
+    row.created_at,
+    row.risk_type,
+  ))
+
+  const exportCsv = () => {
+    const quote = (value) => '"' + String(value ?? '').replace(/"/g, '""') + '"'
+    const header = ['Product', 'Product ID', 'Risk Type', 'Current Stock Units', 'Snapshot Date']
+    const lines = filtered.map((row) => [
+      row.product_name, row.product_id, row.risk_type, row.current_stock_units, row.created_at,
+    ].map(quote).join(','))
+    const blob = new Blob(['\uFEFF' + [header.map(quote).join(','), ...lines].join('\r\n')], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'pharmdesk-dead-stock-' + todayISO() + '.csv'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  }
+
+  return (
+    <PanelList title="Dead Stock">
+      <div className="search-row">
+        <input
+          placeholder="Search dead stock product or ID"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+        />
+        <button type="button" className="secondary-button" onClick={exportCsv} disabled={!filtered.length}>Export CSV</button>
+        <button type="button" className="secondary-button" onClick={load} disabled={loading}>{loading ? 'Refreshing…' : 'Refresh'}</button>
+      </div>
+      {error && <div className="error-box">{error}</div>}
+      <div className="muted">Showing the latest saved snapshot for each product. Dead-stock results depend on the last snapshot generated by the system.</div>
+      {loading && <div className="muted">Loading dead-stock snapshots…</div>}
+      {!loading && !filtered.length ? (
+        <EmptyState text="No dead-stock snapshots match this search." />
+      ) : (
+        <div className="record-list">
+          {filtered.map((row) => (
+            <div className="record-row static" key={row.id}>
+              <div>
+                <strong>{row.product_name || row.product_id || 'Product'}</strong>
+                <span>Snapshot: {dateTimeText(row.created_at)}</span>
+              </div>
+              <div className="record-right">
+                <strong>{safeNumber(row.current_stock_units)}</strong>
+                <span>units in stock</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </PanelList>
+  )
+}
+
 function StockReconciliation({
   store,
 }) {
