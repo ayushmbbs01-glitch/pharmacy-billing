@@ -7962,11 +7962,14 @@ function NewPurchase({ store }) {
           `Purchase completed successfully: ${data}`,  
         )  
   
-        setInvoiceNumber('')  
+        setInvoiceNumber('')
         setInvoiceDate(todayISO())
-        setItems([  
-          emptyPurchaseItem(),  
-        ])  
+        setSupplierQuery('')
+        setProductQuery('')
+        setSelectedSupplier(null)
+        setItems([
+          emptyPurchaseItem(),
+        ])
         setInvoiceCharges({
           discount: 0,
           cgst: 0,
