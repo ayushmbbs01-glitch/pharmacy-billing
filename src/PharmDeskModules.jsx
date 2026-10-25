@@ -18583,6 +18583,50 @@ const [
   
   const [error, setError] =  
     useState('')  
+
+  const { clearDraft: clearProductDraft } = useWorkingDraft({
+    storeId: store?.id,
+    moduleKey: 'inventory-product',
+    draftKey: editing ? `edit-${product.id}` : 'new-product',
+    value: {
+      name, genericDisplayName, manufacturer, selectedManufacturer, dosageForm,
+      strengthDisplay, categoryId, hsn, gst, sellingPrice, discount,
+      minimumStock, reorderLevel, packQuantity, packUnit, aliasText,
+      packagingName, packagingLevels, packagingDirty, compositionQuery,
+      selectedComposition,
+    },
+    hasWork: Boolean(
+      name.trim() || genericDisplayName.trim() || manufacturer.trim() ||
+      selectedManufacturer.trim() || dosageForm.trim() || strengthDisplay.trim() ||
+      categoryId || hsn.trim() || safeNumber(gst) || safeNumber(sellingPrice) ||
+      safeNumber(discount) || safeNumber(minimumStock) || safeNumber(reorderLevel) ||
+      safeNumber(packQuantity) !== 1 || packUnit !== 'pack' || aliasText.trim() ||
+      packagingName !== 'Standard' || compositionQuery.trim() || selectedComposition
+    ),
+    onRestore: (draft) => {
+      setName(draft.name || '')
+      setGenericDisplayName(draft.genericDisplayName || '')
+      setManufacturer(draft.manufacturer || '')
+      setSelectedManufacturer(draft.selectedManufacturer || '')
+      setDosageForm(draft.dosageForm || '')
+      setStrengthDisplay(draft.strengthDisplay || '')
+      setCategoryId(draft.categoryId || '')
+      setHsn(draft.hsn || '')
+      setGst(draft.gst ?? 0)
+      setSellingPrice(draft.sellingPrice ?? 0)
+      setDiscount(draft.discount ?? 0)
+      setMinimumStock(draft.minimumStock ?? 0)
+      setReorderLevel(draft.reorderLevel ?? 0)
+      setPackQuantity(draft.packQuantity ?? 1)
+      setPackUnit(draft.packUnit || 'pack')
+      setAliasText(draft.aliasText || '')
+      setPackagingName(draft.packagingName || 'Standard')
+      setPackagingLevels(Array.isArray(draft.packagingLevels) && draft.packagingLevels.length ? draft.packagingLevels : [{ level_number: 1, unit_name: 'Tablet', units_per_parent: 1, is_purchase_unit: true, is_sale_unit: true, is_preferred_sale_unit: true, is_stock_unit: true }])
+      setPackagingDirty(Boolean(draft.packagingDirty))
+      setCompositionQuery(draft.compositionQuery || '')
+      setSelectedComposition(draft.selectedComposition || null)
+    },
+  })
   
   useEffect(() => {  
     loadMasterData()  
@@ -19180,6 +19224,7 @@ const [
         }  
       }  
   
+      await clearProductDraft()
       onCreated({  
         id: productId,  
       })  
@@ -19210,6 +19255,7 @@ const [
         .eq('product_id', product.id)
 
       if (storeProductError) throw storeProductError
+      await clearProductDraft()
       onCreated({ id: product.id, deleted: true })
     } catch (error) {
       setError(error.message || 'Unable to delete product.')
