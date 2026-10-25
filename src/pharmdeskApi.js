@@ -508,6 +508,13 @@ export const PharmDeskAPI = {
     })
   },
 
+  addExistingProductToStore(storeId, productId) {
+    return call('pharmdesk_add_existing_product_to_store', {
+      p_store_id: storeId,
+      p_product_id: productId,
+    })
+  },
+
   saveProduct({
     storeId,
     productId = null,
