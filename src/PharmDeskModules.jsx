@@ -17367,6 +17367,21 @@ function CustomerModal({
     useState(false)  
   const [error, setError] =  
     useState('')  
+
+  const { clearDraft: clearCustomerDraft } = useWorkingDraft({
+    storeId: store?.id,
+    moduleKey: 'customers',
+    draftKey: editing ? `edit-${customer.id}` : 'new-customer',
+    value: { name, phone, address, doctorName, doctorAddress },
+    hasWork: Boolean(name.trim() || phone.trim() || address.trim() || doctorName.trim() || doctorAddress.trim()),
+    onRestore: (draft) => {
+      setName(draft.name || '')
+      setPhone(draft.phone || '')
+      setAddress(draft.address || '')
+      setDoctorName(draft.doctorName || '')
+      setDoctorAddress(draft.doctorAddress || '')
+    },
+  })
   
   const save = async (e) => {  
     e.preventDefault()  
@@ -17457,6 +17472,7 @@ function CustomerModal({
         store_id: store.id,  
       }  
   
+      await clearCustomerDraft()
       onCreated(  
         savedCustomer,  
       )  
