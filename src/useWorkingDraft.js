@@ -20,6 +20,7 @@ export function useWorkingDraft({
   localStorageKey = null,
 }) {
   const [ready, setReady] = useState(false)
+  const restoreIdentityRef = useRef(null)
   const restoreRef = useRef(onRestore)
   const latestValueRef = useRef(value)
   const latestHasWorkRef = useRef(hasWork)
@@ -35,8 +36,11 @@ export function useWorkingDraft({
 
   useEffect(() => {
     let cancelled = false
+    const identity = `${storeId || ''}|${moduleKey || ''}|${draftKey}|${baseLocalKey}`
+    restoreIdentityRef.current = null
     setReady(false)
     if (!enabled || !storeId || !moduleKey) {
+      restoreIdentityRef.current = identity
       setReady(true)
       return () => { cancelled = true }
     }
@@ -89,6 +93,7 @@ export function useWorkingDraft({
 
       if (cancelled) return
       setScopedLocalKey(resolvedKey)
+      restoreIdentityRef.current = identity
       const localTime = Date.parse(localDraft?.savedAt || 0) || 0
       const cloudTime = Date.parse(cloudDraft?.savedAt || 0) || 0
       const chosen = cloudTime > localTime ? cloudDraft : localDraft || cloudDraft
@@ -105,7 +110,8 @@ export function useWorkingDraft({
   }, [storeId, moduleKey, draftKey, baseLocalKey, enabled])
 
   useEffect(() => {
-    if (!ready || !enabled || !storeId || !moduleKey) return
+    const identity = `${storeId || ''}|${moduleKey || ''}|${draftKey}|${baseLocalKey}`
+    if (!ready || restoreIdentityRef.current !== identity || !enabled || !storeId || !moduleKey) return
     const generation = generationRef.current
     const timer = window.setTimeout(async () => {
       if (generation !== generationRef.current) return
