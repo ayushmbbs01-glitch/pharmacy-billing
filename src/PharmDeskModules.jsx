@@ -6539,8 +6539,9 @@ function SaleEditModal({
             item.batch?.id ||  
             item.batch_id ||  
             null,  
-          sale_unit_type:  
-            item.unit_type,  
+          unit_type: item.unit_type,
+          sale_packaging_level_id: item.sale_packaging_level_id || null,
+          mrp_packaging_level_id: item.mrp_packaging_level_id || null,
           quantity_entered:  
             safeNumber(  
               item.quantity_entered,  
