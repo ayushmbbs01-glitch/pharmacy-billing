@@ -2127,3 +2127,30 @@ a:hover { color: var(--navy); }
 @media (max-width: 390px) {
   .auth-brand-primary-logo { width: 164px !important; height: auto !important; aspect-ratio: 1.619 / 1; }
 }
+
+
+/* Horizontal PharmDesk lockup approved by user: 1500 × 380 (3.947:1) */
+.auth-brand-primary-logo {
+  display: block !important;
+  width: min(390px, 100%) !important;
+  height: auto !important;
+  aspect-ratio: 1500 / 380 !important;
+  max-height: none !important;
+  object-fit: contain !important;
+  object-position: center !important;
+}
+@media (max-width: 760px) {
+  .auth-brand-primary-logo {
+    width: min(330px, 92%) !important;
+    height: auto !important;
+    aspect-ratio: 1500 / 380 !important;
+    margin: 0 auto 24px !important;
+  }
+}
+@media (max-width: 390px) {
+  .auth-brand-primary-logo {
+    width: min(300px, 92%) !important;
+    height: auto !important;
+    aspect-ratio: 1500 / 380 !important;
+  }
+}
