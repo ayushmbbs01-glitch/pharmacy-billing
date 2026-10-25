@@ -11600,132 +11600,132 @@ function BatchesInventory({
   )  
 }  
   
-function ExpiryInventory({  
-  store,  
-}) {  
-  const [rows, setRows] =  
-    useState([])  
-  const [query, setQuery] =  
-    useState('')  
-  
-  useEffect(() => {  
-    if (!store?.id) return  
-  
-    const limit =  
-      new Date()  
-  
-    limit.setDate(  
-      limit.getDate() +  
-        90,  
-    )  
-  
-    pharmdeskDb  
-      .from('batches')  
-      .select(`  
-        *,  
-        products (  
-          product_name,  
-          generic_display_name,  
-          manufacturer,  
-          strength_display  
-        )  
-      `)  
-      .eq(  
-        'store_id',  
-        store.id,  
-      )  
-      .gt(  
-        'current_stock_units',  
-        0,  
-      )  
-      .lte(  
-        'expiry_date',  
-        limit  
-          .toISOString()  
-          .slice(  
-            0,  
-            10,  
-          ),  
-      )  
-      .order(  
-        'expiry_date',  
-      )  
-      .then(({ data }) =>  
-        setRows(  
-          data || [],  
-        ),  
-      )  
-  }, [store?.id])  
-  
-  const filtered =  
-    rows.filter((row) =>  
-      matchesSearch(  
-        query,  
-        row.batch_number,  
-        row.products?.product_name,  
-        row.products?.generic_display_name,  
-        row.products?.manufacturer,  
-        row.products?.strength_display,  
-        dateText(row.expiry_date),  
-      ),  
-    )  
-  
-  return (  
-    <PanelList title="Expiry">  
-      <div className="search-row">  
-        <input  
-          placeholder="Search product, batch number, manufacturer or expiry"  
-          value={query}  
-          onChange={(e) =>  
-            setQuery(e.target.value)  
-          }  
-        />  
-      </div>  
+function ExpiryInventory({ store }) {
+  const [rows, setRows] = useState([])
+  const [query, setQuery] = useState('')
+  const [windowDays, setWindowDays] = useState('90')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
 
-      <div className="record-list">  
-        {filtered.map(  
-          (row) => (  
-            <div  
-              className="record-row static"  
-              key={row.id}  
-            >  
-              <div>  
-                <strong>  
-                  {  
-                    row.products  
-                      ?.product_name  
-                  }  
-                </strong>  
-  
-                <span>  
-                  Batch{' '}  
-                  {  
-                    row.batch_number  
-                  }  
-                </span>  
-              </div>  
-  
-              <div className="record-right">  
-                <span>  
-                  {dateText(  
-                    row.expiry_date,  
-                  )}  
-                </span>  
-  
-                <strong>  
-                  {  
-                    row.current_stock_units  
-                  }  
-                </strong>  
-              </div>  
-            </div>  
-          ),  
-        )}  
-      </div>  
-    </PanelList>  
-  )  
-}  
-  
+  const load = async () => {
+    if (!store?.id) return
+    setLoading(true)
+    setError('')
+    try {
+      const limit = new Date()
+      limit.setDate(limit.getDate() + 90)
+      const { data, error: queryError } = await pharmdeskDb
+        .from('batches')
+        .select('*, products(product_name, generic_display_name, manufacturer, strength_display)')
+        .eq('store_id', store.id)
+        .gt('current_stock_units', 0)
+        .lte('expiry_date', limit.toISOString().slice(0, 10))
+        .order('expiry_date')
+        .limit(5000)
+      if (queryError) throw queryError
+      setRows(data || [])
+    } catch (loadError) {
+      console.error('Expiry inventory load error:', loadError)
+      setError('Could not load expiry data. Please refresh and try again.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (store?.id) load()
+  }, [store?.id])
+
+  const today = todayISO()
+  const horizon = new Date()
+  horizon.setDate(horizon.getDate() + Number(windowDays))
+  const horizonISO = horizon.toISOString().slice(0, 10)
+  const filtered = rows.filter((row) => {
+    const expiry = row.expiry_date || ''
+    const windowMatches = windowDays === 'all' || expiry <= horizonISO
+    return windowMatches && matchesSearch(
+      query,
+      row.batch_number,
+      row.products?.product_name,
+      row.products?.generic_display_name,
+      row.products?.manufacturer,
+      row.products?.strength_display,
+      dateText(row.expiry_date),
+    )
+  })
+
+  const exportCsv = () => {
+    const quote = (value) => '"' + String(value ?? '').replace(/"/g, '""') + '"'
+    const header = ['Product', 'Generic', 'Manufacturer', 'Batch', 'Expiry Date', 'Days to Expiry', 'Stock Units']
+    const lines = filtered.map((row) => {
+      const days = row.expiry_date ? Math.ceil((new Date(row.expiry_date + 'T00:00:00').getTime() - new Date(today + 'T00:00:00').getTime()) / 86400000) : ''
+      return [
+        row.products?.product_name,
+        row.products?.generic_display_name,
+        row.products?.manufacturer,
+        row.batch_number,
+        row.expiry_date,
+        days,
+        row.current_stock_units,
+      ].map(quote).join(',')
+    })
+    const blob = new Blob(['\uFEFF' + [header.map(quote).join(','), ...lines].join('\r\n')], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'pharmdesk-expiry-' + today + '.csv'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  }
+
+  return (
+    <PanelList title="Expiry">
+      <div className="search-row">
+        <input
+          placeholder="Search product, batch, manufacturer or expiry"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+        />
+        <select value={windowDays} onChange={(event) => setWindowDays(event.target.value)} aria-label="Expiry window">
+          <option value="30">Next 30 days + overdue</option>
+          <option value="60">Next 60 days + overdue</option>
+          <option value="90">Next 90 days + overdue</option>
+          <option value="all">All loaded expiry alerts</option>
+        </select>
+        <button type="button" className="secondary-button" onClick={exportCsv} disabled={!filtered.length}>Export CSV</button>
+        <button type="button" className="secondary-button" onClick={load} disabled={loading}>{loading ? 'Refreshing…' : 'Refresh'}</button>
+      </div>
+      {error && <div className="error-box">{error}</div>}
+      <div className="muted">{filtered.length} batch(es) in the selected expiry window. Overdue batches are included.</div>
+      {loading && <div className="muted">Loading batches…</div>}
+      {!loading && !filtered.length ? (
+        <EmptyState text="No batches match the selected expiry window." />
+      ) : (
+        <div className="record-list">
+          {filtered.map((row) => {
+            const days = row.expiry_date ? Math.ceil((new Date(row.expiry_date + 'T00:00:00').getTime() - new Date(today + 'T00:00:00').getTime()) / 86400000) : null
+            return (
+              <div className="record-row static" key={row.id}>
+                <div>
+                  <strong>{row.products?.product_name || 'Product'}</strong>
+                  <span>Batch {row.batch_number || '—'} · {row.products?.manufacturer || 'Manufacturer not recorded'}</span>
+                  <span>{days !== null && days < 0 ? 'Expired ' + Math.abs(days) + ' day(s) ago' : days === 0 ? 'Expires today' : 'Expires in ' + days + ' day(s)'}</span>
+                </div>
+                <div className="record-right">
+                  <strong>{dateText(row.expiry_date)}</strong>
+                  <span>{safeNumber(row.current_stock_units)} unit(s)</span>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </PanelList>
+  )
+}
+
 function LowStockInventory({  
   store,  
 }) {  
@@ -11798,15 +11798,15 @@ function LowStockInventory({
               ),  
             )  
   
-          if (  
-            stock <=  
-            safeNumber(  
-              row.minimum_stock,  
-            )  
+          const threshold = safeNumber(row.reorder_level || row.minimum_stock || 0)
+          if (
+            threshold > 0 &&
+            stock <= threshold
           ) {  
             result.push({  
               ...row,  
-              stock,  
+              stock,
+              threshold,
             })  
           }  
         }  
@@ -11864,10 +11864,7 @@ function LowStockInventory({
                   </strong>  
   
                   <span>  
-                    Minimum{' '}  
-                    {  
-                      row.minimum_stock  
-                    }  
+                    Minimum {row.threshold ?? safeNumber(row.reorder_level || row.minimum_stock || 0)}  
                   </span>  
                 </div>  
   
