@@ -9106,26 +9106,42 @@ function SupplierHistoryModal({
         invoiceRows || [],  
       )  
   
-      const {  
-        data: paymentRows,  
-      } = await supabase  
-        .from('supplier_payment_transactions')  
-        .select(`  
-          id,  
-          purchase_invoice_id,  
-          amount,  
-          payment_date,  
-          payment_method,  
-          reference_number,  
-          notes  
-        `)  
-        .eq('store_id', store.id)  
-        .eq('supplier_id', supplier.id)  
-        .order('payment_date', {  
-          ascending: false,  
-        })  
-  
-      setPayments(paymentRows || [])  
+      const {
+        data: paymentRows,
+        error: paymentError,
+      } = await supabase
+        .from('supplier_payments')
+        .select(`
+          id,
+          amount,
+          payment_date,
+          payment_method,
+          reference_number,
+          notes,
+          supplier_payment_allocations (
+            purchase_invoice_id,
+            allocated_amount
+          )
+        `)
+        .eq('store_id', store.id)
+        .eq('supplier_id', supplier.id)
+        .order('payment_date', {
+          ascending: false,
+        })
+
+      if (paymentError) {
+        console.warn('Could not load supplier payment history:', paymentError)
+      }
+
+      const paymentHistoryRows = (paymentRows || []).flatMap((payment) =>
+        (payment.supplier_payment_allocations || []).map((allocation) => ({
+          ...payment,
+          id: `${payment.id}:${allocation.purchase_invoice_id}`,
+          purchase_invoice_id: allocation.purchase_invoice_id,
+          amount: allocation.allocated_amount,
+        })),
+      )
+      setPayments(paymentHistoryRows)  
   
       if (  
         invoiceRows?.length  
