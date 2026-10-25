@@ -1,0 +1,126 @@
+import { useEffect, useRef, useState } from 'react'
+import { supabase } from './supabaseClient'
+
+/**
+ * Keeps an unfinished form on-device immediately and synchronizes it to
+ * Supabase for recovery on another signed-in device. The draft row is scoped
+ * to the authenticated user, store, module, and logical draft key.
+ *
+ * The hook never submits a bill or purchase; only explicit transaction
+ * completion should do that.
+ */
+export function useWorkingDraft({
+  storeId,
+  moduleKey,
+  draftKey = 'default',
+  value,
+  onRestore,
+  hasWork,
+  enabled = true,
+}) {
+  const [ready, setReady] = useState(false)
+  const restoreRef = useRef(onRestore)
+  const latestValueRef = useRef(value)
+  const latestHasWorkRef = useRef(hasWork)
+  const localKey = `pharmdesk:working-draft:${storeId || 'no-store'}:${moduleKey}:${draftKey}`
+
+  useEffect(() => { restoreRef.current = onRestore }, [onRestore])
+  useEffect(() => { latestValueRef.current = value }, [value])
+  useEffect(() => { latestHasWorkRef.current = hasWork }, [hasWork])
+
+  useEffect(() => {
+    let cancelled = false
+    setReady(false)
+    if (!enabled || !storeId || !moduleKey) {
+      setReady(true)
+      return () => { cancelled = true }
+    }
+
+    const restore = async () => {
+      let localDraft = null
+      try {
+        const raw = window.localStorage.getItem(localKey)
+        if (raw) localDraft = JSON.parse(raw)
+      } catch (error) {
+        console.warn('Could not read local working draft:', error)
+      }
+
+      let cloudDraft = null
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (user?.id) {
+          const { data, error } = await supabase
+            .from('pharmdesk_working_drafts')
+            .select('payload,updated_at')
+            .eq('store_id', storeId)
+            .eq('user_id', user.id)
+            .eq('module_key', moduleKey)
+            .eq('draft_key', draftKey)
+            .maybeSingle()
+          if (error) throw error
+          cloudDraft = data ? { ...data.payload, savedAt: data.updated_at } : null
+        }
+      } catch (error) {
+        // Local recovery remains available if the draft table migration has
+        // not been applied or the network is temporarily unavailable.
+        console.warn('Cloud draft unavailable; keeping local recovery:', error?.message || error)
+      }
+
+      if (cancelled) return
+      const localTime = Date.parse(localDraft?.savedAt || 0) || 0
+      const cloudTime = Date.parse(cloudDraft?.savedAt || 0) || 0
+      const chosen = cloudTime > localTime ? cloudDraft : localDraft || cloudDraft
+      if (chosen && typeof chosen === 'object') {
+        try { restoreRef.current?.(chosen) } catch (error) {
+          console.warn('Could not restore working draft:', error)
+        }
+      }
+      setReady(true)
+    }
+
+    restore()
+    return () => { cancelled = true }
+  }, [storeId, moduleKey, draftKey, localKey, enabled])
+
+  useEffect(() => {
+    if (!ready || !enabled || !storeId || !moduleKey) return
+    const timer = window.setTimeout(async () => {
+      const hasCurrentWork = Boolean(latestHasWorkRef.current)
+      if (!hasCurrentWork) {
+        try { window.localStorage.removeItem(localKey) } catch {}
+        try {
+          const { data: { user } } = await supabase.auth.getUser()
+          if (user?.id) {
+            await supabase.from('pharmdesk_working_drafts').delete()
+              .eq('store_id', storeId).eq('user_id', user.id)
+              .eq('module_key', moduleKey).eq('draft_key', draftKey)
+          }
+        } catch {}
+        return
+      }
+
+      const payload = { ...latestValueRef.current, savedAt: new Date().toISOString() }
+      try { window.localStorage.setItem(localKey, JSON.stringify(payload)) } catch (error) {
+        console.warn('Could not save local working draft:', error)
+      }
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user?.id) return
+        const { error } = await supabase.from('pharmdesk_working_drafts').upsert({
+          store_id: storeId,
+          user_id: user.id,
+          module_key: moduleKey,
+          draft_key: draftKey,
+          payload,
+          updated_at: payload.savedAt,
+        }, { onConflict: 'store_id,user_id,module_key,draft_key' })
+        if (error) throw error
+      } catch (error) {
+        console.warn('Cloud draft save failed; local copy retained:', error?.message || error)
+      }
+    }, 450)
+    return () => window.clearTimeout(timer)
+  }, [ready, enabled, storeId, moduleKey, draftKey, localKey, value, hasWork])
+
+  return { ready }
+}
