@@ -13,7 +13,7 @@
   <path d="M563 337C563 307 587 285 617 285H665V614H611C584 614 563 592 563 565Z" fill="url(#teal)"/>
   <path d="M683 569C683 519 714 479 765 458L840 428C900 405 937 363 946 307C950 374 916 425 856 454C811 475 764 477 731 501C706 519 691 543 683 569Z" fill="url(#teal)"/>
   <path d="M683 569C695 526 724 498 763 482C809 463 848 446 879 421C858 453 825 475 785 491C738 510 706 537 683 569Z" fill="url(#tealFold)" opacity=".92"/>
-  <path d="M720 285H753V251H787V285H820V321H787V356H753V321H687V285Z" fill="#0a9d9f"/>
+  <path d="M720 285H687V321H720V356H754V321H788V285H754V251H720Z" fill="#0a9d9f"/>
 </g>
 <text x="202" y="790" font-family="Arial,Helvetica,sans-serif" font-size="220" font-weight="800" letter-spacing="-9"><tspan fill="#0a2647">Pharm</tspan><tspan fill="#078f98">Desk</tspan></text>
 <text x="768" y="868" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="56" font-weight="600" letter-spacing="8" fill="#687f9d">MANAGE · SELL · TRACK · GROW</text>
