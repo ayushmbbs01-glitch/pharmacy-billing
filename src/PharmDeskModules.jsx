@@ -5327,110 +5327,165 @@ function DraftBills({ store }) {
   )  
 }  
   
-function CompletedBills({ store }) {  
-  const [rows, setRows] = useState([])  
-  const [query, setQuery] = useState('')  
-  const [selected, setSelected] =  
-    useState(null)  
-  
-  const load = async () => {  
-    const { data } = await supabase  
-      .from('sales')  
-      .select('*')  
-      .eq('store_id', store.id)  
-      .in('status', [  
-        'completed',  
-        'returned',  
-      ])  
-      .order('bill_datetime', {  
-        ascending: false,  
-      })  
-      .limit(300)  
-  
-    setRows(data || [])  
-  }  
-  
-  useEffect(() => {  
-    if (store?.id) load()  
-  }, [store?.id])  
-  
-  const filtered = rows.filter((x) =>  
-    matchesSearch(  
-      query,  
-      x.invoice_number,  
-      x.bill_datetime,  
-      x.status,  
-    ),  
-  )  
-  
-  return (  
-    <>  
-      <PanelList title="Completed Bills">  
-        <input  
-          placeholder="Search invoice"  
-          value={query}  
-          onChange={(e) =>  
-            setQuery(e.target.value)  
-          }  
-        />  
-  
-        <div className="record-list">  
-          {filtered.map((row) => (  
-            <button  
-              className="record-row"  
-              key={row.id}  
-              onClick={() =>  
-                setSelected(row)  
-              }  
-            >  
-              <div>  
-                <strong>  
-                  {row.invoice_number ||  
-                    'Bill'}  
-                </strong>  
-  
-                <span>  
-                  {dateTimeText(  
-                    row.bill_datetime,  
-                  )}  
-                </span>  
-              </div>  
-  
-              <div className="record-right">  
-                <span>  
-                  {row.status}  
-                </span>  
-  
-                <strong>  
-                  {money(  
-                    row.grand_total,  
-                  )}  
-                </strong>  
-  
-                <span>View →</span>  
-              </div>  
-            </button>  
-          ))}  
-        </div>  
-      </PanelList>  
-  
-      {selected && (  
-        <SaleBillModal  
-          store={store}  
-          sale={selected}  
-          onClose={() =>  
-            setSelected(null)  
-          }  
-          onUpdated={() => {  
-            setSelected(null)  
-            load()  
-          }}  
-        />  
-      )}  
-    </>  
-  )  
-}  
-  
+function CompletedBills({ store }) {
+  const [rows, setRows] = useState([])
+  const [query, setQuery] = useState('')
+  const [selected, setSelected] = useState(null)
+  const [fromDate, setFromDate] = useState('')
+  const [toDate, setToDate] = useState('')
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [paymentFilter, setPaymentFilter] = useState('all')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  const load = async () => {
+    if (!store?.id) return
+    setLoading(true)
+    setError('')
+    try {
+      const data = await PharmDeskAPI.sales(store.id, fromDate || null, toDate || null)
+      setRows((data || []).filter((sale) => ['completed', 'returned'].includes(sale.status)))
+    } catch (loadError) {
+      console.error('Completed bills load error:', loadError)
+      setError('Could not load bills. Please try again.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (store?.id) load()
+  }, [store?.id, fromDate, toDate])
+
+  const filtered = rows.filter((sale) => {
+    const paymentMethods = (sale.sale_payments || []).map((payment) => payment.payment_method)
+    const matchesPayment = paymentFilter === 'all' || paymentMethods.includes(paymentFilter)
+    const matchesStatus = statusFilter === 'all' || sale.status === statusFilter
+    return matchesPayment && matchesStatus && matchesSearch(
+      query,
+      sale.invoice_number,
+      sale.bill_datetime,
+      sale.status,
+      sale.customers?.name,
+      sale.customers?.phone,
+      ...(sale.sale_items || []).flatMap((item) => [
+        item.products?.product_name,
+        item.products?.generic_display_name,
+        item.batches?.batch_number,
+      ]),
+    )
+  })
+
+  const exportCsv = () => {
+    const quote = (value) => '"' + String(value ?? '').replace(/"/g, '""') + '"'
+    const header = ['Invoice', 'Date', 'Customer', 'Phone', 'Status', 'Subtotal', 'Tax', 'Total', 'Paid', 'Due', 'Payment Methods']
+    const lines = filtered.map((sale) => [
+      sale.invoice_number,
+      sale.bill_datetime,
+      sale.customers?.name || 'Walk-in customer',
+      sale.customers?.phone || '',
+      sale.status,
+      sale.subtotal,
+      safeNumber(sale.cgst_amount) + safeNumber(sale.sgst_amount) + safeNumber(sale.igst_amount),
+      sale.grand_total,
+      sale.amount_paid,
+      sale.amount_due,
+      [...new Set((sale.sale_payments || []).map((payment) => payment.payment_method).filter(Boolean))].join(', '),
+    ].map(quote).join(','))
+    const csv = '\uFEFF' + [header.map(quote).join(','), ...lines].join('\r\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'pharmdesk-sales-' + todayISO() + '.csv'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  }
+
+  return (
+    <>
+      <PanelList title="Completed Bills">
+        <div className="search-row">
+          <input
+            placeholder="Search invoice, customer, phone, product or batch"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+          <button type="button" className="secondary-button" onClick={exportCsv} disabled={!filtered.length}>
+            Export CSV
+          </button>
+        </div>
+        <div className="form-grid">
+          <label>From date
+            <input type="date" value={fromDate} max={toDate || undefined} onChange={(event) => setFromDate(event.target.value)} />
+          </label>
+          <label>To date
+            <input type="date" value={toDate} min={fromDate || undefined} onChange={(event) => setToDate(event.target.value)} />
+          </label>
+          <label>Bill status
+            <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+              <option value="all">All statuses</option>
+              <option value="completed">Completed</option>
+              <option value="returned">Returned</option>
+            </select>
+          </label>
+          <label>Payment method
+            <select value={paymentFilter} onChange={(event) => setPaymentFilter(event.target.value)}>
+              <option value="all">All payment methods</option>
+              <option value="cash">Cash</option>
+              <option value="upi">UPI</option>
+              <option value="card">Card</option>
+              <option value="credit">Credit</option>
+              <option value="bank_transfer">Bank transfer</option>
+              <option value="cheque">Cheque</option>
+              <option value="other">Other</option>
+            </select>
+          </label>
+        </div>
+        {error && <div className="error-box">{error}</div>}
+        {loading && <div className="muted">Loading bills…</div>}
+        <div className="muted">{filtered.length} bill(s) match the current filters.</div>
+        <div className="record-list">
+          {filtered.map((sale) => (
+            <button
+              type="button"
+              className="record-row"
+              key={sale.id}
+              onClick={() => setSelected(sale)}
+            >
+              <div>
+                <strong>{sale.invoice_number || 'Bill'}</strong>
+                <span>{sale.customers?.name || 'Walk-in customer'} · {dateTimeText(sale.bill_datetime)}</span>
+                <span>{[...new Set((sale.sale_payments || []).map((payment) => payment.payment_method).filter(Boolean))].map(paymentLabel).join(', ') || 'Payment details unavailable'}</span>
+              </div>
+              <div className="record-right">
+                <span>{sale.status}</span>
+                <strong>{money(sale.grand_total)}</strong>
+                <span>View →</span>
+              </div>
+            </button>
+          ))}
+          {!loading && !filtered.length && <EmptyState text="No bills match these filters." />}
+        </div>
+      </PanelList>
+
+      {selected && (
+        <SaleBillModal
+          store={store}
+          sale={selected}
+          onClose={() => setSelected(null)}
+          onUpdated={() => {
+            setSelected(null)
+            load()
+          }}
+        />
+      )}
+    </>
+  )
+}
+
   function printSaleInvoice(details, store) {
   if (!details) return
 
