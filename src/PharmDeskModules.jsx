@@ -9511,6 +9511,8 @@ function PendingSupplierPayments({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
+  const paymentRequestKeyRef = useRef(null)
+  const paymentRequestSignatureRef = useRef(null)
 
   const load = async () => {
     if (!store?.id) return
@@ -9665,10 +9667,29 @@ function PendingSupplierPayments({
       (sum, row) => sum + safeNumber(row.due_amount ?? row.total_amount),
       0,
     )
-    const allocations = selectedRows.map((row) => ({
-      purchase_invoice_id: row.id,
-      allocated_amount: safeNumber(row.due_amount ?? row.total_amount),
-    }))
+    const allocations = selectedRows
+      .map((row) => ({
+        purchase_invoice_id: row.id,
+        allocated_amount: safeNumber(row.due_amount ?? row.total_amount),
+      }))
+      .sort((a, b) => a.purchase_invoice_id.localeCompare(b.purchase_invoice_id))
+
+    const requestSignature = JSON.stringify([
+      store.id,
+      selectedSupplierId,
+      paymentAmount,
+      paymentMethod,
+      paymentDate,
+      notes,
+      allocations,
+    ])
+    if (paymentRequestSignatureRef.current !== requestSignature) {
+      paymentRequestSignatureRef.current = requestSignature
+      paymentRequestKeyRef.current =
+        window.crypto?.randomUUID?.() ||
+        `pharmdesk-${Date.now()}-${Math.random().toString(36).slice(2)}`
+    }
+    const requestKey = paymentRequestKeyRef.current
 
     const confirmed = window.confirm(
       `Record a payment of ${money(paymentAmount)} for ${selectedIds.length} selected bill${selectedIds.length === 1 ? '' : 's'}?`,
@@ -9692,6 +9713,7 @@ function PendingSupplierPayments({
           p_reference_number: null,
           p_notes: notes || null,
           p_allocations: allocations,
+          p_idempotency_key: requestKey,
         },
       )
 
@@ -9701,6 +9723,8 @@ function PendingSupplierPayments({
 
       setSelectedIds([])
       setNotes('')
+      paymentRequestKeyRef.current = null
+      paymentRequestSignatureRef.current = null
       setMessage(
         `${money(paymentAmount)} payment recorded on ${dateText(paymentDate)}.`,
       )
