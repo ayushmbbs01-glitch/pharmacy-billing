@@ -12419,14 +12419,21 @@ function CustomersModule({
   const [editing, setEditing] = useState(null)
   const [settlementCustomer, setSettlementCustomer] = useState(null)
   const [creditByCustomer, setCreditByCustomer] = useState({})
+  const [outstandingOnly, setOutstandingOnly] = useState(false)
+  const [loadError, setLoadError] = useState('')
 
   const load = async () => {
-    const { data } = await pharmdeskDb
+    setLoadError('')
+    const { data, error: customerError } = await pharmdeskDb
       .from('customers')
       .select('*')
       .eq('store_id', store.id)
       .order('name')
 
+    if (customerError) {
+      setLoadError('Could not load customer records. Please try again.')
+      return
+    }
     const customers = data || []
     setRows(customers)
 
@@ -12447,7 +12454,9 @@ function CustomersModule({
       })
       setCreditByCustomer(creditMap)
     } else {
+      console.error('Customer credit report error:', creditError)
       setCreditByCustomer({})
+      setLoadError('Customer records loaded, but outstanding balances could not be verified. Refresh before collecting payment.')
     }
   }
 
@@ -12455,9 +12464,11 @@ function CustomersModule({
     if (store?.id) load()
   }, [store?.id])
 
-  const filtered = rows.filter((x) =>
-    matchesSearch(query, x.name, x.phone),
-  )
+  const filtered = rows.filter((customer) => {
+    const outstanding = creditByCustomer[customer.id] || 0
+    return (!outstandingOnly || outstanding > 0.009) &&
+      matchesSearch(query, customer.name, customer.phone, outstanding)
+  })
 
   return (
     <div>
@@ -12481,6 +12492,16 @@ function CustomersModule({
             + Customer
           </button>
         </div>
+        <label className="checkbox-row">
+          <input
+            type="checkbox"
+            checked={outstandingOnly}
+            onChange={(event) => setOutstandingOnly(event.target.checked)}
+          />
+          Show only customers with outstanding credit
+        </label>
+        {loadError && <div className="error-box">{loadError}</div>}
+        <div className="muted">{filtered.length} customer(s) shown.</div>
 
         <div className="record-list">
           {filtered.map((customer) => {
@@ -12517,6 +12538,15 @@ function CustomersModule({
                   )}
                 </div>
                 <div className="record-right">
+                  {outstanding > 0.009 && (
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={() => setSettlementCustomer({ ...customer, outstanding_credit: outstanding })}
+                    >
+                      Collect payment
+                    </button>
+                  )}
                   {outstanding > 0.009 ? (
                     <span
                       style={{
@@ -12554,6 +12584,7 @@ function CustomersModule({
               </div>
             )
           })}
+          {!filtered.length && <EmptyState text={outstandingOnly ? 'No customers with outstanding credit match this search.' : 'No customers match this search.'} />}
         </div>
       </PanelList>
 
