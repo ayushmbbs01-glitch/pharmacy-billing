@@ -23,6 +23,8 @@ export function useWorkingDraft({
   const restoreRef = useRef(onRestore)
   const latestValueRef = useRef(value)
   const latestHasWorkRef = useRef(hasWork)
+  const saveTimerRef = useRef(null)
+  const generationRef = useRef(0)
   const localKey = localStorageKey || `pharmdesk:working-draft:${storeId || 'no-store'}:${moduleKey}:${draftKey}`
 
   useEffect(() => { restoreRef.current = onRestore }, [onRestore])
@@ -85,7 +87,9 @@ export function useWorkingDraft({
 
   useEffect(() => {
     if (!ready || !enabled || !storeId || !moduleKey) return
+    const generation = generationRef.current
     const timer = window.setTimeout(async () => {
+      if (generation !== generationRef.current) return
       const hasCurrentWork = Boolean(latestHasWorkRef.current)
       if (!hasCurrentWork) {
         try { window.localStorage.removeItem(localKey) } catch {}
@@ -106,7 +110,7 @@ export function useWorkingDraft({
       }
       try {
         const { data: { user } } = await supabase.auth.getUser()
-        if (!user?.id) return
+        if (generation !== generationRef.current || !user?.id) return
         const { error } = await supabase.from('pharmdesk_working_drafts').upsert({
           store_id: storeId,
           user_id: user.id,
@@ -120,10 +124,17 @@ export function useWorkingDraft({
         console.warn('Cloud draft save failed; local copy retained:', error?.message || error)
       }
     }, 450)
-    return () => window.clearTimeout(timer)
+    saveTimerRef.current = timer
+    return () => {
+      window.clearTimeout(timer)
+      if (saveTimerRef.current === timer) saveTimerRef.current = null
+    }
   }, [ready, enabled, storeId, moduleKey, draftKey, localKey, value, hasWork])
 
   const clearDraft = async () => {
+    generationRef.current += 1
+    if (saveTimerRef.current != null) window.clearTimeout(saveTimerRef.current)
+    saveTimerRef.current = null
     try { window.localStorage.removeItem(localKey) } catch {}
     try {
       const { data: { user } } = await supabase.auth.getUser()
