@@ -1042,6 +1042,24 @@ export const PharmDeskAPI = {
     })
   },
 
+  processIndependentSalesReturn({
+    storeId,
+    customerId = null,
+    refundMethod,
+    refundAmount,
+    reason = null,
+    items,
+  }) {
+    return call('pharmdesk_process_independent_sales_return', {
+      p_store_id: storeId,
+      p_customer_id: customerId,
+      p_refund_method: refundMethod,
+      p_refund_amount: refundAmount,
+      p_reason: reason,
+      p_items: items,
+    })
+  },
+
   // ---------------------------------------------------------------------------
   // Drafts
   // ---------------------------------------------------------------------------
