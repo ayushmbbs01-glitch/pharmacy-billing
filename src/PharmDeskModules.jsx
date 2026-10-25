@@ -12985,7 +12985,7 @@ function Reports({
               type="date"
               value={from}
               max={to || undefined}
-              onChange={(e) => setFrom(e.target.value)  
+              onChange={(e) => setFrom(e.target.value)}
             />  
           </label>  
   
@@ -12995,7 +12995,7 @@ function Reports({
               type="date"
               value={to}
               min={from || undefined}
-              onChange={(e) => setTo(e.target.value)  
+              onChange={(e) => setTo(e.target.value)}
             />  
           </label>  
   
