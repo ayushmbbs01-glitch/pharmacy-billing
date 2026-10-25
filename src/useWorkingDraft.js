@@ -103,12 +103,17 @@ export function useWorkingDraft({
       const cloudIsNewer = Boolean(cloudDraft && cloudTime >= localTime)
 
       if (cloudIsNewer && cloudDraft.__cleared) {
-        try { window.localStorage.removeItem(resolvedLocalKey) } catch {}
+        const tombstone = { __cleared: true, savedAt: cloudDraft.savedAt || new Date().toISOString() }
+        try { window.localStorage.setItem(resolvedLocalKey, JSON.stringify(tombstone)) } catch {}
         restoreRef.current?.({})
         lastSyncedValueRef.current = null
       } else {
         const chosen = cloudIsNewer ? cloudDraft : localDraft || cloudDraft
-        if (chosen && typeof chosen === 'object' && !chosen.__cleared) {
+        if (chosen && typeof chosen === 'object' && chosen.__cleared) {
+          try { window.localStorage.setItem(resolvedLocalKey, JSON.stringify(chosen)) } catch {}
+          restoreRef.current?.({})
+          lastSyncedValueRef.current = null
+        } else if (chosen && typeof chosen === 'object') {
           try { restoreRef.current?.(chosen) } catch (error) {
             console.warn('Could not restore working draft:', error)
           }
@@ -143,7 +148,8 @@ export function useWorkingDraft({
 
             const remotePayload = row.payload || {}
             if (remotePayload.__cleared) {
-              try { window.localStorage.removeItem(resolvedLocalKey) } catch {}
+              const tombstone = { __cleared: true, savedAt: row.updated_at || new Date().toISOString() }
+              try { window.localStorage.setItem(resolvedLocalKey, JSON.stringify(tombstone)) } catch {}
               restoreRef.current?.({})
               lastSyncedValueRef.current = null
               return
@@ -181,8 +187,10 @@ export function useWorkingDraft({
       const now = new Date().toISOString()
       const hasCurrentWork = Boolean(latestHasWorkRef.current)
       if (!hasCurrentWork) {
-        try { window.localStorage.removeItem(localKey) } catch {}
         const payload = { __cleared: true, savedAt: now }
+        try { window.localStorage.setItem(localKey, JSON.stringify(payload)) } catch (error) {
+          console.warn('Could not save local cleared-draft marker:', error)
+        }
         try {
           const { data: { user } } = await supabase.auth.getUser()
           if (generation !== generationRef.current || latestHasWorkRef.current || !user?.id) return
@@ -236,9 +244,11 @@ export function useWorkingDraft({
     generationRef.current += 1
     if (saveTimerRef.current != null) window.clearTimeout(saveTimerRef.current)
     saveTimerRef.current = null
-    try { window.localStorage.removeItem(localKey) } catch {}
     const now = new Date().toISOString()
     const payload = { __cleared: true, savedAt: now }
+    try { window.localStorage.setItem(localKey, JSON.stringify(payload)) } catch (error) {
+      console.warn('Could not save local cleared-draft marker:', error)
+    }
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (user?.id && storeId) {
