@@ -5556,7 +5556,7 @@ function CompletedBills({ store }) {
     )
     .join('')
 
-  printWindow.document.write(`
+  printDocument.write(`
     <!DOCTYPE html>
     <html>
       <head>
