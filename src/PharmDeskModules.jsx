@@ -481,7 +481,7 @@ function LoadingScreen() {
   return (
     <div className="loading-screen">
       <div className="loading-card">
-        <div className="loading-logo primary-logo-display"><img src="/icons/pharmdesk-primary-light.svg?v=2" alt="PharmDesk" /></div>
+        <div className="loading-logo primary-logo-display"><img src="/icons/pharmdesk-primary-light.svg?v=3" alt="PharmDesk" /></div>
         <p className="loading-status">Setting up your workspace…</p>
         <div className="loading-progress" role="presentation"><span /></div>
       </div>
@@ -2324,9 +2324,11 @@ function AppIcon({ name, size = 19 }) {
 function PharmDeskLogo({ compact = false }) {
   return (
     <div className={compact ? 'pharmdesk-logo-code compact' : 'pharmdesk-logo-code'}>
-      <img className="pharmdesk-mark-code" src="/icons/pharmdesk-icon.svg" alt="" />
-      <span className="pharmdesk-wordmark"><span>Pharm</span><b>Desk</b></span>
-      {!compact && <span className="pharmdesk-tagline">MANAGE · SELL · TRACK · GROW</span>}
+      <img className="pharmdesk-mark-code" src="/icons/pharmdesk-icon.svg?v=3" alt="" />
+      <span className="pharmdesk-logo-type">
+        <span className="pharmdesk-wordmark"><span>Pharm</span><b>Desk</b></span>
+        {!compact && <span className="pharmdesk-tagline">MANAGE · SELL · TRACK · GROW</span>}
+      </span>
     </div>
   )
 }
@@ -2337,7 +2339,7 @@ function AuthBrandPanel() {
       <div className="auth-brand-orb orb-one" />
       <div className="auth-brand-orb orb-two" />
       <div className="auth-brand-content">
-        <img className="auth-brand-primary-logo" src="/icons/pharmdesk-logo.svg?v=2" alt="PharmDesk — Manage, Sell, Track, Grow" />
+        <img className="auth-brand-primary-logo" src="/icons/pharmdesk-logo.svg?v=3" alt="PharmDesk — Manage, Sell, Track, Grow" />
         <h2>Smart Pharmacy Management</h2>
         <p>Manage · Sell · Track · Grow</p>
         <div className="auth-brand-features">
@@ -2430,6 +2432,8 @@ function PharmacyApp({ session }) {
   const [globalSearchData, setGlobalSearchData] = useState([])
   const globalSearchRef = useRef(null)
   const [store, setStore] = useState(null)  
+  const [availableStores, setAvailableStores] = useState([])
+  const [storeMenuOpen, setStoreMenuOpen] = useState(false)  
   const [profile, setProfile] = useState(null)  
   const [loading, setLoading] = useState(true)  
 
@@ -2494,9 +2498,13 @@ function PharmacyApp({ session }) {
         session.user.id,
       )
 
-    setStore(
-      stores?.[0] || null,
-    )
+    setAvailableStores(stores || [])
+    setStore((currentStore) => {
+      if (currentStore && stores?.some((item) => item.id === currentStore.id)) {
+        return stores.find((item) => item.id === currentStore.id)
+      }
+      return stores?.[0] || null
+    })
   } finally {
     setLoading(false)
   }
@@ -2711,13 +2719,49 @@ function PharmacyApp({ session }) {
           ))}
         </nav>
 
-        <div className="sidebar-store">
-          <div className="sidebar-store-icon"><AppIcon name="inventory" size={18} /></div>
-          <div>
-            <strong>{store?.name || 'Medical Store'}</strong>
-            <span>Main Store</span>
-          </div>
-          <AppIcon name="arrow" size={16} />
+        <div className="sidebar-store-wrap">
+          <button
+            className="sidebar-store"
+            type="button"
+            aria-expanded={storeMenuOpen}
+            aria-haspopup="menu"
+            onClick={() => setStoreMenuOpen((open) => !open)}
+          >
+            <div className="sidebar-store-icon"><AppIcon name="inventory" size={18} /></div>
+            <div className="sidebar-store-copy">
+              <strong>{store?.name || 'Medical Store'}</strong>
+              <span>{availableStores.length > 1 ? 'Switch store' : 'Store details'}</span>
+            </div>
+            <AppIcon name="arrow" size={16} />
+          </button>
+          {storeMenuOpen && (
+            <div className="sidebar-store-menu" role="menu">
+              <div className="sidebar-store-menu-title">Your stores</div>
+              {availableStores.map((availableStore) => (
+                <button
+                  key={availableStore.id}
+                  type="button"
+                  role="menuitem"
+                  className={availableStore.id === store?.id ? 'sidebar-store-option selected' : 'sidebar-store-option'}
+                  onClick={() => {
+                    setStore(availableStore)
+                    setStoreMenuOpen(false)
+                    setSidebarOpen(false)
+                    setActiveNav('Dashboard')
+                    setRequestedSalesTab(null)
+                    setRequestedInventoryTab(null)
+                    setRequestedPurchasesTab(null)
+                    setSearchOpen(false)
+                    setGlobalSearch('')
+                  }}
+                >
+                  <span className="sidebar-store-option-name">{availableStore.name || 'Medical Store'}</span>
+                  {availableStore.id === store?.id && <span className="sidebar-store-current">Current</span>}
+                </button>
+              ))}
+              {availableStores.length === 0 && <div className="sidebar-store-empty">No stores available</div>}
+            </div>
+          )}
         </div>
 
         <button className="logout-button" onClick={() => PharmDeskAPI.signOut()}>
