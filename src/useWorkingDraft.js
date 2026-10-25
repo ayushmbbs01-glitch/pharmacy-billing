@@ -181,6 +181,21 @@ export function useWorkingDraft({
     const identity = `${storeId || ''}|${moduleKey || ''}|${draftKey}|${baseLocalKey}`
     if (!ready || restoreIdentityRef.current !== identity || !enabled || !storeId || !moduleKey) return
     const generation = generationRef.current
+
+    // Persist the local recovery copy synchronously on each form change.
+    // Only the cloud write is debounced, so a quick refresh or navigation
+    // cannot discard the most recent keystroke during the debounce window.
+    const localNow = new Date().toISOString()
+    const localHasWork = Boolean(hasWork)
+    const localPayload = localHasWork
+      ? { ...value, savedAt: localNow }
+      : { __cleared: true, savedAt: localNow }
+    try {
+      window.localStorage.setItem(localKey, JSON.stringify(localPayload))
+    } catch (error) {
+      console.warn('Could not synchronously save local working draft:', error)
+    }
+
     const timer = window.setTimeout(async () => {
       if (generation !== generationRef.current) return
 
