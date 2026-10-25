@@ -8787,6 +8787,7 @@ function PurchaseItemRow({
 function SupplierInvoices({ store }) {
   const [rows, setRows] = useState([])
   const [selected, setSelected] = useState(null)
+  const [editingInvoice, setEditingInvoice] = useState(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
@@ -8881,7 +8882,7 @@ function SupplierInvoices({ store }) {
       ) : (
         <div className="record-list">
           {filteredRows.map((row) => (
-            <button type="button" className="record-row" key={row.id} onClick={() => setSelected(row.suppliers)}>
+            <button type="button" className="record-row" key={row.id} onClick={() => setEditingInvoice(row)}>
               <div>
                 <strong>{row.invoice_number || 'Supplier invoice'}</strong>
                 <span>{row.suppliers?.supplier_name || 'Supplier'}</span>
@@ -8897,7 +8898,196 @@ function SupplierInvoices({ store }) {
       {selected && (
         <SupplierHistoryModal supplier={selected} store={store} onClose={() => setSelected(null)} />
       )}
+      {editingInvoice && (
+        <PurchaseInvoiceEditModal
+          store={store}
+          invoice={editingInvoice}
+          onClose={() => setEditingInvoice(null)}
+          onSaved={async () => {
+            setEditingInvoice(null)
+            await load()
+          }}
+        />
+      )}
     </PanelList>
+  )
+}
+
+function PurchaseInvoiceEditModal({ store, invoice, onClose, onSaved }) {
+  const [details, setDetails] = useState(null)
+  const [suppliers, setSuppliers] = useState([])
+  const [products, setProducts] = useState([])
+  const [supplierId, setSupplierId] = useState(invoice.supplier_id || '')
+  const [invoiceNumber, setInvoiceNumber] = useState(invoice.invoice_number || '')
+  const [invoiceDate, setInvoiceDate] = useState(invoice.invoice_date || todayISO())
+  const [items, setItems] = useState([])
+  const [charges, setCharges] = useState({
+    discount: invoice.discount_amount || 0,
+    cgst: invoice.cgst_amount || 0,
+    sgst: invoice.sgst_amount || 0,
+    igst: invoice.igst_amount || 0,
+    otherCharges: invoice.other_charges || 0,
+    notes: invoice.notes || '',
+  })
+  const [loading, setLoading] = useState(true)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let cancelled = false
+    const load = async () => {
+      setLoading(true)
+      try {
+        const [supplierResult, productResult, itemResult] = await Promise.all([
+          supabase.from('suppliers').select('*').eq('store_id', store.id).eq('is_active', true).order('supplier_name'),
+          supabase.from('store_products').select('product_id, products(id,product_name,generic_display_name,manufacturer,gst_rate,pack_quantity,pack_unit)').eq('store_id', store.id).eq('is_active', true),
+          supabase.from('purchase_items').select('*, products(id,product_name,generic_display_name), batches(id,batch_number,expiry_date,units_per_pack,mrp_per_pack)').eq('purchase_invoice_id', invoice.id),
+        ])
+        if (supplierResult.error) throw supplierResult.error
+        if (productResult.error) throw productResult.error
+        if (itemResult.error) throw itemResult.error
+        if (cancelled) return
+        setSuppliers(supplierResult.data || [])
+        setProducts((productResult.data || []).map((row) => row.products).filter(Boolean))
+        setItems((itemResult.data || []).map((item) => ({
+          rowKey: item.id,
+          originalId: item.id,
+          product: item.products || { id: item.product_id, product_name: 'Product' },
+          batchNumber: item.batch_number || item.batches?.batch_number || '',
+          expiryDate: item.expiry_date || item.batches?.expiry_date || '',
+          paidPacks: item.paid_packs ?? 0,
+          freePacks: item.free_packs ?? 0,
+          looseUnits: item.loose_units ?? 0,
+          purchaseRatePerPack: item.purchase_rate_per_pack ?? 0,
+          mrpPerPack: item.mrp_per_pack ?? item.batches?.mrp_per_pack ?? 0,
+          supplierDiscountPercent: item.supplier_discount_percent ?? 0,
+          gstRate: item.gst_rate ?? 0,
+          unitsPerPack: item.units_per_pack ?? item.batches?.units_per_pack ?? 1,
+        })))
+      } catch (loadError) {
+        if (!cancelled) setError(loadError?.message || 'Could not load this purchase invoice.')
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+    load()
+    return () => { cancelled = true }
+  }, [store.id, invoice.id])
+
+  const patchItem = (rowKey, patch) => setItems((current) => current.map((item) => item.rowKey === rowKey ? { ...item, ...patch } : item))
+  const addItem = () => setItems((current) => [...current, {
+    rowKey: `new-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    originalId: null, product: null, batchNumber: '', expiryDate: '',
+    paidPacks: 1, freePacks: 0, looseUnits: 0, purchaseRatePerPack: 0,
+    mrpPerPack: 0, supplierDiscountPercent: 0, gstRate: 0, unitsPerPack: 1,
+  }])
+
+  const save = async (event) => {
+    event.preventDefault()
+    setBusy(true)
+    setError('')
+    try {
+      if (!supplierId) throw new Error('Select a supplier.')
+      if (!invoiceNumber.trim()) throw new Error('Invoice number is required.')
+      const validItems = items.filter((item) => item.product?.id)
+      if (!validItems.length) throw new Error('Add at least one product.')
+      const payload = validItems.map((item) => ({
+        purchase_item_id: item.originalId || null,
+        product_id: item.product.id,
+        batch_number: item.batchNumber,
+        expiry_date: item.expiryDate || null,
+        paid_packs: safeNumber(item.paidPacks),
+        free_packs: safeNumber(item.freePacks),
+        loose_units: safeNumber(item.looseUnits),
+        purchase_rate_per_pack: safeNumber(item.purchaseRatePerPack),
+        mrp_per_pack: safeNumber(item.mrpPerPack),
+        supplier_discount_percent: safeNumber(item.supplierDiscountPercent),
+        gst_rate: safeNumber(item.gstRate),
+        units_per_pack: safeNumber(item.unitsPerPack) || 1,
+      }))
+      await PharmDeskAPI.editPurchase({
+        storeId: store.id,
+        purchaseInvoiceId: invoice.id,
+        supplierId,
+        invoiceNumber: invoiceNumber.trim(),
+        invoiceDate,
+        items: payload,
+        discountAmount: safeNumber(charges.discount),
+        cgstAmount: safeNumber(charges.cgst),
+        sgstAmount: safeNumber(charges.sgst),
+        igstAmount: safeNumber(charges.igst),
+        otherCharges: safeNumber(charges.otherCharges),
+        notes: charges.notes || null,
+      })
+      onSaved()
+    } catch (saveError) {
+      setError(saveError?.message || 'Could not save purchase changes.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Modal title={`Edit Purchase • ${invoice.invoice_number || 'Supplier invoice'}`} onClose={onClose}>
+      {loading ? <LoadingInline /> : (
+        <form onSubmit={save}>
+          <div className="info-box">Changes are sent through the purchase-edit transaction so stock and supplier balances can be reconciled by the backend. Existing payment transactions are not recreated here.</div>
+          <div className="form-grid">
+            <label>Supplier
+              <select value={supplierId} onChange={(event) => setSupplierId(event.target.value)} required>
+                <option value="">Select supplier</option>
+                {suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.supplier_name}</option>)}
+              </select>
+            </label>
+            <label>Supplier invoice number
+              <input value={invoiceNumber} onChange={(event) => setInvoiceNumber(event.target.value)} required />
+            </label>
+            <label>Invoice date
+              <input type="date" value={invoiceDate} onChange={(event) => setInvoiceDate(event.target.value)} required />
+            </label>
+          </div>
+          <h3>Purchased items</h3>
+          {items.map((item) => (
+            <div className="transaction-item" key={item.rowKey}>
+              <label>Product
+                <select value={item.product?.id || ''} onChange={(event) => {
+                  const product = products.find((row) => row.id === event.target.value) || null
+                  patchItem(item.rowKey, { product, gstRate: product?.gst_rate ?? item.gstRate, unitsPerPack: product?.pack_quantity || item.unitsPerPack || 1 })
+                }} required>
+                  <option value="">Select product</option>
+                  {products.map((product) => <option key={product.id} value={product.id}>{product.product_name}{product.generic_display_name ? ` • ${product.generic_display_name}` : ''}</option>)}
+                </select>
+              </label>
+              <div className="item-grid">
+                <label>Batch number<input value={item.batchNumber} onChange={(e) => patchItem(item.rowKey, { batchNumber: e.target.value })} required /></label>
+                <label>Expiry date<input type="date" value={item.expiryDate || ''} onChange={(e) => patchItem(item.rowKey, { expiryDate: e.target.value })} required /></label>
+                <label>Paid packs<input type="number" min="0" step="any" value={item.paidPacks} onChange={(e) => patchItem(item.rowKey, { paidPacks: e.target.value })} /></label>
+                <label>Free packs<input type="number" min="0" step="any" value={item.freePacks} onChange={(e) => patchItem(item.rowKey, { freePacks: e.target.value })} /></label>
+                <label>Loose units<input type="number" min="0" step="any" value={item.looseUnits} onChange={(e) => patchItem(item.rowKey, { looseUnits: e.target.value })} /></label>
+                <label>Units per pack<input type="number" min="1" step="1" value={item.unitsPerPack} onChange={(e) => patchItem(item.rowKey, { unitsPerPack: e.target.value })} /></label>
+                <label>Purchase rate / pack<input type="number" min="0" step="any" value={item.purchaseRatePerPack} onChange={(e) => patchItem(item.rowKey, { purchaseRatePerPack: e.target.value })} /></label>
+                <label>MRP / pack<input type="number" min="0" step="any" value={item.mrpPerPack} onChange={(e) => patchItem(item.rowKey, { mrpPerPack: e.target.value })} /></label>
+                <label>Supplier discount %<input type="number" min="0" max="100" step="any" value={item.supplierDiscountPercent} onChange={(e) => patchItem(item.rowKey, { supplierDiscountPercent: e.target.value })} /></label>
+                <label>GST %<input type="number" min="0" max="100" step="any" value={item.gstRate} onChange={(e) => patchItem(item.rowKey, { gstRate: e.target.value })} /></label>
+              </div>
+              <button type="button" className="danger-button" onClick={() => setItems((current) => current.filter((row) => row.rowKey !== item.rowKey))}>Remove item</button>
+            </div>
+          ))}
+          <button type="button" className="secondary-button" onClick={addItem}>+ Add product</button>
+          <h3>Invoice adjustments</h3>
+          <div className="item-grid">
+            <label>Discount amount<input type="number" min="0" step="any" value={charges.discount} onChange={(e) => setCharges((current) => ({ ...current, discount: e.target.value }))} /></label>
+            <label>CGST amount<input type="number" min="0" step="any" value={charges.cgst} onChange={(e) => setCharges((current) => ({ ...current, cgst: e.target.value }))} /></label>
+            <label>SGST amount<input type="number" min="0" step="any" value={charges.sgst} onChange={(e) => setCharges((current) => ({ ...current, sgst: e.target.value }))} /></label>
+            <label>IGST amount<input type="number" min="0" step="any" value={charges.igst} onChange={(e) => setCharges((current) => ({ ...current, igst: e.target.value }))} /></label>
+            <label>Other charges<input type="number" min="0" step="any" value={charges.otherCharges} onChange={(e) => setCharges((current) => ({ ...current, otherCharges: e.target.value }))} /></label>
+          </div>
+          <label>Notes<textarea value={charges.notes} onChange={(e) => setCharges((current) => ({ ...current, notes: e.target.value }))} rows={3} /></label>
+          {error && <div className="error-box">{error}</div>}
+          <ModalActions onClose={onClose} busy={busy} label="Save Purchase Changes" />
+        </form>
+      )}
+    </Modal>
   )
 }
 
