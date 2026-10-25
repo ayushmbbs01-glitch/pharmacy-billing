@@ -1,5 +1,4 @@
--- PharmDesk shared working drafts: cross-device recovery for unfinished work.
--- Run this migration in Supabase SQL Editor before enabling the client integration.
+-- Secure, store-scoped cross-device drafts for PharmDesk.
 create table if not exists public.pharmdesk_working_drafts (
   id uuid primary key default gen_random_uuid(),
   store_id uuid not null references public.stores(id) on delete cascade,
@@ -19,23 +18,38 @@ alter table public.pharmdesk_working_drafts enable row level security;
 
 drop policy if exists "Users can read their own PharmDesk drafts" on public.pharmdesk_working_drafts;
 create policy "Users can read their own PharmDesk drafts"
-  on public.pharmdesk_working_drafts for select
-  to authenticated using (user_id = (select auth.uid()) and public.pharmdesk_user_can_access_store(store_id));
+  on public.pharmdesk_working_drafts for select to authenticated
+  using (user_id = (select auth.uid()) and exists (
+    select 1 from public.store_memberships sm
+    where sm.user_id = (select auth.uid()) and sm.store_id = pharmdesk_working_drafts.store_id and sm.is_active = true
+  ));
 
 drop policy if exists "Users can insert their own PharmDesk drafts" on public.pharmdesk_working_drafts;
 create policy "Users can insert their own PharmDesk drafts"
-  on public.pharmdesk_working_drafts for insert
-  to authenticated with check (user_id = (select auth.uid()) and public.pharmdesk_user_can_access_store(store_id));
+  on public.pharmdesk_working_drafts for insert to authenticated
+  with check (user_id = (select auth.uid()) and exists (
+    select 1 from public.store_memberships sm
+    where sm.user_id = (select auth.uid()) and sm.store_id = pharmdesk_working_drafts.store_id and sm.is_active = true
+  ));
 
 drop policy if exists "Users can update their own PharmDesk drafts" on public.pharmdesk_working_drafts;
 create policy "Users can update their own PharmDesk drafts"
-  on public.pharmdesk_working_drafts for update
-  to authenticated using (user_id = (select auth.uid()) and public.pharmdesk_user_can_access_store(store_id))
-  with check (user_id = (select auth.uid()) and public.pharmdesk_user_can_access_store(store_id));
+  on public.pharmdesk_working_drafts for update to authenticated
+  using (user_id = (select auth.uid()) and exists (
+    select 1 from public.store_memberships sm
+    where sm.user_id = (select auth.uid()) and sm.store_id = pharmdesk_working_drafts.store_id and sm.is_active = true
+  ))
+  with check (user_id = (select auth.uid()) and exists (
+    select 1 from public.store_memberships sm
+    where sm.user_id = (select auth.uid()) and sm.store_id = pharmdesk_working_drafts.store_id and sm.is_active = true
+  ));
 
 drop policy if exists "Users can delete their own PharmDesk drafts" on public.pharmdesk_working_drafts;
 create policy "Users can delete their own PharmDesk drafts"
-  on public.pharmdesk_working_drafts for delete
-  to authenticated using (user_id = (select auth.uid()) and public.pharmdesk_user_can_access_store(store_id));
+  on public.pharmdesk_working_drafts for delete to authenticated
+  using (user_id = (select auth.uid()) and exists (
+    select 1 from public.store_memberships sm
+    where sm.user_id = (select auth.uid()) and sm.store_id = pharmdesk_working_drafts.store_id and sm.is_active = true
+  ));
 
 grant select, insert, update, delete on public.pharmdesk_working_drafts to authenticated;
