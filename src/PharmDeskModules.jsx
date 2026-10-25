@@ -482,7 +482,8 @@ function LoadingScreen() {
     <div className="loading-screen">
       <div className="loading-card">
         <div className="loading-logo primary-logo-display"><img src="/icons/pharmdesk-primary-light.svg" alt="PharmDesk" /></div>
-        <p>Loading…</p>
+        <p className="loading-status">Setting up your workspace…</p>
+        <div className="loading-progress" role="presentation"><span /></div>
       </div>
     </div>
   )
@@ -2373,12 +2374,12 @@ function AuthBrandPanel() {
       <div className="auth-brand-content">
         <img className="auth-brand-primary-logo" src="/icons/pharmdesk-primary.svg" alt="PharmDesk" />
         <h2>Smart Pharmacy Management</h2>
-        <p>Everything your pharmacy needs in one place.</p>
+        <p>Manage · Sell · Track · Grow</p>
         <div className="auth-brand-features">
-          <span>Billing</span>
-          <span>Inventory</span>
-          <span>Purchases</span>
-          <span>Reports</span>
+          <span>Manage inventory</span>
+          <span>Fast, simple billing</span>
+          <span>Track your business</span>
+          <span>Grow with confidence</span>
         </div>
       </div>
     </section>
