@@ -6889,6 +6889,7 @@ function SalesReturns({ store }) {
   const [sales, setSales] = useState([])
   const [selectedSaleId, setSelectedSaleId] = useState('')
   const [quantities, setQuantities] = useState({})
+  const [returnedUnits, setReturnedUnits] = useState({})
   const [restock, setRestock] = useState({})
   const [refundMethod, setRefundMethod] = useState('cash')
   const [reason, setReason] = useState('')
@@ -6924,6 +6925,31 @@ function SalesReturns({ store }) {
   }, [store?.id])
 
   const selectedSale = sales.find((sale) => sale.id === selectedSaleId)
+  useEffect(() => {
+    let cancelled = false
+    const loadPriorReturns = async () => {
+      setReturnedUnits({})
+      if (!selectedSaleId) return
+      try {
+        const { data, error: queryError } = await supabase
+          .from('sales_return_items')
+          .select('original_sale_item_id,quantity_units,sales_returns!inner(original_sale_id)')
+          .eq('sales_returns.original_sale_id', selectedSaleId)
+        if (queryError) throw queryError
+        if (cancelled) return
+        const totals = {}
+        ;(data || []).forEach((item) => {
+          totals[item.original_sale_item_id] = (totals[item.original_sale_item_id] || 0) + safeNumber(item.quantity_units)
+        })
+        setReturnedUnits(totals)
+      } catch (queryError) {
+        console.error('Prior sales return quantities load error:', queryError)
+        if (!cancelled) setError('Could not verify previous returns for this bill. Please reselect the bill and try again.')
+      }
+    }
+    loadPriorReturns()
+    return () => { cancelled = true }
+  }, [selectedSaleId])
   const saleItems = selectedSale?.sale_items || []
   const selectedLines = saleItems.filter((item) => safeNumber(quantities[item.id]) > 0)
   const refundAmount = selectedLines.reduce((total, item) => {
@@ -7018,13 +7044,14 @@ function SalesReturns({ store }) {
               {saleItems.map((item) => {
                 const availableUnits = safeNumber(item.quantity_units)
                 const quantity = quantities[item.id] || ''
+                const remainingUnits = Math.max(0, availableUnits - safeNumber(returnedUnits[item.id]))
                 return (
                   <div className="panel" key={item.id}>
                     <div className="record-row">
                       <div>
                         <strong>{item.products?.product_name || item.products?.generic_display_name || 'Product'}</strong>
                         <div className="muted">
-                          Batch: {item.batches?.batch_number || '—'} · Sold units: {availableUnits} · Line total: {money(item.line_total)}
+                          Batch: {item.batches?.batch_number || '—'} · Sold units: {availableUnits} · Already returned: {safeNumber(returnedUnits[item.id])} · Remaining: {remainingUnits} · Line total: {money(item.line_total)}
                         </div>
                       </div>
                     </div>
@@ -7033,12 +7060,12 @@ function SalesReturns({ store }) {
                       <input
                         type="number"
                         min="0"
-                        max={availableUnits}
+                        max={remainingUnits}
                         step="1"
                         value={quantity}
                         onChange={(event) => setQuantities((current) => ({
                           ...current,
-                          [item.id]: event.target.value === '' ? '' : Math.max(0, Math.min(availableUnits, Number(event.target.value))),
+                          [item.id]: event.target.value === '' ? '' : Math.max(0, Math.min(remainingUnits, Number(event.target.value))),
                         }))}
                       />
                     </label>
