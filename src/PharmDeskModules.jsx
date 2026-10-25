@@ -11643,7 +11643,48 @@ function ProductsInventory({
     useState('')  
   const [editing, setEditing] =  
     useState(null)  
-  
+  const [showCatalog, setShowCatalog] = useState(false)
+  const [catalogQuery, setCatalogQuery] = useState('')
+  const [catalogProducts, setCatalogProducts] = useState([])
+  const [catalogBusy, setCatalogBusy] = useState(false)
+  const [catalogError, setCatalogError] = useState('')
+
+  const openCatalog = async () => {
+    setShowCatalog(true)
+    setCatalogBusy(true)
+    setCatalogError('')
+    try {
+      const { data, error } = await pharmdeskDb
+        .from('products')
+        .select('id, product_name, generic_display_name, manufacturer, strength_display, gst_rate')
+        .eq('is_active', true)
+        .order('product_name')
+        .limit(500)
+      if (error) throw error
+      const alreadyAdded = new Set(rows.map((row) => row.product_id))
+      setCatalogProducts((data || []).filter((product) => !alreadyAdded.has(product.id)))
+    } catch (error) {
+      setCatalogError(error.message || 'Could not load the catalog.')
+    } finally {
+      setCatalogBusy(false)
+    }
+  }
+
+  const addCatalogProduct = async (product) => {
+    setCatalogBusy(true)
+    setCatalogError('')
+    try {
+      await PharmDeskAPI.addExistingProductToStore(store.id, product.id)
+      await load()
+      setCatalogProducts((current) => current.filter((item) => item.id !== product.id))
+      setCatalogQuery('')
+    } catch (error) {
+      setCatalogError(error.message || 'Could not add this product to the store.')
+    } finally {
+      setCatalogBusy(false)
+    }
+  }
+
   const load = async () => {  
     const { data } =  
       await pharmdeskDb  
@@ -11716,6 +11757,58 @@ function ProductsInventory({
         </button>  
       </div>  
   
+      <button
+        type="button"
+        className="secondary-button"
+        onClick={openCatalog}
+        style={{ marginTop: 10, marginBottom: 10 }}
+      >
+        + Add Existing Catalog Product
+      </button>
+
+      {showCatalog && (
+        <div className="panel" style={{ marginBottom: 16 }}>
+          <div className="search-row">
+            <input
+              placeholder="Search catalog by product, generic or manufacturer"
+              value={catalogQuery}
+              onChange={(event) => setCatalogQuery(event.target.value)}
+            />
+            <button type="button" className="secondary-button" onClick={() => setShowCatalog(false)}>
+              Close
+            </button>
+          </div>
+          {catalogError && <div className="error-message">{catalogError}</div>}
+          {catalogBusy && <p>Loading catalog…</p>}
+          {!catalogBusy && (
+            <div className="record-list">
+              {catalogProducts
+                .filter((product) => matchesSearch(catalogQuery, product.product_name, product.generic_display_name, product.manufacturer, product.strength_display))
+                .slice(0, 30)
+                .map((product) => (
+                  <div className="record-row static" key={product.id}>
+                    <div>
+                      <strong>{product.product_name}</strong>
+                      <span>{[product.generic_display_name, product.strength_display, product.manufacturer].filter(Boolean).join(' · ') || 'Catalog product'}</span>
+                    </div>
+                    <button
+                      type="button"
+                      className="primary-button"
+                      disabled={catalogBusy}
+                      onClick={() => addCatalogProduct(product)}
+                    >
+                      Add to store
+                    </button>
+                  </div>
+                ))}
+              {catalogProducts.filter((product) => matchesSearch(catalogQuery, product.product_name, product.generic_display_name, product.manufacturer, product.strength_display)).length === 0 && (
+                <p>No unlinked catalog products match this search.</p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="record-list">  
         {filtered.map(  
           (row) => (  
