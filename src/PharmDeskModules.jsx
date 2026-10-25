@@ -9489,7 +9489,7 @@ function PendingSupplierPayments({
     const day = String(now.getDate()).padStart(2, '0')
     return `${year}-${month}-${day}`
   })
-  const [paymentMethod, setPaymentMethod] = useState('Cash')
+  const [paymentMethod, setPaymentMethod] = useState('cash')
   const [notes, setNotes] = useState('')
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -9613,8 +9613,26 @@ function PendingSupplierPayments({
       return
     }
 
+    const suppliersSelected = new Set(
+      selectedRows.map((row) => row.supplier_id),
+    )
+    if (suppliersSelected.size !== 1) {
+      setError('Record one supplier payment at a time. Filter by supplier or select bills from the same supplier.')
+      return
+    }
+
+    const selectedSupplierId = selectedRows[0]?.supplier_id
+    const paymentAmount = selectedRows.reduce(
+      (sum, row) => sum + safeNumber(row.total_amount),
+      0,
+    )
+    const allocations = selectedRows.map((row) => ({
+      purchase_invoice_id: row.id,
+      allocated_amount: safeNumber(row.total_amount),
+    }))
+
     const confirmed = window.confirm(
-      `Mark ${selectedIds.length} selected bill${selectedIds.length === 1 ? '' : 's'} as paid for ${money(selectedTotal)}?`,
+      `Record a payment of ${money(paymentAmount)} for ${selectedIds.length} selected bill${selectedIds.length === 1 ? '' : 's'}?`,
     )
 
     if (!confirmed) return
@@ -9625,13 +9643,16 @@ function PendingSupplierPayments({
 
     try {
       const { error: paymentError } = await supabase.rpc(
-        'pharmdesk_mark_supplier_invoices_paid',
+        'pharmdesk_record_supplier_payment',
         {
           p_store_id: store.id,
-          p_invoice_ids: selectedIds,
-          p_payment_date: paymentDate,
+          p_supplier_id: selectedSupplierId,
+          p_amount: paymentAmount,
           p_payment_method: paymentMethod,
-          p_notes: notes,
+          p_payment_date: paymentDate,
+          p_reference_number: null,
+          p_notes: notes || null,
+          p_allocations: allocations,
         },
       )
 
@@ -9642,7 +9663,7 @@ function PendingSupplierPayments({
       setSelectedIds([])
       setNotes('')
       setMessage(
-        `${money(selectedTotal)} marked as paid on ${dateText(paymentDate)}.`,
+        `${money(paymentAmount)} payment recorded on ${dateText(paymentDate)}.`,
       )
       await load()
     } catch (paymentError) {
@@ -9998,12 +10019,12 @@ function PendingSupplierPayments({
                   setPaymentMethod(e.target.value)
                 }
               >
-                <option>Cash</option>
-                <option>UPI</option>
-                <option>Card</option>
-                <option>Bank transfer</option>
-                <option>Cheque</option>
-                <option>Other</option>
+                <option value="cash">Cash</option>
+                <option value="upi">UPI</option>
+                <option value="card">Card</option>
+                <option value="bank_transfer">Bank transfer</option>
+                <option value="cheque">Cheque</option>
+                <option value="other">Other</option>
               </select>
             </label>
           </div>
