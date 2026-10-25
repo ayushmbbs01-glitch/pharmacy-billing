@@ -7566,7 +7566,43 @@ function NewPurchase({ store }) {
       otherCharges: 0,
       notes: '',
     })
-  
+
+  useWorkingDraft({
+    storeId: store?.id,
+    moduleKey: 'purchases',
+    draftKey: 'new-purchase',
+    value: { supplierQuery, productQuery, selectedSupplier, invoiceNumber, invoiceDate, items, invoiceCharges },
+    hasWork: Boolean(
+      selectedSupplier ||
+      supplierQuery.trim() ||
+      productQuery.trim() ||
+      invoiceNumber.trim() ||
+      items.some((item) => item.product) ||
+      safeNumber(invoiceCharges.discount) > 0 ||
+      safeNumber(invoiceCharges.cgst) > 0 ||
+      safeNumber(invoiceCharges.sgst) > 0 ||
+      safeNumber(invoiceCharges.igst) > 0 ||
+      safeNumber(invoiceCharges.otherCharges) > 0 ||
+      String(invoiceCharges.notes || '').trim()
+    ),
+    onRestore: (draft) => {
+      setSupplierQuery(draft.supplierQuery || '')
+      setProductQuery(draft.productQuery || '')
+      setSelectedSupplier(draft.selectedSupplier || null)
+      setInvoiceNumber(draft.invoiceNumber || '')
+      setInvoiceDate(draft.invoiceDate || todayISO())
+      setItems(Array.isArray(draft.items) && draft.items.length ? draft.items : [emptyPurchaseItem()])
+      setInvoiceCharges({
+        discount: draft.invoiceCharges?.discount ?? 0,
+        cgst: draft.invoiceCharges?.cgst ?? 0,
+        sgst: draft.invoiceCharges?.sgst ?? 0,
+        igst: draft.invoiceCharges?.igst ?? 0,
+        otherCharges: draft.invoiceCharges?.otherCharges ?? 0,
+        notes: draft.invoiceCharges?.notes || '',
+      })
+    },
+  })
+
   useEffect(() => {  
     if (!store?.id) return  
   
