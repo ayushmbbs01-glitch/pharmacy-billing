@@ -4545,8 +4545,8 @@ function CustomerLedgerReceiptModal({
         .replaceAll('>', '&gt;')
         .replaceAll('"', '&quot;')
         .replaceAll("'", '&#039;')
-    printDocument.open()
-  printDocument.write(`
+    printWindow.document.open()
+  printWindow.document.write(`
       <!doctype html>
       <html>
         <head>
