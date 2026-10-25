@@ -170,7 +170,7 @@ export function useWorkingDraft({
         const payload = { __cleared: true, savedAt: now }
         try {
           const { data: { user } } = await supabase.auth.getUser()
-          if (generation !== generationRef.current || !user?.id) return
+          if (generation !== generationRef.current || latestHasWorkRef.current || !user?.id) return
           const { error } = await supabase.from('pharmdesk_working_drafts').upsert({
             store_id: storeId,
             user_id: user.id,
