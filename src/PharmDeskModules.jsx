@@ -2763,6 +2763,41 @@ function PharmacyApp({ session }) {
           </div>
         </header>
         {renderPage()}
+
+        <nav className="mobile-bottom-nav" aria-label="Primary navigation">
+          {[
+            { label: 'Home', target: 'Dashboard', icon: 'dashboard' },
+            { label: 'Sales', target: 'Sales', icon: 'sales' },
+            { label: 'Purchases', target: 'Purchases', icon: 'purchases' },
+            { label: 'Inventory', target: 'Inventory', icon: 'inventory' },
+            { label: 'Customers', target: 'Customers', icon: 'customers' },
+          ].map((item) => (
+            <button
+              key={item.target}
+              type="button"
+              className={activeNav === item.target ? 'mobile-nav-item active' : 'mobile-nav-item'}
+              onClick={() => {
+                setActiveNav(item.target)
+                setSidebarOpen(false)
+                setSearchOpen(false)
+                setGlobalSearch('')
+                window.scrollTo({ top: 0, behavior: 'auto' })
+              }}
+            >
+              <AppIcon name={item.icon} size={19} />
+              <span>{item.label}</span>
+            </button>
+          ))}
+          <button
+            type="button"
+            className="mobile-nav-item"
+            onClick={() => setSidebarOpen(true)}
+            aria-label="Open all navigation options"
+          >
+            <AppIcon name="menu" size={19} />
+            <span>More</span>
+          </button>
+        </nav>
       </main>
     </div>
   )
@@ -2775,30 +2810,52 @@ function PharmacyApp({ session }) {
 function Dashboard({ store, profile, onNavigate }) {
   const [stats, setStats] = useState({
     sales: 0,
-    purchases: 0,
-    batches: 0,
+    purchaseBills: 0,
+    lowStock: 0,
     expiry: 0,
-    sales7d: [],
   })
 
   useEffect(() => {
     if (!store?.id) return
+    let cancelled = false
     const load = async () => {
       try {
         const start = todayISO()
-        const snapshot = await PharmDeskAPI.dashboardSnapshot(store.id, start, 90)
+        const [snapshot, inventory, stockResult] = await Promise.all([
+          PharmDeskAPI.dashboardSnapshot(store.id, start, 90),
+          PharmDeskAPI.inventory(store.id),
+          supabase
+            .from('batches')
+            .select('product_id,current_stock_units')
+            .eq('store_id', store.id)
+            .eq('is_active', true),
+        ])
+        if (stockResult.error) throw stockResult.error
+
+        const stockTotals = {}
+        ;(stockResult.data || []).forEach((batch) => {
+          stockTotals[batch.product_id] =
+            (stockTotals[batch.product_id] || 0) + safeNumber(batch.current_stock_units)
+        })
+        const lowStockCount = (inventory || []).filter((row) => {
+          const product = row.products || {}
+          const threshold = safeNumber(row.reorder_level || row.minimum_stock || 0)
+          return threshold > 0 && safeNumber(stockTotals[product.id]) <= threshold
+        }).length
+
+        if (cancelled) return
         setStats({
           sales: sum((snapshot.sales || []).map((x) => x.grand_total)),
-          purchases: sum((snapshot.purchases || []).map((x) => x.total_amount)),
-          batches: snapshot.batches?.length || 0,
+          purchaseBills: (snapshot.purchases || []).length,
+          lowStock: lowStockCount,
           expiry: snapshot.expiry?.length || 0,
-          sales7d: snapshot.sales7d || [],
         })
       } catch (error) {
         console.error('Dashboard load error:', error)
       }
     }
     load()
+    return () => { cancelled = true }
   }, [store?.id])
 
   const hour = new Date().getHours()
@@ -2818,77 +2875,37 @@ function Dashboard({ store, profile, onNavigate }) {
       />
 
       <div className="stats-grid dashboard-stats">
-        <StatCard title="Today's Sales" value={money(stats.sales)} icon="sales" />
-        <StatCard title="Today's Purchases" value={money(stats.purchases)} icon="purchases" />
-        <StatCard title="Stock Batches" value={stats.batches} icon="customers" />
-        <StatCard title="Near Expiry" value={stats.expiry} icon="inventory" />
-      </div>
-
-      <div className="dashboard-columns">
-        <section className="panel sales-overview">
-          <div className="panel-header">
-            <div>
-              <h2>Sales Overview</h2>
-              <p className="muted">Today's completed sales</p>
-            </div>
-            <span className="range-pill">Today</span>
-          </div>
-          <div className="mini-chart">
-            <div className="chart-y"><span>₹</span><span>0</span></div>
-            <div className="chart-bars">
-              {(() => {
-                const days = Array.from({ length: 7 }, (_, index) => {
-                  const day = new Date()
-                  day.setDate(day.getDate() - (6 - index))
-                  const key = localDateISO(day)
-                  const total = sum(
-                    (stats.sales7d || [])
-                      .filter((sale) => localDateISO(sale.bill_datetime) === key)
-                      .map((sale) => sale.grand_total),
-                  )
-                  return { key, label: day.toLocaleDateString('en-IN', { weekday: 'short' }), total }
-                })
-                const max = Math.max(...days.map((day) => day.total), 1)
-                return days.map((day) => (
-                  <div className="chart-column" key={day.key}>
-                    <div className="chart-bar" style={{ height: `${Math.max(4, (day.total / max) * 100)}%` }} title={money(day.total)} />
-                    <span>{day.label}</span>
-                  </div>
-                ))
-              })()}
-            </div>
-          </div>
-        </section>
-
-        <section className="panel recent-activity">
-          <div className="panel-header">
-            <div>
-              <h2>Quick Actions</h2>
-              <p className="muted">Common tasks</p>
-            </div>
-          </div>
-          <div className="activity-list">
-            <button type="button" className="activity-item" onClick={() => onNavigate?.('Sales')}>
-              <span className="activity-icon"><AppIcon name="sales" size={17} /></span>
-              <span><strong>New Sale</strong><small>Create a customer bill</small></span>
-            </button>
-            <button type="button" className="activity-item" onClick={() => onNavigate?.('Purchases')}>
-              <span className="activity-icon"><AppIcon name="purchases" size={17} /></span>
-              <span><strong>New Purchase</strong><small>Record incoming stock</small></span>
-            </button>
-            <button type="button" className="activity-item" onClick={() => onNavigate?.('Inventory')}>
-              <span className="activity-icon"><AppIcon name="inventory" size={17} /></span>
-              <span><strong>Inventory</strong><small>Check products and stock</small></span>
-            </button>
-          </div>
-        </section>
+        <button type="button" className="stat-card stat-card-action" onClick={() => onNavigate?.('Sales')}>
+          <span className="stat-icon"><AppIcon name="sales" size={17} /></span>
+          <span>Today's Sales</span>
+          <strong>{money(stats.sales)}</strong>
+          <small>Open sales</small>
+        </button>
+        <button type="button" className="stat-card stat-card-action" onClick={() => onNavigate?.('Purchases')}>
+          <span className="stat-icon"><AppIcon name="purchases" size={17} /></span>
+          <span>Purchase Bills Today</span>
+          <strong>{stats.purchaseBills}</strong>
+          <small>Open purchases</small>
+        </button>
+        <button type="button" className="stat-card stat-card-action" onClick={() => onNavigate?.('Inventory')}>
+          <span className="stat-icon"><AppIcon name="inventory" size={17} /></span>
+          <span>Low-stock Items</span>
+          <strong>{stats.lowStock}</strong>
+          <small>Review stock levels</small>
+        </button>
+        <button type="button" className="stat-card stat-card-action" onClick={() => onNavigate?.('Alerts')}>
+          <span className="stat-icon"><AppIcon name="alerts" size={17} /></span>
+          <span>Expiry Alerts</span>
+          <strong>{stats.expiry}</strong>
+          <small>Review expiring batches</small>
+        </button>
       </div>
 
       <section className="dashboard-quick panel">
         <div className="panel-header">
           <div>
             <h2>Quick Actions</h2>
-            <p className="muted">Jump directly into the tasks you use most.</p>
+            <p className="muted">Common tasks, one tap away.</p>
           </div>
         </div>
         <div className="quick-action-grid">
@@ -2900,29 +2917,29 @@ function Dashboard({ store, profile, onNavigate }) {
           <button type="button" className="quick-action" onClick={() => onNavigate?.('Purchases')}>
             <span className="quick-action-icon"><AppIcon name="purchases" size={18} /></span>
             <strong>New Purchase</strong>
-            <small>Record stock</small>
+            <small>Record incoming stock</small>
           </button>
           <button type="button" className="quick-action" onClick={() => onNavigate?.('Inventory')}>
             <span className="quick-action-icon"><AppIcon name="inventory" size={18} /></span>
-            <strong>Inventory</strong>
-            <small>Manage products</small>
+            <strong>Check Inventory</strong>
+            <small>Find products and batches</small>
+          </button>
+          <button type="button" className="quick-action" onClick={() => onNavigate?.('Sales')}>
+            <span className="quick-action-icon"><AppIcon name="returns" size={18} /></span>
+            <strong>Sales Return</strong>
+            <small>Record returned products</small>
           </button>
           <button type="button" className="quick-action" onClick={() => onNavigate?.('Customers')}>
             <span className="quick-action-icon"><AppIcon name="customers" size={18} /></span>
-            <strong>Customers</strong>
-            <small>View customer records</small>
-          </button>
-          <button type="button" className="quick-action" onClick={() => onNavigate?.('Reports')}>
-            <span className="quick-action-icon"><AppIcon name="reports" size={18} /></span>
-            <strong>Reports</strong>
-            <small>Review performance</small>
+            <strong>Collect Payment</strong>
+            <small>Open customer balances</small>
           </button>
         </div>
       </section>
     </div>
   )
-}  
-  
+}
+
 function StatCard({ title, value, icon }) {
   return (
     <div className="stat-card">
