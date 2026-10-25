@@ -8986,6 +8986,29 @@ function PurchaseInvoiceEditModal({ store, invoice, onClose, onSaved }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
+  const { clearDraft: clearPurchaseEditDraft } = useWorkingDraft({
+    storeId: store?.id,
+    moduleKey: 'purchase-bill-edit',
+    draftKey: `edit-${invoice.id}`,
+    enabled: !loading && !error,
+    value: { supplierId, invoiceNumber, invoiceDate, items, charges },
+    hasWork: !loading && items.length > 0,
+    onRestore: (draft) => {
+      setSupplierId(draft.supplierId || invoice.supplier_id || '')
+      setInvoiceNumber(draft.invoiceNumber || invoice.invoice_number || '')
+      setInvoiceDate(draft.invoiceDate || invoice.invoice_date || todayISO())
+      if (Array.isArray(draft.items) && draft.items.length) setItems(draft.items)
+      setCharges({
+        discount: draft.charges?.discount ?? invoice.discount_amount ?? 0,
+        cgst: draft.charges?.cgst ?? invoice.cgst_amount ?? 0,
+        sgst: draft.charges?.sgst ?? invoice.sgst_amount ?? 0,
+        igst: draft.charges?.igst ?? invoice.igst_amount ?? 0,
+        otherCharges: draft.charges?.otherCharges ?? invoice.other_charges ?? 0,
+        notes: draft.charges?.notes ?? invoice.notes ?? '',
+      })
+    },
+  })
+
   useEffect(() => {
     let cancelled = false
     const load = async () => {
@@ -9072,6 +9095,7 @@ function PurchaseInvoiceEditModal({ store, invoice, onClose, onSaved }) {
         otherCharges: safeNumber(charges.otherCharges),
         notes: charges.notes || null,
       })
+      await clearPurchaseEditDraft()
       onSaved()
     } catch (saveError) {
       setError(saveError?.message || 'Could not save purchase changes.')
