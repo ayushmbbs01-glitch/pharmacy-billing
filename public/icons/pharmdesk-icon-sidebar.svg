@@ -1,14 +1,14 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" role="img" aria-label="PharmDesk P medical mark">
-<defs>
-  <linearGradient id="navyGrad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#ffffff"/><stop offset="100%" stop-color="#eaf5ff"/></linearGradient>
-  <linearGradient id="tealGrad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#00A8B5"/><stop offset="100%" stop-color="#00808C"/></linearGradient>
-  <linearGradient id="waveGrad" x1="0%" y1="100%" x2="100%" y2="0%"><stop offset="0%" stop-color="#043B5C"/><stop offset="45%" stop-color="#008C9E"/><stop offset="100%" stop-color="#00D2C8"/></linearGradient>
-  <linearGradient id="crossGrad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#00B4B4"/><stop offset="100%" stop-color="#007A87"/></linearGradient>
-</defs>
-<g transform="translate(27 27) scale(.95)">
-  <path d="M 0 65 C 0 45, 15 30, 35 30 L 52 30 L 52 185 L 35 185 C 15 185, 0 170, 0 150 Z" fill="url(#tealGrad)"/>
-  <path d="M 0 30 C 0 12, 12 0, 30 0 L 130 0 C 165 0, 195 25, 195 62 C 195 98, 165 125, 130 125 L 100 125 C 125 105, 140 78, 140 54 C 140 38, 128 26, 110 26 L 52 26 L 52 30 Z" fill="url(#navyGrad)"/>
-  <path d="M 62 165 C 62 120, 95 72, 140 54 C 160 85, 145 130, 98 152 C 80 160, 68 164, 62 165 Z" fill="url(#waveGrad)"/>
-  <path d="M 87 47 L 99 47 L 99 35 L 115 35 L 115 47 L 127 47 L 127 63 L 115 63 L 115 75 L 99 75 L 99 63 L 87 63 Z" fill="url(#crossGrad)"/>
-</g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 270" role="img" aria-label="PharmDesk P medical mark">
+  <defs>
+    <linearGradient id="tealGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#30D9E9"/><stop offset="1" stop-color="#00AFC0"/></linearGradient>
+    <linearGradient id="waveGrad" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#043B5C"/><stop offset=".45" stop-color="#008C9E"/><stop offset="1" stop-color="#00D2C8"/></linearGradient>
+    <linearGradient id="crossGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#29D5E4"/><stop offset="1" stop-color="#00BFC0"/></linearGradient>
+  </defs>
+  <g transform="translate(23 7) scale(.5) translate(-563 -154)">
+    <path fill="#FFFFFF" d="M563 154 H797 C879 154 946 205 946 282 C946 329 924 361 888 381 C858 398 824 407 786 418 C745 430 713 456 693 493 C693 452 707 418 733 397 C757 378 785 367 817 355 C857 340 879 316 879 282 C879 249 854 229 817 229 H619 C585 229 563 206 563 174 Z"/>
+    <path fill="url(#tealGrad)" d="M563 360 C563 318 588 285 626 285 H665 V614 H612 C584 614 563 592 563 565 Z"/>
+    <path fill="url(#waveGrad)" d="M683 569 C683 520 709 480 753 455 C785 437 821 425 852 407 C911 373 940 339 946 300 C951 364 928 410 883 442 C850 466 816 481 778 491 C734 503 704 529 683 569 Z"/>
+    <path fill="#064D69" opacity=".32" d="M683 569 C697 527 724 500 763 483 C808 464 846 447 879 422 C855 457 822 477 785 492 C739 510 707 537 683 569 Z"/>
+    <path fill="url(#crossGrad)" d="M720 285 H687 V321 H720 V356 H755 V321 H788 V285 H755 V251 H720 Z"/>
+  </g>
 </svg>
