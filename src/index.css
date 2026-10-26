@@ -748,7 +748,7 @@ h1, h2, h3, p { overflow-wrap: anywhere; }
   font-size: 18px;
   letter-spacing: -0.7px;
 }
-.pharmdesk-logo-code.compact .pharmdesk-wordmark b { color: #079c9b; }
+.pharmdesk-logo-code.compact .pharmdesk-wordmark b { color: #29D5E4; }
 .pharmdesk-logo-code.compact .pharmdesk-tagline { color: #d9edf5; }
 @media (max-width: 800px) {
   .pharmdesk-logo-code.compact .pharmdesk-mark-code { width: 36px; height: 36px; flex-basis: 36px; }
